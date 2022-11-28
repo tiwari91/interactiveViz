@@ -1,0 +1,70 @@
+@import url(http://fonts.googleapis.com/css?family=Source+Code+Pro:400,600);
+body {font-family: "Source Code Pro", Consolas, monaco, monospace; line-height: 160%; font-size: 16px;  margin: 0; }
+
+
+button {
+  padding: 5px 10px;
+}
+.graticule {
+    fill: none;
+    stroke: #777;
+    stroke-width: .5px;
+    stroke-opacity: .5;
+}
+div.title {
+    color: black;
+    font-family: sans-serif;
+    font-size: 120%;
+    font-weight: 100;
+    padding: 0 0 0.5em 0;
+}
+body {
+    height: 100%;
+    width: 100%;
+}
+svg {
+    background-color: black;
+    height: 100%;
+    width: 100%;
+    z-index:0;
+}
+.county {
+    fill: black;
+    stroke-width: 1px;
+    cursor: pointer;
+}
+.county:hover {
+    opacity: .3;
+    fill: red;
+}
+.exterior-boundary {
+    fill: none;
+    stroke: white;
+    stroke-linejoin: round;
+    stroke-width: .3px;
+}
+div.tooltip {
+    line-height: 1;
+    position: absolute;
+    text-align: center;
+    width: 200px;
+    font-size: 14px;
+    padding: 16px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.8);
+    border-radius: 2px;
+}
+g.california path {
+    fill: #F7DFAD;
+    stroke: #777;
+}
+path {
+    fill: none;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+g.reservoirs circle {
+    fill: white;
+    opacity: .8;
+    cursor: pointer;
+}

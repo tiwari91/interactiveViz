@@ -29,7 +29,7 @@ The original 2016 page is kept, unchanged apart from data paths, in [`legacy/`](
   river, with mist at the base, its width, speed and foam set by the same release value as the dam's sound.
   A dam sits at each outlet (concrete arch, gravity or gravity-arch walls with gated
   spillways, or earth/rockfill embankments with abutment chutes, plus a powerhouse), with white water when it
-  releases or spills. Rivers are routed along valleys and follow the terrain, widening with measured flow.
+  releases or spills. Rivers run downhill on the terrain: an inflow into each lake and an outflow below each dam. The 2016 gauge-to-reservoir relationships are data, so they are drawn as dashed arcs (hidden until you hover a reservoir or turn on Gauge links).
   Animated lakes and ocean, sky with Day / Golden hour / Night, fly-to on click with a detail card and
   sparkline, labels that fade with distance, a drought replay with a camera path, a compare split
   (e.g. Sep 2014 vs Apr 2017), and a Low/High quality setting (Low by default on phones).
@@ -59,7 +59,6 @@ Refresh the data:
 
 - `python3 scripts/fetch_cdec.py [start] [end]`: CDEC storage and flow (dates as YYYY-MM-DD).
 - `python3 scripts/fetch_elevation.py`: NOAA ETOPO1 elevation grids via ERDDAP (public domain).
-- `python3 scripts/river_paths.py`: least-cost valley routes from gauges to reservoirs.
 
 Dam types for the largest reservoirs follow the real structures; the rest are a reasonable guess by size and
 setting. Lake outlines are generated, not surveyed.

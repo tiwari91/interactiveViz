@@ -7,7 +7,7 @@ import { createBasins } from "./three/basins.js";
 import { createTerrain } from "./three/terrain.js";
 import { createLakes, createOcean, waterUniforms } from "./three/water.js";
 import { createDams } from "./three/dams.js";
-import { createRivers } from "./three/rivers.js";
+import { createGaugeLinks } from "./three/gaugeLinks.js";
 import { createOutflow } from "./three/outflow.js";
 import { createSky, applyPreset } from "./three/sky.js";
 import { createLabels } from "./three/labels.js";
@@ -31,6 +31,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		quality: getQuality(),
 		sky: null, // null = follow the page theme
 		comparing: false,
+		links: false,
 		compareIndex: Math.max(0, data.months.indexOf("2014-09")),
 		replaying: false,
 	};
@@ -38,6 +39,11 @@ export function createView3D(container, data, store, tooltip, audio) {
 	const controls = createControls3D(stage, data, {
 		replay: () => (ui.replaying ? stopReplay() : startReplay()),
 		compare: () => toggleCompare(),
+		links: () => {
+			ui.links = !ui.links;
+			if (ctx) ctx.setLinks(ui.links);
+			syncControls();
+		},
 		sky: (name) => {
 			ui.sky = name;
 			if (ctx) ctx.preset(name);
@@ -74,7 +80,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 		};
 		await step(0.1, "Loading three.js and elevation…");
-		const [ THREE, elev, paths ] = await Promise.all([ loadThree(), loadElevation(ui.quality), d3.json("data/river_paths.json") ]);
+		const [ THREE, elev ] = await Promise.all([ loadThree(), loadElevation(ui.quality) ]);
 		await step(0.35, "Carving reservoir basins…");
 		const sc = createScene(THREE, container, ui.quality);
 		const world = createWorld(data, elev);
@@ -86,16 +92,16 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const lakes = createLakes(THREE, basins, shared);
 		const ocean = createOcean(THREE, shared);
 		const dams = createDams(THREE, data, basins);
-		const rivers = createRivers(THREE, data, world, basins, paths, shared);
-		const outflow = createOutflow(THREE, basins, dams, rivers, world, shared, ui.quality);
+		const links = createGaugeLinks(THREE, data, world, basins);
+		const outflow = createOutflow(THREE, basins, dams, world, shared, ui.quality);
 		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
 		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
 		const labels = createLabels(THREE, container, basins, maxCap);
-		const snapshot = createSnapshots(data, basins, dams.foam.spots, rivers);
+		const snapshot = createSnapshots(data, basins, dams.foam.spots);
 		dams.foam.uniforms.uTime = shared.uTime;
 		dams.foam.mesh.material.uniforms.uTime = shared.uTime;
-		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, rivers.mesh, rivers.gauges, outflow.group);
+		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group);
 
 		// Invisible pick volumes over each lake and dam.
 		const pickGeom = new THREE.CylinderGeometry(1, 1, 1, 18);
@@ -113,13 +119,14 @@ export function createView3D(container, data, store, tooltip, audio) {
 
 		// Animated state starts at the current month.
 		const s0 = snapshot(store.get().dateIndex);
-		const cur = { levels: [ ...s0.levels ], foam: [ ...s0.foam ], widths: [ ...s0.widths ], outlet: [ ...s0.outlet ], spill: [ ...s0.spill ], dryness: s0.dryness };
+		const cur = { levels: [ ...s0.levels ], foam: [ ...s0.foam ], outlet: [ ...s0.outlet ], spill: [ ...s0.spill ], dryness: s0.dryness };
 		let target = s0;
-		const presetParts = { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, rivers, terrain };
+		const presetParts = { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, terrain };
 		const usePreset = (name) => {
 			const p = applyPreset(name, presetParts);
 			const nightV = name === "night" ? 1 : 0;
 			outflow.setNight(nightV);
+			links.setTheme(nightV > 0);
 			dams.foam.uniforms.uNight.value = nightV;
 			shared.uLift.value = nightV;
 			return p;
@@ -130,7 +137,6 @@ export function createView3D(container, data, store, tooltip, audio) {
 			lakes.apply(state.levels, snap.tints, snap.visible);
 			dams.foam.apply(state.foam);
 			outflow.apply(state.outlet, state.spill);
-			rivers.setWidths(state.widths);
 			terrain.setDryness(state.dryness);
 		}
 
@@ -157,7 +163,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		function pickAt(x, y) {
 			ndc.set((x / canvas.clientWidth) * 2 - 1, -(y / canvas.clientHeight) * 2 + 1);
 			raycaster.setFromCamera(ndc, sc.camera);
-			const hits = raycaster.intersectObjects([ pick, rivers.gauges ], false);
+			const hits = raycaster.intersectObjects(links.gauges.visible ? [ pick, links.gauges ] : [ pick ], false);
 			const h = hits[0];
 			if (!h) return null;
 			if (h.object === pick) return { reservoir: basins.basins[h.instanceId].r, index: h.instanceId };
@@ -248,7 +254,6 @@ export function createView3D(container, data, store, tooltip, audio) {
 			const k = 1 - Math.exp(-dt * 4.5);
 			for (let i = 0; i < cur.levels.length; i++) cur.levels[i] += (target.levels[i] - cur.levels[i]) * k;
 			for (let i = 0; i < cur.foam.length; i++) cur.foam[i] += (target.foam[i] - cur.foam[i]) * k;
-			for (let i = 0; i < cur.widths.length; i++) cur.widths[i] += (target.widths[i] - cur.widths[i]) * k;
 			for (let i = 0; i < cur.outlet.length; i++) {
 				cur.outlet[i] += (target.outlet[i] - cur.outlet[i]) * k;
 				cur.spill[i] += (target.spill[i] - cur.spill[i]) * k;
@@ -261,6 +266,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				canvas.style.cursor = key ? "pointer" : "";
 				if (key !== hovered) {
 					lakes.setHighlight(h && h.reservoir ? h.index : -1);
+					links.setActive(store.get().selected ?? (h && h.reservoir ? h.reservoir.id : null));
 					if (key && h.reservoir) audio.hover();
 				}
 				const i = store.get().dateIndex;
@@ -313,6 +319,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 
 		function setMonth(i) {
 			target = snapshot(i);
+			outflow.setWidths(target.outlet);
 			labels.setValues(i);
 		}
 		setMonth(store.get().dateIndex);
@@ -320,6 +327,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const unsub = store.subscribe((s, changed) => {
 			if (changed.includes("dateIndex")) setMonth(s.dateIndex);
 			if (changed.includes("selected")) {
+				links.setActive(s.selected);
 				const idx = basins.basins.findIndex((b) => b.r.id === s.selected);
 				lakes.setHighlight(idx);
 				if (s.selected && s.mode === "3d") focus(s.selected);
@@ -377,7 +385,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 			},
 			level: (id) => cur.levels[basins.basins.findIndex((b) => b.r.id === id)],
 			// For tests: what each dam is visibly releasing right now.
-			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: dams.foam.spots.filter((s) => s.id === o.id && s.kind === "spill").map(() => cur.spill[i])[0] ?? 0, pct: target.release[i].pct })),
+			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
+			verifyWater: () => outflow.verify(),
+			linksVisible: () => links.visibleCount(),
+			setLinks: (v) => links.setShowAll(v),
 			pose: () => poseOf(THREE, sc.camera, sc.controls),
 			moving: () => Boolean(mover || replayFn),
 			dispose() {

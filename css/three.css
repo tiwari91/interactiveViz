@@ -179,7 +179,7 @@
 
 @media (max-width: 560px) {
 	.controls-3d { top: 8px; right: 8px; gap: 4px; }
-	.chip.js-compare span { display: none; }
+	.chip.js-compare span, .chip.js-links span { display: none; }
 	.chip { height: 30px; padding: 0 10px; font-size: 0.75rem; }
 	.detail-card { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-width: none; padding: 10px 12px 8px; }
 	.detail-title { font-size: 1rem; margin-bottom: 6px; }

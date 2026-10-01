@@ -73,7 +73,7 @@ export function createSky(THREE) {
 // Apply a preset to every lit or shaded part of the scene.
 export function applyPreset(name, parts) {
 	const p = PRESETS[name] ?? PRESETS.day;
-	const { sky, sun, hemi, scene, water, lakes, ocean, rivers, terrain } = parts;
+	const { sky, sun, hemi, scene, water, lakes, ocean, terrain } = parts;
 	sky.uniforms.uTop.value.set(p.top);
 	sky.uniforms.uHorizon.value.set(p.horizon);
 	sky.uniforms.uGround.value.set(p.ground);
@@ -100,7 +100,6 @@ export function applyPreset(name, parts) {
 	lakes.mesh.material.uniforms.uShallow.value.set(p.shallow);
 	ocean.material.uniforms.uDeep.value.set(p.oceanDeep);
 	ocean.material.uniforms.uShallow.value.set(p.oceanShallow);
-	rivers.setTheme({ color: p.river, highlight: p.riverHi, glow: p.glow });
 	terrain.setBorderColor(p.border, p.borderOpacity);
 	return p;
 }

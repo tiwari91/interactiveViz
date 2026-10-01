@@ -26,8 +26,20 @@ const KEY_2D = `
 
 const KEY_3D = `
 	<span class="legend-item">
-		<svg width="34" height="22" aria-hidden="true"><ellipse cx="17" cy="11" rx="15" ry="9" fill="#e6dac2" stroke="#b9ab90"/><ellipse cx="19" cy="12" rx="9" ry="5" fill="#2f6f86"/></svg>
-		<span>Lake = storage<br>pale banks = exposed shore</span>
+		<svg width="30" height="20" aria-hidden="true"><ellipse cx="15" cy="10" rx="13" ry="8" fill="#ddd0b4" stroke="#b9ab90"/><ellipse cx="17" cy="11" rx="8" ry="4.5" fill="#2f6f86"/></svg>
+		<span>Lake, pale banks<br>= exposed shore</span>
+	</span>
+	<span class="legend-item">
+		<svg width="26" height="18" aria-hidden="true"><path d="M2 14 Q13 4 24 14 L24 17 Q13 7 2 17Z" fill="#cfcac0" stroke="#8f8a80"/></svg>
+		<span>Dam</span>
+	</span>
+	<span class="legend-item">
+		<svg width="30" height="12" aria-hidden="true"><path d="M2 6 C9 1 14 11 28 6" fill="none" stroke="#3d8fbf" stroke-width="4" stroke-linecap="round"/><path d="M2 6 C6 3 8 5 11 5" fill="none" stroke="#f2fbff" stroke-width="2" stroke-linecap="round"/></svg>
+		<span>Outflow / river</span>
+	</span>
+	<span class="legend-item">
+		<svg width="30" height="12" aria-hidden="true"><path d="M3 10 Q15 0 27 10" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="2.5 2.5"/><circle cx="3" cy="10" r="2" fill="var(--ink-3)"/></svg>
+		<span>Gauge link (data)</span>
 	</span>
 	<span class="legend-item">
 		<svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="${pctColor(0.3)}" stroke="var(--surface)" stroke-width="1.5"/></svg>
@@ -37,7 +49,7 @@ const KEY_3D = `
 const KEY_COMMON = `
 	<span class="legend-item">
 		<svg width="30" height="10" aria-hidden="true"><path d="M2 5 Q 9 0 15 5 T 28 5" fill="none" stroke="var(--stream)" stroke-width="2.5" stroke-dasharray="2 4" stroke-linecap="round"/></svg>
-		<span>River link, width = flow</span>
+		<span>Gauge link (data), width = flow</span>
 	</span>
 	<span class="legend-item">
 		<svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="${NO_DATA_COLOR}" stroke-dasharray="2 2"/></svg>
@@ -45,5 +57,5 @@ const KEY_COMMON = `
 	</span>`;
 
 export function renderLegend(el, mode) {
-	el.innerHTML = ramp() + (mode === "3d" ? KEY_3D : KEY_2D) + KEY_COMMON;
+	el.innerHTML = ramp() + (mode === "3d" ? KEY_3D : KEY_2D + KEY_COMMON);
 }

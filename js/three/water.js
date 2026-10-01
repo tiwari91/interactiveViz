@@ -83,9 +83,9 @@ const FRAG = `
 		vec3 col = mix(body, sky, fres * 0.75);
 		float spec = pow(max(dot(R, uSunDir), 0.0), 260.0);
 		col += uSunColor * spec * 2.4;
-		col += vec3(0.9, 0.95, 1.0) * vHi * 0.18;
+		col += vec3(0.9, 0.95, 1.0) * vHi * 0.07;
 		// Night: moonlit sheen so water still reads against dark land.
-		col += uLift * (vec3(0.035, 0.06, 0.09) + uSunColor * spec * 1.5 + sky * fres * 0.35);
+		col += uLift * (vec3(0.02, 0.035, 0.055) + uSunColor * spec * 1.5);
 		float fog = smoothstep(uFogNear, uFogFar, gDist);
 		gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha);
 		#include <encodings_fragment>

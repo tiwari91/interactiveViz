@@ -3,7 +3,7 @@
 import { colorFor } from "../scales.js";
 import { createRelease, smoothstep } from "../release.js";
 
-export function createSnapshots(data, basins, foamSpots, rivers) {
+export function createSnapshots(data, basins, foamSpots) {
 	const { releaseOf: rel } = createRelease(data);
 	const index = new Map(basins.basins.map((b, i) => [ b.r.id, i ]));
 	const cache = new Map();
@@ -40,7 +40,6 @@ export function createSnapshots(data, basins, foamSpots, rivers) {
 			foam,
 			outlet: release.map((r) => r.outlet),
 			spill: release.map((r) => r.spill),
-			widths: rivers.widthsFor(i),
 			// Land browns as statewide storage falls from ~75% toward ~30%.
 			dryness: 1 - smoothstep(0.32, 0.72, statewide),
 		};

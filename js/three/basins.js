@@ -19,16 +19,34 @@ export function createBasins(data, world) {
 	const byId = new Map(basins.map((b) => [ b.r.id, b ]));
 
 	// Height of the carved surface at a world point, or null if no basin touches it.
+	// Overlapping basins combine continuously: every carve adds its cut, and the
+	// highest raise (rim/abutment) wins, so there are no steps where they meet.
 	function surfaceAt(x, z) {
-		let best = null;
+		let orig = null;
+		let cut = 0;
+		let raise = 0;
+		let lead = null;
+		let leadDelta = 0;
+		let w = 0;
 		for (const b of basins) {
 			if (Math.abs(x - b.cx) > b.reach || Math.abs(z - b.cz) > b.reach) continue;
-			const s = b.heightAt(x, z);
+			const [ u, v ] = b.toLocal(x, z);
+			if (u < b.extent.u[0] || u > b.extent.u[1] || v < b.extent.v[0] || v > b.extent.v[1]) continue;
+			if (orig === null) orig = world.groundY(x, z);
+			const s = b.heightAtLocal(u, v, orig);
 			if (!s) continue;
-			s.basinId = b.r.id;
-			if (!best || s.w > best.w + 1e-3 || (Math.abs(s.w - best.w) <= 1e-3 && s.h < best.h)) best = s;
+			const delta = s.h - orig;
+			if (delta < 0) cut += delta;
+			else raise = Math.max(raise, delta);
+			w = Math.max(w, s.w);
+			// The basin that changes this point most names the zone (for colouring).
+			if (!lead || Math.abs(delta) > Math.abs(leadDelta) || (Math.abs(delta) < 1e-6 && s.w > lead.w)) {
+				lead = { ...s, basinId: b.r.id };
+				leadDelta = delta;
+			}
 		}
-		return best;
+		if (!lead) return null;
+		return { ...lead, h: orig + cut + raise, w };
 	}
 
 	return { basins, byId, surfaceAt };
@@ -39,20 +57,33 @@ function makeBasin(r, maxCap, world) {
 	const k = Math.sqrt(r.capacity / maxCap);
 	const Lu = 3.2 + 13 * k;
 	const Lv = Lu * 0.48;
-	const D = 0.3 * Lu + 0.8;
+	const Dmax = 0.3 * Lu + 0.8;
+	let D = Dmax; // set once the full-pool level is known
 	const seed = seedOf(r.id);
 
-	// Uphill direction from the dam = the way the lake extends.
+	// Downstream = the direction from the dam whose ground falls lowest over the
+	// next few kilometres; the lake extends the opposite way (uphill).
+	const h0 = world.groundY(dx, dz);
 	let ux = 0;
 	let uz = 0;
-	const h0 = world.groundY(dx, dz);
-	for (const rad of [ Lu * 0.5, Lu, Lu * 1.6 ]) {
-		for (let i = 0; i < 16; i++) {
-			const a = (i / 16) * Math.PI * 2;
-			const h = world.groundY(dx + Math.cos(a) * rad, dz + Math.sin(a) * rad);
-			ux += Math.cos(a) * (h - h0);
-			uz += Math.sin(a) * (h - h0);
+	{
+		let best = null;
+		for (let k = 0; k < 48; k++) {
+			const a = (k / 48) * Math.PI * 2;
+			const cx = Math.cos(a);
+			const cz = Math.sin(a);
+			let down = 0;
+			let up = 0;
+			for (const f of [ 0.6, 1, 1.5, 2, 2.6 ]) {
+				down += world.groundY(dx + cx * f * Lu, dz + cz * f * Lu);
+				up += world.groundY(dx - cx * f * Lu, dz - cz * f * Lu);
+			}
+			// Prefer low ground downstream, and some rise upstream for the lake.
+			const score = down - 0.35 * up;
+			if (!best || score < best.score) best = { score, cx, cz };
 		}
+		ux = -best.cx;
+		uz = -best.cz;
 	}
 	let len = Math.hypot(ux, uz);
 	if (len < 1e-3) {
@@ -62,7 +93,7 @@ function makeBasin(r, maxCap, world) {
 		len = 1;
 	}
 	// Bend the axis a little so neighbouring lakes do not all look aligned.
-	const bend = (hash2(seed, 9) - 0.5) * 0.5;
+	const bend = (hash2(seed, 9) - 0.5) * 0.2;
 	const ax = ux / len;
 	const az = uz / len;
 	const eu = [ ax * Math.cos(bend) - az * Math.sin(bend), ax * Math.sin(bend) + az * Math.cos(bend) ];
@@ -101,10 +132,11 @@ function makeBasin(r, maxCap, world) {
 		const [ x, z ] = toWorld(u, Math.sin(th) * Lv * lobe(th) * 1.08);
 		ringMin = Math.min(ringMin, world.groundY(x, z));
 	}
-	const P = Math.max(0.8, (Number.isFinite(ringMin) ? ringMin : h0 + D) - 0.25);
+	const P = Math.max(0.8, (Number.isFinite(ringMin) ? ringMin : h0 + Dmax) - 0.25);
+
 	const rim = P + 0.4;
 	const u0 = -DAM_U * Lu;
-	const extent = { u: [ -1.95 * Lu, 2.15 * Lu ], v: [ -2.3 * Lv, 2.3 * Lv ] };
+	const extent = { u: [ -1.95 * Lu - 7, 2.15 * Lu ], v: [ -2.3 * Lv, 2.3 * Lv ] };
 	let damHalf = Lv * 0.4; // refined below once the bowl is known
 
 	const bowlShape = (u, v, s, g) => P - D * (1 - Math.pow(s, 1.5)) * g;
@@ -134,7 +166,9 @@ function makeBasin(r, maxCap, world) {
 			}
 		} else {
 			const d = u0 - u;
-			const floorY = damFloor - 0.35 - 0.09 * d;
+			// Canyon below the dam: never higher than a line falling away from the dam,
+			// and following the natural valley once that is lower.
+			const floorY = Math.min(damFloor - 0.35 - 0.09 * d, orig - 0.12);
 			const cw = damHalf * 0.35 + 0.3 * d;
 			const canyon = floorY + Math.pow(Math.abs(v) / cw, 2) * (rim + 1 - floorY);
 			h = Math.min(orig, canyon);

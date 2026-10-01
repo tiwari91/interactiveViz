@@ -151,6 +151,8 @@ export function createDams(THREE, data, basins) {
 
 		let spillTop;
 		let spillBottom;
+		let chute = null;
+		let chuteWidth = 0;
 		if (concrete) {
 			// Gated crest spillway: piers across the middle of the wall.
 			for (let p = 0; p < 6; p++) {
@@ -190,16 +192,22 @@ export function createDams(THREE, data, basins) {
 			const [ x1, z1 ] = bs.toWorld(pts[14][0], sv);
 			spillTop = [ x0, pts[0][1] + 0.04, z0 ];
 			spillBottom = [ x1, pts[14][1] + 0.04, z1 ];
+			chute = pts.map(([ u, y ]) => {
+				const [ x, z ] = bs.toWorld(u, sv);
+				return [ x, y + 0.05, z ];
+			});
+			chuteWidth = 0.26 * scale;
 		}
 
 		// Foam: outlet below the dam, and the spillway when the lake is nearly full.
 		const [ ox, oz ] = bs.toWorld(mu - toe - 0.4 - 2.2 * scale, mv);
 		const outletEnd = [ ox, groundAt(mu - toe - 0.4 - 2.2 * scale, mv) + 0.06, oz ];
-		foamSpots.push({ id: bs.r.id, kind: "outlet", a: toePoint, b: outletEnd, width: 0.7 * scale });
-		foamSpots.push({ id: bs.r.id, kind: "spill", a: spillTop, b: spillBottom, width: concrete ? 0.18 * hw : 0.5 * scale });
+		// Spill sheet only on a concrete dam's own face; chutes get a ribbon in outflow.js.
+		if (concrete) foamSpots.push({ id: bs.r.id, kind: "spill", a: spillTop, b: spillBottom, width: 0.18 * hw });
+		void outletEnd;
 		info.set(bs.r.id, {
 			type, crest, toePoint, center: bs.toWorld(mu, mv), height: hMax, scale, concrete,
-			toeU: mu - toe - 0.4, spillTop, spillBottom, halfWidth: hw, groundAt,
+			toeU: mu - toe - 0.4, spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth,
 			lights: [ axisAt(0.02), axisAt(0.98) ].map(([ u, v ]) => {
 				const [ x, z ] = bs.toWorld(u - tc * 0.5, v);
 				return [ x, crest + 0.25, z ];

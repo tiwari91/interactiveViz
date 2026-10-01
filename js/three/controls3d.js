@@ -13,6 +13,9 @@ export function createControls3D(stage, data, handlers) {
 		<button type="button" class="chip js-compare" aria-pressed="false" title="Compare two months">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M4 7h5v10H4zM15 7h5v10h-5z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Compare</span>
 		</button>
+		<button type="button" class="chip js-links" aria-pressed="false" title="Show every reservoir's river-gauge links (data, not rivers)">
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18c4-9 12-9 16 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.5 2.5"/><circle cx="4" cy="18" r="2"/></svg><span>Gauge links</span>
+		</button>
 		<label class="chip select-chip"><span class="sr-only">Time of day</span>
 			<select class="js-sky" aria-label="Time of day">
 				${Object.entries(PRESETS).map(([ k, p ]) => `<option value="${k}">${p.label}</option>`).join("")}
@@ -42,6 +45,7 @@ export function createControls3D(stage, data, handlers) {
 	const $ = (s, root = bar) => root.querySelector(s);
 	$(".js-replay").addEventListener("click", () => handlers.replay());
 	$(".js-compare").addEventListener("click", () => handlers.compare());
+	$(".js-links").addEventListener("click", () => handlers.links());
 	$(".js-sky").addEventListener("change", (e) => handlers.sky(e.target.value));
 	$(".js-quality").addEventListener("change", (e) => handlers.quality(e.target.value));
 	split.querySelector(".js-compare-month").addEventListener("change", (e) => handlers.compareMonth(+e.target.value));
@@ -79,7 +83,8 @@ export function createControls3D(stage, data, handlers) {
 			bar.hidden = !on;
 			if (!on) split.hidden = true;
 		},
-		setState({ replaying, comparing, sky, quality, compareIndex, dateIndex }) {
+		setState({ replaying, comparing, links, sky, quality, compareIndex, dateIndex }) {
+			$(".js-links").setAttribute("aria-pressed", String(Boolean(links)));
 			$(".js-replay").setAttribute("aria-pressed", String(replaying));
 			$(".js-replay span").textContent = replaying ? "Stop replay" : "Drought replay";
 			$(".js-compare").setAttribute("aria-pressed", String(comparing));

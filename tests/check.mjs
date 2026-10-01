@@ -203,6 +203,28 @@ async function main() {
 			check(`${month}: spillway cascade only above 90% full`, wrong.length === 0, `${out.filter((o) => o.spill > 0.05).map((o) => o.id).join(",") || "none spilling"}${wrong.length ? `; wrong: ${wrong.map((o) => `${o.id}@${(o.pct * 100).toFixed(0)}%`).join(",")}` : ""}`);
 		}
 
+		// Water on the ground: strips sit on the terrain and never run uphill.
+		const water = await debug3d(page, "c.verifyWater()");
+		check("Rivers and outflows lie on the terrain", water.maxGap < 0.35, `max gap ${water.maxGap} (${water.worst}), ${water.strips} strips`);
+		check("Rivers and outflows only run downhill", water.maxClimb <= 0.46, `max climb ${water.maxClimb}`);
+		const longOut = await debug3d(page, "c.outflow().filter((o) => o.length >= 8).length");
+		check("Most outflows run well downstream", longOut >= 28, `${longOut} of 36 longer than 8 units`);
+
+		// Gauge links are data: hidden by default, shown for a selection or with the toggle.
+		await setState(page, { selected: null });
+		await page.mouse.move(box.x + 5, box.y + 5);
+		await page.waitForTimeout(400);
+		check("No gauge links visible by default", (await debug3d(page, "c.linksVisible()")) === 0);
+		await page.locator(".js-links").click();
+		await page.waitForTimeout(300);
+		check("Gauge links toggle shows all links", (await debug3d(page, "c.linksVisible()")) === 54);
+		await shot(page, "3d-gauge-links-on.png", ".stage");
+		await page.locator(".js-links").click();
+		await setState(page, { selected: "PNF" });
+		await page.waitForTimeout(300);
+		check("Selecting a reservoir shows only its gauge links", (await debug3d(page, "c.linksVisible()")) === 1);
+		await setState(page, { selected: null });
+
 		const closeUps = [
 			[ "SHA", "2014-09", "day", "3d-shasta-drought.png" ],
 			[ "SHA", "2017-04", "day", "3d-shasta-wet-spilling.png" ],
@@ -213,6 +235,8 @@ async function main() {
 			[ "FOL", "2014-09", "night", "3d-folsom-drought-night.png" ],
 			[ "ORO", "2017-04", "day", "3d-oroville-apr2017.png" ],
 			[ "ORO", "2017-04", "night", "3d-oroville-apr2017-night.png" ],
+			[ "PNF", "2014-09", "day", "3d-pineflat-sep2014-day.png" ],
+			[ "PNF", "2014-09", "night", "3d-pineflat-sep2014-night.png" ],
 		];
 		for (const [ id, month, sky, file ] of closeUps) {
 			await page.selectOption(".js-sky", sky);
@@ -221,6 +245,32 @@ async function main() {
 			await shot(page, file, ".stage");
 		}
 		await page.selectOption(".js-sky", "day");
+
+		// Same dams from behind (upstream), the side and low down, to catch floating or upright water.
+		const orbit = async (daz, dpol) => page.evaluate(([a, b]) => {
+			const c = window.droughtViz.views["3d"].debug();
+			const h = window.__pose;
+			const az = h.az + a;
+			const pol = Math.min(1.42, h.polar + b);
+			const d = h.dist * (b ? 0.7 : 1);
+			const t = h.target;
+			c.sc.controls.target.set(...t);
+			c.sc.camera.position.set(t[0] + Math.sin(pol) * Math.sin(az) * d, t[1] + Math.cos(pol) * d, t[2] + Math.sin(pol) * Math.cos(az) * d);
+			c.sc.controls.update();
+		}, [ daz, dpol ]);
+		for (const [ id, month, sky ] of [ [ "PNF", "2014-09", "night" ], [ "WSN", "2017-04", "day" ], [ "SHA", "2017-04", "night" ], [ "ORO", "2017-04", "day" ], [ "FOL", "2014-09", "night" ] ]) {
+			await page.selectOption(".js-sky", sky);
+			await setState(page, { dateIndex: await monthIndex(page, month), selected: id });
+			await waitStill(page, 1500);
+			await page.evaluate(() => { window.__pose = window.droughtViz.views["3d"].debug().pose(); });
+			for (const [ name, a, b ] of [ [ "behind", Math.PI, 0 ], [ "side", Math.PI / 2, 0 ], [ "low", 0.4, 0.38 ] ]) {
+				await orbit(a, b);
+				await page.waitForTimeout(1200);
+				await shot(page, `3d-angle-${id.toLowerCase()}-${name}-${sky}.png`, ".stage");
+			}
+		}
+		await page.selectOption(".js-sky", "day");
+		await setState(page, { selected: null });
 
 		await page.selectOption(".js-sky", "golden");
 		await page.waitForTimeout(400);

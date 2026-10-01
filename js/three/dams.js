@@ -94,9 +94,9 @@ export function createDams(THREE, data, basins) {
 			if (face === 1) return B.c.copy(C.road);
 			if (concrete) {
 				const lift = Math.abs(Math.sin(y * 4.2)) > 0.93;
-				return B.c.copy(lift ? C.concreteLift : C.concrete).multiplyScalar(0.95 + n * 0.08);
+				return B.c.copy(lift ? C.concreteLift : C.concrete).multiplyScalar(0.97 + n * 0.04);
 			}
-			if (type === "rockfill" || face === 0) return B.c.copy(n > 0.5 ? C.riprap : C.riprapDark).multiplyScalar(0.9 + n * 0.2);
+			if (type === "rockfill" || face === 0) return B.c.copy(C.riprap).lerp(C.riprapDark, 0.2 + n * 0.25);
 			return B.c.copy(C.grass).lerp(C.rock, n * 0.3);
 		};
 
@@ -197,7 +197,14 @@ export function createDams(THREE, data, basins) {
 		const outletEnd = [ ox, groundAt(mu - toe - 0.4 - 2.2 * scale, mv) + 0.06, oz ];
 		foamSpots.push({ id: bs.r.id, kind: "outlet", a: toePoint, b: outletEnd, width: 0.7 * scale });
 		foamSpots.push({ id: bs.r.id, kind: "spill", a: spillTop, b: spillBottom, width: concrete ? 0.18 * hw : 0.5 * scale });
-		info.set(bs.r.id, { type, crest, toePoint, center: bs.toWorld(mu, mv), height: hMax });
+		info.set(bs.r.id, {
+			type, crest, toePoint, center: bs.toWorld(mu, mv), height: hMax, scale, concrete,
+			toeU: mu - toe - 0.4, spillTop, spillBottom, halfWidth: hw, groundAt,
+			lights: [ axisAt(0.02), axisAt(0.98) ].map(([ u, v ]) => {
+				const [ x, z ] = bs.toWorld(u - tc * 0.5, v);
+				return [ x, crest + 0.25, z ];
+			}).concat([ [ phx, groundAt(mu - toe - 0.55 * scale, mv + hw * 0.25) + 0.55 * scale, phz ] ]),
+		});
 	}
 
 	const geom = new THREE.BufferGeometry();
@@ -214,19 +221,24 @@ export function createDams(THREE, data, basins) {
 
 const FOAM_VERT = `
 	attribute float aIntensity;
+	attribute float aKind;
 	varying vec2 vUv;
 	varying float vI;
+	varying float vKind;
 	void main() {
 		vUv = uv;
 		vI = aIntensity;
+		vKind = aKind;
 		gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
 	}`;
 
 const FOAM_FRAG = `
 	uniform float uTime;
 	uniform vec3 uColor;
+	uniform float uNight;
 	varying vec2 vUv;
 	varying float vI;
+	varying float vKind;
 	float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
 	float noise(vec2 p) {
 		vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -234,11 +246,16 @@ const FOAM_FRAG = `
 	}
 	void main() {
 		if (vI < 0.01) discard;
-		vec2 p = vec2(vUv.x * 5.0, vUv.y * 10.0 + uTime * 3.2);
+		// Spill sheets stream fast in fine vertical threads; the tailrace churns.
+		float speed = vKind > 0.5 ? 7.0 : 3.2;
+		vec2 p = vKind > 0.5 ? vec2(vUv.x * 14.0, vUv.y * 6.0 + uTime * speed) : vec2(vUv.x * 5.0, vUv.y * 10.0 + uTime * speed);
 		float n = noise(p) * 0.6 + noise(p * 2.3 + 7.0) * 0.4;
-		float edge = smoothstep(0.0, 0.25, vUv.x) * smoothstep(1.0, 0.75, vUv.x) * smoothstep(0.0, 0.08, vUv.y) * smoothstep(1.0, 0.7, vUv.y);
-		float a = edge * vI * smoothstep(0.35, 0.75, n + vI * 0.25);
-		gl_FragColor = vec4(uColor, a * 0.7);
+		float edge = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.8, vUv.x) * smoothstep(0.0, 0.06, vUv.y) * smoothstep(1.0, 0.85, vUv.y);
+		float body = vKind > 0.5 ? 0.55 : 0.3;
+		float a = edge * vI * (body + (1.0 - body) * smoothstep(0.3, 0.7, n));
+		vec3 col = mix(vec3(0.62, 0.8, 0.9), uColor, smoothstep(0.35, 0.8, n));
+		col += uNight * vec3(0.06, 0.09, 0.12);
+		gl_FragColor = vec4(col, min(1.0, a * 1.15));
 		#include <encodings_fragment>
 	}`;
 
@@ -247,7 +264,8 @@ function createFoam(THREE, spots) {
 	geom.rotateX(-Math.PI / 2);
 	// uv.y runs along the flow (local -z -> +z after rotation is v from 1 to 0); keep as is.
 	geom.setAttribute("aIntensity", new THREE.InstancedBufferAttribute(new Float32Array(spots.length), 1));
-	const uniforms = { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xf4fbff) } };
+	geom.setAttribute("aKind", new THREE.InstancedBufferAttribute(new Float32Array(spots.map((s) => (s.kind === "spill" ? 1 : 0))), 1));
+	const uniforms = { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xf4fbff) }, uNight: { value: 0 } };
 	const mat = new THREE.ShaderMaterial({ vertexShader: FOAM_VERT, fragmentShader: FOAM_FRAG, uniforms, transparent: true, depthWrite: false });
 	const mesh = new THREE.InstancedMesh(geom, mat, spots.length);
 	mesh.frustumCulled = false;

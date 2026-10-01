@@ -48,7 +48,7 @@ async function openPage(browser, base, { phone = false, scheme = "light", query 
 	page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 	page.on("pageerror", (e) => errors.push(e.message));
 	await page.goto(`${base}/${query}`);
-	await page.waitForSelector("body[data-ready=true]", { timeout: 90000 });
+	await page.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 120000, polling: 500 });
 	return { ctx, page, errors };
 }
 
@@ -93,7 +93,7 @@ async function main() {
 		check("Loading overlay clears after 3D builds", await page.locator("#loading.done").count() === 1);
 		await page.locator(".mode-switch button[data-mode=\"2d\"]").click();
 		await page.reload();
-		await page.waitForSelector("body[data-ready=true]", { timeout: 90000 });
+		await page.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 120000, polling: 500 });
 		check("A saved 2D choice is honoured", (await stateOf(page)).mode === "2d");
 		await ctx.close();
 		allErrors.push(...errors);
@@ -191,11 +191,36 @@ async function main() {
 		check("Fly-to brings the camera close", (await debug3d(page, "c.pose().dist")) < 120, `${(await debug3d(page, "c.pose().dist")).toFixed(0)} units`);
 		await shot(page, "3d-oroville-wet.png", ".stage");
 
-		for (const [ id, month, file ] of [ [ "SHA", "2014-09", "3d-shasta-drought.png" ], [ "SHA", "2017-04", "3d-shasta-wet.png" ], [ "FOL", "2014-09", "3d-folsom-drought.png" ] ]) {
+		// Every dam visibly releases water; the spillway cascade only runs above ~90% full.
+		for (const month of [ "2014-09", "2017-04" ]) {
+			await setState(page, { dateIndex: await monthIndex(page, month) });
+			await page.waitForTimeout(3500);
+			const out = await debug3d(page, "c.outflow()");
+			const wet = out.filter((o) => o.pct !== null && o.pct > 0.003);
+			const bad = wet.filter((o) => !(o.width > 0.3 && o.length > 3));
+			check(`${month}: every dam with water has a visible outflow`, wet.length > 30 && bad.length === 0, `${wet.length} dams, min width ${Math.min(...wet.map((o) => o.width)).toFixed(2)}${bad.length ? `, missing: ${bad.map((o) => o.id).join(",")}` : ""}`);
+			const wrong = out.filter((o) => (o.spill > 0.05) !== (o.pct !== null && o.pct > 0.9));
+			check(`${month}: spillway cascade only above 90% full`, wrong.length === 0, `${out.filter((o) => o.spill > 0.05).map((o) => o.id).join(",") || "none spilling"}${wrong.length ? `; wrong: ${wrong.map((o) => `${o.id}@${(o.pct * 100).toFixed(0)}%`).join(",")}` : ""}`);
+		}
+
+		const closeUps = [
+			[ "SHA", "2014-09", "day", "3d-shasta-drought.png" ],
+			[ "SHA", "2017-04", "day", "3d-shasta-wet-spilling.png" ],
+			[ "SHA", "2017-04", "night", "3d-shasta-wet-night.png" ],
+			[ "WSN", "2017-04", "day", "3d-wishon-apr2017-day.png" ],
+			[ "WSN", "2017-04", "night", "3d-wishon-apr2017-night.png" ],
+			[ "FOL", "2014-09", "day", "3d-folsom-drought.png" ],
+			[ "FOL", "2014-09", "night", "3d-folsom-drought-night.png" ],
+			[ "ORO", "2017-04", "day", "3d-oroville-apr2017.png" ],
+			[ "ORO", "2017-04", "night", "3d-oroville-apr2017-night.png" ],
+		];
+		for (const [ id, month, sky, file ] of closeUps) {
+			await page.selectOption(".js-sky", sky);
 			await setState(page, { dateIndex: await monthIndex(page, month), selected: id });
 			await waitStill(page, 3000);
 			await shot(page, file, ".stage");
 		}
+		await page.selectOption(".js-sky", "day");
 
 		await page.selectOption(".js-sky", "golden");
 		await page.waitForTimeout(400);

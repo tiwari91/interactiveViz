@@ -25,7 +25,9 @@ The original 2016 page is kept, unchanged apart from data paths, in [`legacy/`](
 - **3D view (three.js r147):** real relief from NOAA ETOPO1 elevation (7x vertical exaggeration), coloured from
   valley fields to Sierra rock and snow, browning as statewide storage falls. Each reservoir is a lake carved into
   the terrain: its water level comes from a volume table of the basin, so a low reservoir shrinks and exposes pale
-  "bathtub ring" banks. A dam sits at each outlet (concrete arch, gravity or gravity-arch walls with gated
+  "bathtub ring" banks. Every dam visibly releases water: an animated tailrace runs from the outlet down the canyon into the
+  river, with mist at the base, its width, speed and foam set by the same release value as the dam's sound.
+  A dam sits at each outlet (concrete arch, gravity or gravity-arch walls with gated
   spillways, or earth/rockfill embankments with abutment chutes, plus a powerhouse), with white water when it
   releases or spills. Rivers are routed along valleys and follow the terrain, widening with measured flow.
   Animated lakes and ocean, sky with Day / Golden hour / Night, fly-to on click with a detail card and

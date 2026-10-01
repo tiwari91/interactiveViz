@@ -27,7 +27,8 @@ export function createSnapshots(data, basins, foamSpots, rivers) {
 		}
 		const foam = foamSpots.map((s) => {
 			const rel = release[index.get(s.id)];
-			return s.kind === "spill" ? rel.spill : rel.outlet;
+			// Tailrace pool is always visible while the lake holds water.
+			return s.kind === "spill" ? rel.spill : rel.pct === null || rel.outlet <= 0 ? 0 : 0.35 + 0.65 * rel.outlet;
 		});
 		const statewide = data.totals[i].pct;
 		const snap = {
@@ -37,6 +38,8 @@ export function createSnapshots(data, basins, foamSpots, rivers) {
 			pcts,
 			release,
 			foam,
+			outlet: release.map((r) => r.outlet),
+			spill: release.map((r) => r.spill),
 			widths: rivers.widthsFor(i),
 			// Land browns as statewide storage falls from ~75% toward ~30%.
 			dryness: 1 - smoothstep(0.32, 0.72, statewide),

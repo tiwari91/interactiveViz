@@ -8,6 +8,7 @@ import { createTerrain } from "./three/terrain.js";
 import { createLakes, createOcean, waterUniforms } from "./three/water.js";
 import { createDams } from "./three/dams.js";
 import { createRivers } from "./three/rivers.js";
+import { createOutflow } from "./three/outflow.js";
 import { createSky, applyPreset } from "./three/sky.js";
 import { createLabels } from "./three/labels.js";
 import { createSnapshots } from "./three/snapshot.js";
@@ -86,6 +87,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const ocean = createOcean(THREE, shared);
 		const dams = createDams(THREE, data, basins);
 		const rivers = createRivers(THREE, data, world, basins, paths, shared);
+		const outflow = createOutflow(THREE, basins, dams, rivers, world, shared, ui.quality);
 		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
 		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
@@ -93,7 +95,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const snapshot = createSnapshots(data, basins, dams.foam.spots, rivers);
 		dams.foam.uniforms.uTime = shared.uTime;
 		dams.foam.mesh.material.uniforms.uTime = shared.uTime;
-		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, rivers.mesh, rivers.gauges);
+		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, rivers.mesh, rivers.gauges, outflow.group);
 
 		// Invisible pick volumes over each lake and dam.
 		const pickGeom = new THREE.CylinderGeometry(1, 1, 1, 18);
@@ -111,13 +113,23 @@ export function createView3D(container, data, store, tooltip, audio) {
 
 		// Animated state starts at the current month.
 		const s0 = snapshot(store.get().dateIndex);
-		const cur = { levels: [ ...s0.levels ], foam: [ ...s0.foam ], widths: [ ...s0.widths ], dryness: s0.dryness };
+		const cur = { levels: [ ...s0.levels ], foam: [ ...s0.foam ], widths: [ ...s0.widths ], outlet: [ ...s0.outlet ], spill: [ ...s0.spill ], dryness: s0.dryness };
 		let target = s0;
-		let preset = applyPreset(skyName(), { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, rivers, terrain });
+		const presetParts = { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, rivers, terrain };
+		const usePreset = (name) => {
+			const p = applyPreset(name, presetParts);
+			const nightV = name === "night" ? 1 : 0;
+			outflow.setNight(nightV);
+			dams.foam.uniforms.uNight.value = nightV;
+			shared.uLift.value = nightV;
+			return p;
+		};
+		let preset = usePreset(skyName());
 
 		function applyState(state, snap) {
 			lakes.apply(state.levels, snap.tints, snap.visible);
 			dams.foam.apply(state.foam);
+			outflow.apply(state.outlet, state.spill);
 			rivers.setWidths(state.widths);
 			terrain.setDryness(state.dryness);
 		}
@@ -237,6 +249,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 			for (let i = 0; i < cur.levels.length; i++) cur.levels[i] += (target.levels[i] - cur.levels[i]) * k;
 			for (let i = 0; i < cur.foam.length; i++) cur.foam[i] += (target.foam[i] - cur.foam[i]) * k;
 			for (let i = 0; i < cur.widths.length; i++) cur.widths[i] += (target.widths[i] - cur.widths[i]) * k;
+			for (let i = 0; i < cur.outlet.length; i++) {
+				cur.outlet[i] += (target.outlet[i] - cur.outlet[i]) * k;
+				cur.spill[i] += (target.spill[i] - cur.spill[i]) * k;
+			}
 			cur.dryness += (target.dryness - cur.dryness) * k * 0.6;
 
 			if (pointer && !dragging && !replayFn) {
@@ -331,7 +347,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				audio.whoosh();
 			},
 			preset(name) {
-				preset = applyPreset(name, { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, rivers, terrain });
+				preset = usePreset(name);
 			},
 			focus,
 			replay(on) {
@@ -360,6 +376,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 				return [ (v3.x + 1) / 2 * container.clientWidth, (1 - v3.y) / 2 * container.clientHeight ];
 			},
 			level: (id) => cur.levels[basins.basins.findIndex((b) => b.r.id === id)],
+			// For tests: what each dam is visibly releasing right now.
+			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: dams.foam.spots.filter((s) => s.id === o.id && s.kind === "spill").map(() => cur.spill[i])[0] ?? 0, pct: target.release[i].pct })),
 			pose: () => poseOf(THREE, sc.camera, sc.controls),
 			moving: () => Boolean(mover || replayFn),
 			dispose() {

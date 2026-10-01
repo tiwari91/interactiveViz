@@ -45,8 +45,8 @@ export const PRESETS = {
 		deep: 0x22465a, shallow: 0x4e7f88, oceanDeep: 0x1e3f57, oceanShallow: 0x40708a,
 	},
 	night: {
-		label: "Night", top: 0x060b17, horizon: 0x1c2945, ground: 0x0b111d, sun: [ 0.35, 0.62, 0.7 ], sunColor: 0xa9bcff, sunIntensity: 0.42,
-		hemiSky: 0x40527a, hemiGround: 0x0e121a, hemiIntensity: 0.42, fog: 0x18233d, fogNear: 700, fogFar: 2500, stars: 1,
+		label: "Night", top: 0x060b17, horizon: 0x1c2945, ground: 0x0b111d, sun: [ 0.35, 0.62, 0.7 ], sunColor: 0xb4c6ff, sunIntensity: 0.78,
+		hemiSky: 0x5a6e98, hemiGround: 0x1d2533, hemiIntensity: 0.72, fog: 0x18233d, fogNear: 700, fogFar: 2500, stars: 1,
 		river: 0x56c2ff, riverHi: 0xd6f4ff, glow: 0.9, border: 0x9fb8d8, borderOpacity: 0.45,
 		deep: 0x0d2232, shallow: 0x1d4a5f, oceanDeep: 0x0a1a2a, oceanShallow: 0x15354a,
 	},

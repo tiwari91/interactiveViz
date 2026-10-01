@@ -45,6 +45,7 @@ const FRAG = `
 	uniform float uFogNear;
 	uniform float uFogFar;
 	uniform float uClip;
+	uniform float uLift;
 	varying vec3 vWorld;
 	varying vec3 vTint;
 	varying float vHi;
@@ -83,6 +84,8 @@ const FRAG = `
 		float spec = pow(max(dot(R, uSunDir), 0.0), 260.0);
 		col += uSunColor * spec * 2.4;
 		col += vec3(0.9, 0.95, 1.0) * vHi * 0.18;
+		// Night: moonlit sheen so water still reads against dark land.
+		col += uLift * (vec3(0.035, 0.06, 0.09) + uSunColor * spec * 1.5 + sky * fres * 0.35);
 		float fog = smoothstep(uFogNear, uFogFar, gDist);
 		gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha);
 		#include <encodings_fragment>
@@ -98,6 +101,7 @@ export function waterUniforms(THREE) {
 		uFogColor: { value: new THREE.Color(0xcfe0ee) },
 		uFogNear: { value: 900 },
 		uFogFar: { value: 2600 },
+		uLift: { value: 0 },
 	};
 }
 

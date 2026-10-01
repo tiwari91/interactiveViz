@@ -67,6 +67,7 @@ export function createRivers(THREE, data, world, basins, paths, shared) {
 	const dir = [];
 	const index = [];
 	let base = 0;
+	const ends = new Map(); // reservoir id -> river end points next to its dam
 	const heightAt = (x, z) => {
 		const s = basins.surfaceAt(x, z);
 		return Math.max(0.3, s ? s.h : world.groundY(x, z));
@@ -91,6 +92,12 @@ export function createRivers(THREE, data, world, basins, paths, shared) {
 			if (u > target.dam.u - 1.6 && target.sOf(u, v) < 1.4) break;
 			if (u > target.dam.u - 1.6 && Math.abs(v) < target.dam.halfWidth * 1.2 && u < target.Lu * 1.5) break;
 			kept.push(p);
+		}
+		if (kept.length) {
+			const end = kept[kept.length - 1];
+			const list = ends.get(l.reservoir.id) ?? [];
+			list.push([ end[0], heightAt(end[0], end[1]) + 0.28, end[1] ]);
+			ends.set(l.reservoir.id, list);
 		}
 		if (kept.length < 3) return;
 		let seq = kept.map(([ x, z ]) => [ x, heightAt(x, z) + 0.28, z ]);
@@ -160,10 +167,10 @@ export function createRivers(THREE, data, world, basins, paths, shared) {
 	mesh.frustumCulled = false;
 
 	// Gauge stations: slim markers where each river is measured.
-	const gGeom = new THREE.CylinderGeometry(0.18, 0.18, 2.2, 6);
-	gGeom.translate(0, 1.1, 0);
-	const capGeom = new THREE.SphereGeometry(0.55, 12, 8);
-	capGeom.translate(0, 2.4, 0);
+	const gGeom = new THREE.CylinderGeometry(0.1, 0.12, 1.4, 6);
+	gGeom.translate(0, 0.7, 0);
+	const capGeom = new THREE.SphereGeometry(0.3, 12, 8);
+	capGeom.translate(0, 1.5, 0);
 	const markerGeom = mergeTwo(THREE, gGeom, capGeom);
 	const gMat = new THREE.MeshStandardMaterial({ color: 0x2f86c4, roughness: 0.4, emissive: 0x0b2a40 });
 	const gauges = new THREE.InstancedMesh(markerGeom, gMat, data.gauges.length);
@@ -179,6 +186,7 @@ export function createRivers(THREE, data, world, basins, paths, shared) {
 	return {
 		mesh,
 		gauges,
+		ends,
 		widthsFor(dateIndex) {
 			return links.map((l) => {
 				const g = l.gauge;

@@ -86,3 +86,43 @@ main { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
 	.about { grid-template-columns: 1fr; gap: 8px; }
 	.brand-text { font-size: 1rem; }
 }
+
+.header-actions { display: flex; align-items: center; gap: 8px; }
+
+.sound { position: relative; display: flex; align-items: center; }
+
+.sound-toggle {
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	border: 1px solid var(--line);
+	border-radius: 50%;
+	background: var(--surface);
+	cursor: pointer;
+}
+
+.sound-toggle:hover { border-color: var(--ink-3); }
+
+.sound-toggle[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+
+.sound-pop {
+	position: absolute;
+	top: 48px;
+	right: 0;
+	z-index: 20;
+	display: grid;
+	gap: 4px;
+	width: 170px;
+	padding: 10px 12px;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	background: var(--surface);
+	box-shadow: var(--shadow);
+	font-size: 0.75rem;
+	color: var(--ink-3);
+}
+
+.sound-pop input { width: 100%; accent-color: var(--accent); }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -12,6 +12,7 @@
 	<link rel="stylesheet" href="css/base.css">
 	<link rel="stylesheet" href="css/layout.css">
 	<link rel="stylesheet" href="css/viz.css">
+	<link rel="stylesheet" href="css/three.css">
 	<script>
 		// Apply the saved theme before first paint to avoid a flash.
 		try {
@@ -29,10 +30,13 @@
 			<img class="brand-logo" src="assets/logo.svg" alt="" width="36" height="36">
 			<span class="brand-text">California Drought Impact</span>
 		</a>
+		<div class="header-actions">
+		<div class="sound" id="sound"></div>
 		<button class="theme-toggle" type="button" id="theme-toggle" aria-label="Switch to dark theme">
 			<svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
 			<svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
 		</button>
+		</div>
 	</header>
 
 	<main>
@@ -42,8 +46,8 @@
 			<p class="lede">
 				Monthly storage for 36 reservoirs from October 2011 to September 2017, from the wet year before the
 				drought, through the record lows of 2014–2015, to the 2017 recovery. Lines link each reservoir
-				to a river gauge in its basin. Use the timeline to move through the months, and switch to 3D to see each
-				reservoir as a column of water.
+				to a river gauge in its basin. Use the timeline to move through the months, and switch to 3D to fly over
+				real terrain where each lake shrinks and grows with its storage, with its dam at the outlet.
 			</p>
 		</section>
 

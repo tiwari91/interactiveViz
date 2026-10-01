@@ -1,108 +1,164 @@
-// 3D view: assembles land, reservoirs and streams; handles picking, labels and the render loop.
+// 3D view: real terrain with carved reservoirs, dams and rivers. Handles the
+// month animation, picking, fly-to, drought replay, compare split and sound cues.
 import { loadThree, webglAvailable } from "./three/loader.js";
-import { createScene } from "./three/scene.js";
-import { createLand } from "./three/land.js";
-import { createReservoirs } from "./three/reservoirs.js";
-import { createStreams } from "./three/streams.js";
-import { colorFor, makeProjection, MAJOR_CAPACITY } from "./scales.js";
-import { cssVar, currentTheme } from "./theme.js";
+import { createScene, homePose } from "./three/scene.js";
+import { createWorld, loadElevation } from "./three/world.js";
+import { createBasins } from "./three/basins.js";
+import { createTerrain } from "./three/terrain.js";
+import { createLakes, createOcean, waterUniforms } from "./three/water.js";
+import { createDams } from "./three/dams.js";
+import { createRivers } from "./three/rivers.js";
+import { createSky, applyPreset } from "./three/sky.js";
+import { createLabels } from "./three/labels.js";
+import { createSnapshots } from "./three/snapshot.js";
+import { flyTo, poseOf, poseToPosition, replayPath } from "./three/camera.js";
+import { createControls3D } from "./three/controls3d.js";
+import { getQuality, saveQuality } from "./three/quality.js";
+import { currentTheme } from "./theme.js";
 
-const WORLD = 1000;
+const d3 = window.d3;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const REPLAY_MS_PER_MONTH = 650;
 
-export function createView3D(container, data, store, tooltip) {
+export function createView3D(container, data, store, tooltip, audio) {
 	const stage = container.parentElement;
-	let ready = null;
 	let ctx = null;
+	let ready = null;
 	let running = false;
 	let raf = 0;
-
-	const geo = makeProjection(data.outline, WORLD, WORLD, 0);
-	const project = (lonlat) => {
-		const [ x, y ] = geo(lonlat);
-		return [ x - WORLD / 2, y - WORLD / 2 ];
+	const ui = {
+		quality: getQuality(),
+		sky: null, // null = follow the page theme
+		comparing: false,
+		compareIndex: Math.max(0, data.months.indexOf("2014-09")),
+		replaying: false,
 	};
+
+	const controls = createControls3D(stage, data, {
+		replay: () => (ui.replaying ? stopReplay() : startReplay()),
+		compare: () => toggleCompare(),
+		sky: (name) => {
+			ui.sky = name;
+			if (ctx) ctx.preset(name);
+			syncControls();
+		},
+		quality: (q) => {
+			ui.quality = q;
+			saveQuality(q);
+			rebuild();
+		},
+		compareMonth: (i) => {
+			ui.compareIndex = i;
+			syncControls();
+		},
+		divider: () => {},
+	});
+
+	function skyName() {
+		return ui.sky ?? (currentTheme() === "dark" ? "night" : "day");
+	}
+
+	function syncControls() {
+		controls.setState({ ...ui, sky: skyName(), dateIndex: store.get().dateIndex });
+	}
 
 	async function init() {
 		if (!webglAvailable()) {
 			container.innerHTML = "<div class=\"webgl-fallback\">3D needs WebGL, which this browser has turned off. The 2D map shows the same data.</div>";
 			return null;
 		}
-		const THREE = await loadThree();
-		const sc = createScene(THREE, container);
-		const land = createLand(THREE, data, project);
-		const res = createReservoirs(THREE, data, project);
-		const streams = createStreams(THREE, data, project);
-		sc.scene.add(land.group, streams.group, res.group);
+		const [ THREE, elev, paths ] = await Promise.all([ loadThree(), loadElevation(ui.quality), d3.json("data/river_paths.json") ]);
+		const sc = createScene(THREE, container, ui.quality);
+		const world = createWorld(data, elev);
+		const basins = createBasins(data, world);
+		const terrain = createTerrain(THREE, data, world, basins, ui.quality);
+		const shared = waterUniforms(THREE);
+		const lakes = createLakes(THREE, basins, shared);
+		const ocean = createOcean(THREE, shared);
+		const dams = createDams(THREE, data, basins);
+		const rivers = createRivers(THREE, data, world, basins, paths, shared);
+		const sky = createSky(THREE);
+		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
+		const labels = createLabels(THREE, container, basins, maxCap);
+		const snapshot = createSnapshots(data, basins, dams.foam.spots, rivers);
+		dams.foam.uniforms.uTime = shared.uTime;
+		dams.foam.mesh.material.uniforms.uTime = shared.uTime;
+		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, rivers.mesh, rivers.gauges);
 
-		const labelLayer = document.createElement("div");
-		labelLayer.className = "labels-3d";
-		labelLayer.setAttribute("aria-hidden", "true");
-		container.appendChild(labelLayer);
-		const labels = [ ...data.reservoirs ].sort((a, b) => b.capacity - a.capacity).filter((r) => r.capacity >= MAJOR_CAPACITY).map((r) => {
-			const el = document.createElement("div");
-			el.className = "label-3d";
-			el.textContent = r.name.replace(/ \(.*\)$/, "").replace(/ (Dam|Reservoir)$/, "");
-			labelLayer.appendChild(el);
-			return { r, el, w: 0 };
+		// Invisible pick volumes over each lake and dam.
+		const pickGeom = new THREE.CylinderGeometry(1, 1, 1, 18);
+		const pick = new THREE.InstancedMesh(pickGeom, new THREE.MeshBasicMaterial({ visible: false }), basins.basins.length);
+		const m4 = new THREE.Matrix4();
+		const basis = new THREE.Matrix4();
+		basins.basins.forEach((b, i) => {
+			const mid = (b.u0 - 0.6 + b.Lu * 1.2) / 2;
+			const [ x, z ] = b.toWorld(mid, 0);
+			basis.makeBasis(new THREE.Vector3(b.eu[0], 0, b.eu[1]), new THREE.Vector3(0, 1, 0), new THREE.Vector3(b.ev[0], 0, b.ev[1]));
+			m4.makeScale((b.Lu * 1.2 - b.u0 + 0.6) / 2, b.D + 4, b.Lv * 1.15).premultiply(basis).setPosition(x, b.P - b.D / 2 + 1, z);
+			pick.setMatrixAt(i, m4);
 		});
+		sc.scene.add(pick);
+
+		// Animated state starts at the current month.
+		const s0 = snapshot(store.get().dateIndex);
+		const cur = { levels: [ ...s0.levels ], foam: [ ...s0.foam ], widths: [ ...s0.widths ], dryness: s0.dryness };
+		let target = s0;
+		let preset = applyPreset(skyName(), { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, rivers, terrain });
+
+		function applyState(state, snap) {
+			lakes.apply(state.levels, snap.tints, snap.visible);
+			dams.foam.apply(state.foam);
+			rivers.setWidths(state.widths);
+			terrain.setDryness(state.dryness);
+		}
+
+		// Camera: start pulled back, then settle on the home pose.
+		sc.resize();
+		const home = () => homePose(sc.camera.aspect);
+		const start = { ...home(), dist: home().dist * 1.35, polar: home().polar * 0.8 };
+		sc.controls.target.set(...start.target);
+		sc.camera.position.copy(poseToPosition(THREE, start));
+		let mover = flyTo(THREE, sc.camera, sc.controls, home(), reducedMotion.matches ? 1 : 1800);
+		let replayFn = null;
+		let replayStart = 0;
 
 		const raycaster = new THREE.Raycaster();
 		const ndc = new THREE.Vector2();
-		const tmp = new THREE.Vector3();
-		const pickTargets = [ ...res.pickables, ...streams.gauges ];
+		const canvas = sc.renderer.domElement;
 		let pointer = null;
 		let hovered = null;
 		let dragging = false;
 		let down = null;
-		// Short fly-in on first open, from a pose fitted to the stage's real aspect.
-		sc.resize();
-		sc.placeHome(1.45);
-		let fly = sc.flyHome(reducedMotion.matches ? 1 : 1400);
+		let lastAudio = 0;
 		let last = performance.now();
 
-		function pick(x, y) {
-			const rect = sc.renderer.domElement.getBoundingClientRect();
-			ndc.set((x / rect.width) * 2 - 1, -(y / rect.height) * 2 + 1);
+		function pickAt(x, y) {
+			ndc.set((x / canvas.clientWidth) * 2 - 1, -(y / canvas.clientHeight) * 2 + 1);
 			raycaster.setFromCamera(ndc, sc.camera);
-			const hit = raycaster.intersectObjects(pickTargets, false)[0];
-			if (!hit) return null;
-			return hit.object.userData.reservoir ? { reservoir: hit.object.userData.reservoir } : { gauge: hit.object.userData.gauge };
+			const hits = raycaster.intersectObjects([ pick, rivers.gauges ], false);
+			const h = hits[0];
+			if (!h) return null;
+			if (h.object === pick) return { reservoir: basins.basins[h.instanceId].r, index: h.instanceId };
+			return { gauge: data.gauges[h.instanceId] };
 		}
 
-		function toScreen(v) {
-			v.project(sc.camera);
-			return [ (v.x + 1) / 2 * container.clientWidth, (1 - v.y) / 2 * container.clientHeight, v.z ];
-		}
-
-		function screenPos(id) {
-			const [ x, y ] = toScreen(res.topOf(id, tmp));
-			return [ x, y ];
-		}
-
-		function showHit(h, x, y) {
-			const i = store.get().dateIndex;
-			if (h.reservoir) tooltip.showReservoir(h.reservoir, i, data.dates[i], x, y);
-			else tooltip.showGauge(h.gauge, i, data.dates[i], x, y);
-		}
-
-		const canvas = sc.renderer.domElement;
 		const local = (e) => {
-			const rect = canvas.getBoundingClientRect();
-			return [ e.clientX - rect.left, e.clientY - rect.top ];
+			const r = canvas.getBoundingClientRect();
+			return [ e.clientX - r.left, e.clientY - r.top ];
 		};
 		canvas.addEventListener("pointermove", (e) => {
-			if (e.pointerType === "touch") return;
-			pointer = local(e);
+			if (e.pointerType !== "touch") pointer = local(e);
 		});
 		canvas.addEventListener("pointerleave", () => {
 			pointer = null;
-			if (hovered) tooltip.hide();
 			hovered = null;
+			lakes.setHighlight(-1);
+			tooltip.hide();
 			canvas.style.cursor = "";
 		});
 		canvas.addEventListener("pointerdown", (e) => {
 			down = { p: local(e), t: performance.now() };
+			if (ui.replaying) stopReplay();
 		});
 		canvas.addEventListener("pointerup", (e) => {
 			if (!down) return;
@@ -111,13 +167,13 @@ export function createView3D(container, data, store, tooltip) {
 			const quick = performance.now() - down.t < 600;
 			down = null;
 			if (moved > 8 || !quick) return;
-			const h = pick(p[0], p[1]);
+			const h = pickAt(p[0], p[1]);
 			if (h && h.reservoir) {
+				tooltip.hide();
 				store.set({ selected: h.reservoir.id });
-				const [ x, y ] = screenPos(h.reservoir.id);
-				showHit(h, x, y);
-			} else if (h) {
-				showHit(h, p[0], p[1]);
+			} else if (h && h.gauge) {
+				const i = store.get().dateIndex;
+				tooltip.showGauge(h.gauge, i, data.dates[i], p[0], p[1]);
 			} else {
 				store.set({ selected: null });
 				tooltip.hide();
@@ -125,73 +181,135 @@ export function createView3D(container, data, store, tooltip) {
 		});
 		sc.controls.addEventListener("start", () => {
 			dragging = true;
+			mover = null;
 			tooltip.hide();
 		});
 		sc.controls.addEventListener("end", () => {
 			dragging = false;
 		});
 
+		function focus(id) {
+			const b = basins.byId.get(id);
+			if (!b) return;
+			const dir = [ -b.eu[0] * 0.8 + b.ev[0] * 0.6, -b.eu[1] * 0.8 + b.ev[1] * 0.6 ];
+			mover = flyTo(THREE, sc.camera, sc.controls, {
+				target: [ b.cx - b.eu[0] * b.Lu * 0.5, b.P - b.D * 0.4, b.cz - b.eu[1] * b.Lu * 0.5 ],
+				dist: 16 + b.Lu * 3.4,
+				polar: 1.02,
+				az: Math.atan2(dir[0], dir[1]),
+			}, 1500);
+			audio.whoosh();
+		}
+
 		function frame(now) {
 			if (!running) return;
 			raf = requestAnimationFrame(frame);
 			const dt = Math.min(0.1, (now - last) / 1000);
 			last = now;
-			if (fly && fly(now)) fly = null;
-			sc.controls.update();
-			res.tick(dt);
-			streams.tick(dt, now / 1000, !reducedMotion.matches);
+			if (!reducedMotion.matches) shared.uTime.value = now / 1000;
 
-			if (pointer && !dragging) {
-				const h = pick(pointer[0], pointer[1]);
+			if (replayFn) {
+				const t = (now - replayStart) / (REPLAY_MS_PER_MONTH * (data.months.length - 1));
+				if (t >= 1) stopReplay(true);
+				else {
+					const p = replayFn(t);
+					sc.controls.target.set(...p.target);
+					sc.camera.position.copy(poseToPosition(THREE, p));
+					const idx = Math.min(data.months.length - 1, Math.floor(t * (data.months.length - 1) + 0.0001));
+					if (idx !== store.get().dateIndex) store.set({ dateIndex: idx });
+				}
+			} else if (mover && mover(now)) mover = null;
+			sc.controls.update();
+			sc.updateSun();
+
+			// Ease toward the target month.
+			const k = 1 - Math.exp(-dt * 4.5);
+			for (let i = 0; i < cur.levels.length; i++) cur.levels[i] += (target.levels[i] - cur.levels[i]) * k;
+			for (let i = 0; i < cur.foam.length; i++) cur.foam[i] += (target.foam[i] - cur.foam[i]) * k;
+			for (let i = 0; i < cur.widths.length; i++) cur.widths[i] += (target.widths[i] - cur.widths[i]) * k;
+			cur.dryness += (target.dryness - cur.dryness) * k * 0.6;
+
+			if (pointer && !dragging && !replayFn) {
+				const h = pickAt(pointer[0], pointer[1]);
 				const key = h ? (h.reservoir ? h.reservoir.id : h.gauge.id) : null;
 				canvas.style.cursor = key ? "pointer" : "";
-				if (h) showHit(h, pointer[0], pointer[1]);
+				if (key !== hovered) {
+					lakes.setHighlight(h && h.reservoir ? h.index : -1);
+					if (key && h.reservoir) audio.hover();
+				}
+				const i = store.get().dateIndex;
+				if (h && h.reservoir) tooltip.showReservoir(h.reservoir, i, data.dates[i], pointer[0], pointer[1]);
+				else if (h) tooltip.showGauge(h.gauge, i, data.dates[i], pointer[0], pointer[1]);
 				else if (hovered) tooltip.hide();
 				hovered = key;
 				pointer = null;
 			}
 
-			// Labels, largest first; skip any that would overlap one already placed.
-			const placed = [];
-			for (const lb of labels) {
-				const [ x, y, z ] = toScreen(res.topOf(lb.r.id, tmp));
-				if (!lb.w) {
-					lb.el.style.display = "";
-					lb.w = lb.el.offsetWidth;
-					lb.h = lb.el.offsetHeight;
-				}
-				const box = [ x - lb.w / 2 - 2, y - 20, x + lb.w / 2 + 2, y - 20 + lb.h ];
-				const clash = z > 1 || placed.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]);
-				lb.el.style.display = clash ? "none" : "";
-				if (clash) continue;
-				placed.push(box);
-				lb.el.style.transform = `translate(${Math.round(box[0] + 2)}px, ${Math.round(box[1])}px)`;
+			const w = container.clientWidth;
+			const h = container.clientHeight;
+			if (ui.comparing) {
+				const split = Math.round(w * controls.divider);
+				sc.renderer.setScissorTest(true);
+				applyState(snapshot(ui.compareIndex), snapshot(ui.compareIndex));
+				sc.renderer.setScissor(0, 0, split, h);
+				sc.renderer.render(sc.scene, sc.camera);
+				applyState(cur, target);
+				sc.renderer.setScissor(split, 0, w - split, h);
+				sc.renderer.render(sc.scene, sc.camera);
+				sc.renderer.setScissorTest(false);
+			} else {
+				applyState(cur, target);
+				sc.renderer.render(sc.scene, sc.camera);
 			}
-			sc.renderer.render(sc.scene, sc.camera);
+			labels.update(sc.camera, w, h, store.get().selected ?? hovered, ui.comparing);
+
+			if (now - lastAudio > 150) {
+				lastAudio = now;
+				spatialAudio();
+			}
 		}
 
-		function applyTheme(theme) {
-			land.setColors({ land: cssVar("--land"), side: cssVar("--land-side"), county: cssVar("--county") });
-			res.setColors({ glass: cssVar("--glass"), ink: cssVar("--ink") });
-			streams.setTheme(theme, cssVar("--stream"));
-			sc.setTheme(theme);
+		const v3 = new THREE.Vector3();
+		function spatialAudio() {
+			if (!audio.ready) return;
+			let g = 0;
+			let pan = 0;
+			basins.basins.forEach((b, i) => {
+				const rel = target.release[i];
+				const intensity = rel.outlet * 0.5 + rel.spill;
+				if (intensity < 0.02) return;
+				const info = dams.info.get(b.r.id);
+				v3.set(...info.toePoint);
+				const d = v3.distanceTo(sc.camera.position);
+				const gi = intensity / (1 + (d / 60) ** 2);
+				v3.project(sc.camera);
+				g += gi;
+				pan += gi * Math.max(-1, Math.min(1, v3.x));
+			});
+			audio.setSpatial(g, g > 0 ? pan / g : 0);
 		}
 
-		function update({ dateIndex, selected }, instant = false) {
-			res.setTargets(dateIndex, colorFor, instant);
-			streams.setTargets(dateIndex, instant);
-			res.setActive(selected);
+		function setMonth(i) {
+			target = snapshot(i);
+			labels.setValues(i);
 		}
+		setMonth(store.get().dateIndex);
 
-		update(store.get(), true);
-		applyTheme(currentTheme());
-		store.subscribe((s, changed) => {
-			if (changed.includes("dateIndex") || changed.includes("selected")) update(s);
+		const unsub = store.subscribe((s, changed) => {
+			if (changed.includes("dateIndex")) setMonth(s.dateIndex);
+			if (changed.includes("selected")) {
+				const idx = basins.basins.findIndex((b) => b.r.id === s.selected);
+				lakes.setHighlight(idx);
+				if (s.selected && s.mode === "3d") focus(s.selected);
+			}
 		});
-		new ResizeObserver(() => sc.resize()).observe(container);
-		sc.resize();
+		const ro = new ResizeObserver(() => sc.resize());
+		ro.observe(container);
 
 		return {
+			THREE,
+			sc,
+			basins,
 			start() {
 				if (running) return;
 				running = true;
@@ -202,15 +320,98 @@ export function createView3D(container, data, store, tooltip) {
 				running = false;
 				cancelAnimationFrame(raf);
 			},
-			reset() {
-				fly = sc.flyHome(800);
+			home() {
+				mover = flyTo(THREE, sc.camera, sc.controls, home(), 1200);
+				audio.whoosh();
 			},
-			applyTheme,
-			screenPos,
+			preset(name) {
+				preset = applyPreset(name, { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, rivers, terrain });
+			},
+			focus,
+			replay(on) {
+				if (on) {
+					const keyAt = (id, dist, az, polar = 0.98) => {
+						const b = basins.byId.get(id);
+						return { target: [ b.cx, b.P - 2, b.cz ], dist, az, polar };
+					};
+					const wide = home();
+					replayFn = replayPath([
+						{ ...wide, dist: wide.dist * 1.05 },
+						keyAt("SHA", 230, 0.5),
+						keyAt("ORO", 210, -0.3),
+						keyAt("FOL", 260, 0.35, 1.02),
+						keyAt("NML", 230, -0.25),
+						keyAt("PNF", 250, 0.45),
+						{ ...wide, dist: wide.dist * 1.08 },
+					]);
+					replayStart = performance.now();
+					mover = null;
+				} else replayFn = null;
+			},
+			screenPos(id) {
+				const b = basins.byId.get(id);
+				v3.set(b.cx, b.levelFor(0.6), b.cz).project(sc.camera);
+				return [ (v3.x + 1) / 2 * container.clientWidth, (1 - v3.y) / 2 * container.clientHeight ];
+			},
+			level: (id) => cur.levels[basins.basins.findIndex((b) => b.r.id === id)],
+			pose: () => poseOf(THREE, sc.camera, sc.controls),
+			moving: () => Boolean(mover || replayFn),
+			dispose() {
+				this.stop();
+				unsub();
+				ro.disconnect();
+				sc.renderer.dispose();
+				sc.renderer.forceContextLoss();
+				container.innerHTML = "";
+			},
 			renderer: sc.renderer,
-			waterLevel: (id) => res.byId.get(id).level,
+			get presetName() {
+				return preset.label;
+			},
 		};
 	}
+
+	function startReplay() {
+		if (!ctx) return;
+		ui.replaying = true;
+		store.set({ playing: false, selected: null, dateIndex: 0 });
+		tooltip.hide();
+		ctx.replay(true);
+		audio.swell(true);
+		syncControls();
+	}
+
+	function stopReplay(finished = false) {
+		ui.replaying = false;
+		if (ctx) {
+			ctx.replay(false);
+			if (finished) ctx.home();
+		}
+		audio.swell(false);
+		syncControls();
+	}
+
+	function toggleCompare() {
+		ui.comparing = !ui.comparing;
+		if (ui.comparing && store.get().dateIndex === ui.compareIndex) {
+			store.set({ dateIndex: Math.max(0, data.months.indexOf("2017-04")) });
+		}
+		tooltip.hide();
+		syncControls();
+	}
+
+	async function rebuild() {
+		if (!ctx) return;
+		stopReplay();
+		ctx.dispose();
+		ctx = null;
+		ready = null;
+		await api.mount();
+	}
+
+	store.subscribe((s, changed) => {
+		if (changed.includes("dateIndex")) syncControls();
+	});
 
 	document.addEventListener("visibilitychange", () => {
 		if (!ctx) return;
@@ -218,34 +419,40 @@ export function createView3D(container, data, store, tooltip) {
 		else if (!container.hidden) ctx.start();
 	});
 
-	return {
+	const api = {
 		async mount() {
 			if (!ready) ready = init().then((c) => (ctx = c));
 			await ready;
+			controls.show(true);
+			syncControls();
 			if (ctx) ctx.start();
 		},
 		pause() {
+			controls.show(false);
+			if (ui.replaying) stopReplay();
 			if (ctx) ctx.stop();
 		},
 		resume() {
 			if (ctx) ctx.start();
 		},
 		resetView() {
-			if (ctx) ctx.reset();
+			if (ui.replaying) stopReplay();
+			if (ctx) ctx.home();
 		},
-		setTheme(theme) {
-			if (ctx) ctx.applyTheme(theme);
+		setTheme() {
+			if (ctx && !ui.sky) ctx.preset(skyName());
+			syncControls();
 		},
 		screenPos(id) {
 			return ctx ? ctx.screenPos(id) : [ 0, 0 ];
 		},
 		focusReservoir(r) {
-			if (!ctx) return;
-			const [ x, y ] = ctx.screenPos(r.id);
-			const i = store.get().dateIndex;
-			tooltip.showReservoir(r, i, data.dates[i], x, y);
+			// Selecting through the store already flies the camera; only refocus a re-pick.
+			if (ctx && store.get().selected === r.id) ctx.focus(r.id);
 		},
 		debug: () => ctx,
-		hint: "Drag to orbit, pinch or scroll to zoom, right-drag or two fingers to pan. Hover or tap a column.",
+		ui,
+		hint: "Drag to orbit, scroll or pinch to zoom, right-drag or two fingers to pan. Click a lake to fly in.",
 	};
+	return api;
 }

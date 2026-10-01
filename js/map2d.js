@@ -5,7 +5,7 @@ import { colorFor, makeProjection, meander, flowScale, MAJOR_CAPACITY, fmtPct } 
 const d3 = window.d3;
 const LABEL_LEFT = new Set([ "CLE", "BER", "WHI" ]);
 
-export function createMap2D(container, data, store, tooltip) {
+export function createMap2D(container, data, store, tooltip, audio) {
 	const stage = container.parentElement;
 	const svg = d3.select(container).append("svg").attr("class", "map-2d")
 		.attr("role", "img").attr("aria-label", "Map of California reservoirs coloured by percent full");
@@ -58,7 +58,10 @@ export function createMap2D(container, data, store, tooltip) {
 	}
 
 	res
-		.on("pointerenter pointermove", (event, r) => {
+		.on("pointerenter", (event) => {
+			if (event.pointerType !== "touch") audio.hover();
+		})
+		.on("pointerenter.tip pointermove", (event, r) => {
 			if (event.pointerType === "touch") return;
 			const [ x, y ] = d3.pointer(event, stage);
 			showFor(r, x, y);
@@ -68,9 +71,8 @@ export function createMap2D(container, data, store, tooltip) {
 		})
 		.on("click", (event, r) => {
 			event.stopPropagation();
+			tooltip.hide();
 			store.set({ selected: r.id });
-			const p = screenPos(r.id);
-			showFor(r, p[0], p[1]);
 		})
 		.on("focus", (event, r) => {
 			const p = screenPos(r.id);
@@ -191,10 +193,7 @@ export function createMap2D(container, data, store, tooltip) {
 			svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
 		},
 		screenPos,
-		focusReservoir(r) {
-			const p = screenPos(r.id);
-			showFor(r, p[0], p[1]);
-		},
+		focusReservoir() {},
 		pause() {},
 		resume() {},
 		hint: "Scroll or pinch to zoom, drag to pan. Hover or tap a reservoir.",

@@ -8,6 +8,10 @@ import { renderLegend } from "./legend.js";
 import { initTheme } from "./theme.js";
 import { createMap2D } from "./map2d.js";
 import { createView3D } from "./view3d.js";
+import { createDetailCard } from "./detailCard.js";
+import { createAudio } from "./audio/engine.js";
+import { initSoundControls } from "./audio/controls.js";
+import { flowScale } from "./scales.js";
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -33,15 +37,34 @@ async function start() {
 	});
 
 	const tooltip = createTooltip($("#tooltip"), stage);
+	const audio = createAudio();
 	const views = {
-		"2d": createMap2D($("#view-2d"), data, store, tooltip),
-		"3d": createView3D($("#view-3d"), data, store, tooltip),
+		"2d": createMap2D($("#view-2d"), data, store, tooltip, audio),
+		"3d": createView3D($("#view-3d"), data, store, tooltip, audio),
 	};
+	createDetailCard(stage, data, store);
+
+	// Statewide sound mood for a month: storage drives water vs. wind, flow adds body.
+	const gaugesWithFlow = data.gauges.filter((g) => g.flow);
+	const mood = (i) => {
+		const wet = Math.min(1, Math.max(0, (data.totals[i].pct - 0.3) / 0.45));
+		const flow = gaugesWithFlow.reduce((acc, g) => acc + flowScale(g.flow[i] ?? 0), 0) / Math.max(1, gaugesWithFlow.length);
+		audio.setMonth(wet, flow);
+	};
+	initSoundControls($("#sound"), audio, () => mood(store.get().dateIndex));
+	store.subscribe((s, changed) => {
+		if (changed.includes("dateIndex")) {
+			audio.tick();
+			mood(s.dateIndex);
+		}
+		if (changed.includes("selected") && s.selected) audio.select();
+	});
 
 	createTimeline($("#timeline"), data, store);
 	createSummary($("#summary"), data, store, (r) => {
+		const again = store.get().selected === r.id;
 		store.set({ selected: r.id });
-		views[store.get().mode].focusReservoir(r);
+		if (again) views[store.get().mode].focusReservoir(r);
 	});
 
 	const modeButtons = document.querySelectorAll(".mode-switch button");
@@ -83,7 +106,7 @@ async function start() {
 	document.body.dataset.ready = "true";
 
 	// Small hook for the automated checks in tests/check.mjs.
-	window.droughtViz = { store, data, views };
+	window.droughtViz = { store, data, views, audio };
 }
 
 start();

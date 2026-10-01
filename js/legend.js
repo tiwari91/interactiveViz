@@ -26,8 +26,12 @@ const KEY_2D = `
 
 const KEY_3D = `
 	<span class="legend-item">
-		<svg width="20" height="28" aria-hidden="true"><rect x="3" y="2" width="14" height="24" rx="2" fill="none" stroke="var(--glass)"/><rect x="5" y="15" width="10" height="9" fill="${pctColor(0.3)}"/></svg>
-		<span>Height = capacity<br>water = storage</span>
+		<svg width="34" height="22" aria-hidden="true"><ellipse cx="17" cy="11" rx="15" ry="9" fill="#e6dac2" stroke="#b9ab90"/><ellipse cx="19" cy="12" rx="9" ry="5" fill="#2f6f86"/></svg>
+		<span>Lake = storage<br>pale banks = exposed shore</span>
+	</span>
+	<span class="legend-item">
+		<svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="${pctColor(0.3)}" stroke="var(--surface)" stroke-width="1.5"/></svg>
+		<span>Dot = % full</span>
 	</span>`;
 
 const KEY_COMMON = `

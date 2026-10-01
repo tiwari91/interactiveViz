@@ -1,21 +1,111 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
-	<title>Drought Viz</title>
-	
-	<link rel="stylesheet" href="libs/css/style.css">
-	<link rel="stylesheet" href="libs/css/d3.slider.css" />
-	
-	<script src="libs/js/d3.v3.min.js"></script>
-	<script src="libs/js/topojson.v1.min.js"></script>
-	<script src="libs/js/queue.v1.min.js"></script>
-	<script src="libs/js/jquery.min.js"></script>
-	<script src="libs/js/jquery.csv-0.71.min.js"></script>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<title>California Drought Impact</title>
+	<meta name="description" content="Interactive 2D and 3D visualization of California reservoir storage and river links through the 2012–2016 drought.">
+	<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+	<link rel="stylesheet" href="css/base.css">
+	<link rel="stylesheet" href="css/layout.css">
+	<link rel="stylesheet" href="css/viz.css">
+	<script>
+		// Apply the saved theme before first paint to avoid a flash.
+		try {
+			const saved = localStorage.getItem("cdi-theme");
+			if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+		} catch (e) { /* storage unavailable */ }
+	</script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+	<script type="module" src="js/main.js"></script>
 </head>
-
 <body>
-	<script type="text/javascript" src="main.js"></script>
-</body>
+	<header class="site-header">
+		<a class="brand" href="./" aria-label="California Drought Impact home">
+			<img class="brand-logo" src="assets/logo.svg" alt="" width="36" height="36">
+			<span class="brand-text">California Drought Impact</span>
+		</a>
+		<button class="theme-toggle" type="button" id="theme-toggle" aria-label="Switch to dark theme">
+			<svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z"/></svg>
+			<svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>
+		</button>
+	</header>
 
+	<main>
+		<section class="intro">
+			<p class="eyebrow">Cal State Fullerton · 2016 research prototype, rebuilt</p>
+			<h1>How full were California’s reservoirs during the drought?</h1>
+			<p class="lede">
+				Monthly storage for 36 reservoirs from October 2011 to September 2017, from the wet year before the
+				drought, through the record lows of 2014–2015, to the 2017 recovery. Lines link each reservoir
+				to a river gauge in its basin. Use the timeline to move through the months, and switch to 3D to see each
+				reservoir as a column of water.
+			</p>
+		</section>
+
+		<section class="viz-card" aria-label="Reservoir visualization">
+			<div class="toolbar">
+				<div class="mode-switch" role="group" aria-label="View mode">
+					<button type="button" data-mode="2d" aria-pressed="true">2D map</button>
+					<button type="button" data-mode="3d" aria-pressed="false">3D</button>
+				</div>
+				<div class="legend" id="legend" aria-label="Legend"></div>
+			</div>
+
+			<div class="viz-body">
+				<div class="stage" id="stage">
+					<div class="view view-2d" id="view-2d"></div>
+					<div class="view view-3d" id="view-3d" hidden></div>
+					<button type="button" class="stage-btn" id="reset-view" aria-label="Reset view">Reset view</button>
+					<p class="stage-hint" id="stage-hint"></p>
+					<div class="tooltip" id="tooltip" role="status" aria-live="polite" hidden></div>
+					<div class="loading" id="loading">Loading data…</div>
+				</div>
+
+				<aside class="summary" id="summary" aria-label="Statewide summary"></aside>
+			</div>
+
+			<div class="timeline" id="timeline"></div>
+		</section>
+
+		<section class="about">
+			<div>
+				<h2>About the project</h2>
+				<p>
+					<em>California Drought Impact</em> is an interactive multimodal data artwork about the drought, built from
+					laser-cut wooden data sculptures, projection mapping and a digital visualization. The digital part went
+					through California’s map data, drew lines as streams and let people explore the reservoirs.
+					It was built in 2016 with D3.js, JSON, Python and jQuery. This page rebuilds it with D3 v7 and three.js.
+				</p>
+				<p>
+					Concept and visual design: <strong>Yoon Chung Han</strong> (principal investigator).
+					Development: <strong>Shankar Tiwari</strong>, student research assistant, California State University, Fullerton.
+					<a href="http://yoonchunghan.com/portfolio/california-drought-impact.html">Original project page</a> ·
+					<a href="legacy/">2016 version</a>
+				</p>
+			</div>
+			<div>
+				<h2>Publication &amp; data</h2>
+				<p>
+					Yoon Chung Han and Shankar Tiwari. <em>California Drought Impact: Multimodal Data Representation to Predict
+					the Water Cycle.</em> IEEE VISAP 2016.
+				</p>
+				<p>
+					Reservoir storage (sensor 15, acre-feet) and river flow (sensor 41, monthly mean of daily cfs) come from the
+					<a href="https://cdec.water.ca.gov/">California Data Exchange Center</a>. Only five of the fourteen river
+					gauges report daily flow, so the other links are drawn at a fixed width. Capacities and locations come from the
+					original 2016 dataset.
+				</p>
+			</div>
+		</section>
+	</main>
+
+	<footer class="site-footer">
+		<span>Source on <a href="https://github.com/tiwari91/interactiveViz">GitHub</a> · Apache-2.0</span>
+	</footer>
+</body>
 </html>

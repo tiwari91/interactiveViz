@@ -26,9 +26,9 @@ $(document).ready(function() {
 
 
     queue()
-        .defer(d3.json, 'data/ca.json')
-        .defer(d3.csv, 'data/reservoir_filtered_data.csv')
-        .defer(d3.csv, 'data/reservoir_dis_link.csv')
+        .defer(d3.json, '../data/ca.json')
+        .defer(d3.csv, '../data/reservoir_filtered_data.csv')
+        .defer(d3.csv, '../data/reservoir_dis_link.csv')
         .await(function(error, ca, reservoirs, reservoir_dis) {
 
             var g = svg.append("g");

@@ -1,0 +1,100 @@
+/* Design tokens, light by default; dark via system preference or data-theme. */
+:root {
+	--bg: #f6f2ea;
+	--surface: #fffdf8;
+	--surface-2: #efe9dd;
+	--ink: #1f2328;
+	--ink-2: #4a4f57;
+	--ink-3: #6f747c;
+	--line: #ddd5c6;
+	--accent: #1f6fae;
+	--accent-ink: #ffffff;
+	--warm: #c2410c;
+	--land: #e7dfcf;
+	--land-edge: #b9ad97;
+	--land-side: #cbbfa8;
+	--county: #cfc4ae;
+	--stream: #2f86c4;
+	--glass: #6b7d90;
+	--focus: #1f6fae;
+	--shadow: 0 1px 2px rgb(40 30 10 / 6%), 0 8px 24px rgb(40 30 10 / 8%);
+	--radius: 14px;
+	--font-display: "Fraunces", Georgia, serif;
+	--font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+	color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--bg: #0e1217;
+		--surface: #151b22;
+		--surface-2: #1c242d;
+		--ink: #e8e4dc;
+		--ink-2: #b8b4ad;
+		--ink-3: #8d9097;
+		--line: #2a333d;
+		--accent: #5aa9e6;
+		--accent-ink: #0b1218;
+		--warm: #f08a4b;
+		--land: #26303a;
+		--land-edge: #4a5866;
+		--land-side: #1b232b;
+		--county: #34404c;
+		--stream: #63b8f0;
+		--glass: #9fb4c8;
+		--focus: #7cc0f2;
+		--shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 10px 30px rgb(0 0 0 / 35%);
+		color-scheme: dark;
+	}
+}
+
+:root[data-theme="dark"] {
+	--bg: #0e1217;
+	--surface: #151b22;
+	--surface-2: #1c242d;
+	--ink: #e8e4dc;
+	--ink-2: #b8b4ad;
+	--ink-3: #8d9097;
+	--line: #2a333d;
+	--accent: #5aa9e6;
+	--accent-ink: #0b1218;
+	--warm: #f08a4b;
+	--land: #26303a;
+	--land-edge: #4a5866;
+	--land-side: #1b232b;
+	--county: #34404c;
+	--stream: #63b8f0;
+	--glass: #9fb4c8;
+	--focus: #7cc0f2;
+	--shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 10px 30px rgb(0 0 0 / 35%);
+	color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--ink);
+	font: 400 16px/1.55 var(--font-body);
+	overflow-x: hidden;
+}
+
+h1, h2 { font-family: var(--font-display); font-weight: 650; letter-spacing: -0.01em; }
+
+a { color: var(--accent); text-underline-offset: 2px; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+button { font: inherit; color: inherit; }
+
+[hidden] { display: none !important; }
+
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

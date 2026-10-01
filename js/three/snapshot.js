@@ -1,33 +1,13 @@
 // Everything month-dependent in the 3D scene, as plain arrays: lake levels and
 // tints, dam releases, river widths and how dry the land looks.
-import { colorFor, flowScale } from "../scales.js";
-import { flowAt } from "../data.js";
-
-const smoothstep = (a, b, x) => {
-	const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-	return t * t * (3 - 2 * t);
-};
+import { colorFor } from "../scales.js";
+import { createRelease, smoothstep } from "../release.js";
 
 export function createSnapshots(data, basins, foamSpots, rivers) {
-	const linkedFlow = new Map();
-	for (const l of data.links) {
-		if (!l.gauge.flow) continue;
-		const list = linkedFlow.get(l.reservoir.id) ?? [];
-		list.push(l.gauge);
-		linkedFlow.set(l.reservoir.id, list);
-	}
+	const { releaseOf: rel } = createRelease(data);
 	const index = new Map(basins.basins.map((b, i) => [ b.r.id, i ]));
 	const cache = new Map();
-
-	function releaseOf(r, i, pct) {
-		const gauges = linkedFlow.get(r.id) ?? [];
-		const boost = gauges.reduce((m, g) => Math.max(m, flowScale(flowAt(g, i) ?? 0)), 0);
-		const p = pct ?? 0;
-		return {
-			outlet: pct === null ? 0 : Math.min(1, 0.12 + 0.45 * smoothstep(0.25, 0.95, p) + 0.45 * boost),
-			spill: smoothstep(0.9, 0.985, p),
-		};
-	}
+	const releaseOf = (r, i) => rel(r, i);
 
 	return function snapshot(i) {
 		if (cache.has(i)) return cache.get(i);
@@ -43,7 +23,7 @@ export function createSnapshots(data, basins, foamSpots, rivers) {
 			levels.push(b.levelFor(pct));
 			tints.push(colorFor(pct));
 			visible.push(pct !== null && pct > 0.003);
-			release.push(releaseOf(b.r, i, pct));
+			release.push(releaseOf(b.r, i));
 		}
 		const foam = foamSpots.map((s) => {
 			const rel = release[index.get(s.id)];

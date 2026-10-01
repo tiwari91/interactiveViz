@@ -67,7 +67,13 @@
 					<button type="button" class="stage-btn" id="reset-view" aria-label="Reset view">Reset view</button>
 					<p class="stage-hint" id="stage-hint"></p>
 					<div class="tooltip" id="tooltip" role="status" aria-live="polite" hidden></div>
-					<div class="loading" id="loading">Loading data…</div>
+					<div class="loading" id="loading" role="status" aria-live="polite">
+						<div class="loading-inner">
+							<img src="assets/logo.svg" alt="" width="44" height="44">
+							<div class="loading-bar"><span></span></div>
+							<p class="loading-text">Loading data…</p>
+						</div>
+					</div>
 				</div>
 
 				<aside class="summary" id="summary" aria-label="Statewide summary"></aside>

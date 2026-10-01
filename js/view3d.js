@@ -62,21 +62,31 @@ export function createView3D(container, data, store, tooltip, audio) {
 		controls.setState({ ...ui, sky: skyName(), dateIndex: store.get().dateIndex });
 	}
 
-	async function init() {
+	async function init(progress) {
 		if (!webglAvailable()) {
 			container.innerHTML = "<div class=\"webgl-fallback\">3D needs WebGL, which this browser has turned off. The 2D map shows the same data.</div>";
 			return null;
 		}
+		// Let the loading bar paint between the heavy synchronous steps.
+		const step = async (f, text) => {
+			progress(f, text);
+			await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+		};
+		await step(0.1, "Loading three.js and elevation…");
 		const [ THREE, elev, paths ] = await Promise.all([ loadThree(), loadElevation(ui.quality), d3.json("data/river_paths.json") ]);
+		await step(0.35, "Carving reservoir basins…");
 		const sc = createScene(THREE, container, ui.quality);
 		const world = createWorld(data, elev);
 		const basins = createBasins(data, world);
+		await step(0.55, "Building terrain…");
 		const terrain = createTerrain(THREE, data, world, basins, ui.quality);
+		await step(0.8, "Placing dams and rivers…");
 		const shared = waterUniforms(THREE);
 		const lakes = createLakes(THREE, basins, shared);
 		const ocean = createOcean(THREE, shared);
 		const dams = createDams(THREE, data, basins);
 		const rivers = createRivers(THREE, data, world, basins, paths, shared);
+		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
 		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
 		const labels = createLabels(THREE, container, basins, maxCap);
@@ -270,23 +280,19 @@ export function createView3D(container, data, store, tooltip, audio) {
 		}
 
 		const v3 = new THREE.Vector3();
+		const toCam = new THREE.Vector3();
+		const right = new THREE.Vector3();
+		// Distance and stereo direction from the camera to every dam.
 		function spatialAudio() {
 			if (!audio.ready) return;
-			let g = 0;
-			let pan = 0;
-			basins.basins.forEach((b, i) => {
-				const rel = target.release[i];
-				const intensity = rel.outlet * 0.5 + rel.spill;
-				if (intensity < 0.02) return;
+			right.setFromMatrixColumn(sc.camera.matrixWorld, 0);
+			audio.setListener(basins.basins.map((b) => {
 				const info = dams.info.get(b.r.id);
 				v3.set(...info.toePoint);
-				const d = v3.distanceTo(sc.camera.position);
-				const gi = intensity / (1 + (d / 60) ** 2);
-				v3.project(sc.camera);
-				g += gi;
-				pan += gi * Math.max(-1, Math.min(1, v3.x));
-			});
-			audio.setSpatial(g, g > 0 ? pan / g : 0);
+				toCam.copy(v3).sub(sc.camera.position);
+				const dist = toCam.length();
+				return { id: b.r.id, dist, pan: Math.max(-1, Math.min(1, toCam.dot(right) / Math.max(1, dist) * 1.6)) };
+			}));
 		}
 
 		function setMonth(i) {
@@ -406,7 +412,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		ctx.dispose();
 		ctx = null;
 		ready = null;
-		await api.mount();
+		await api.mount(api.onProgress);
 	}
 
 	store.subscribe((s, changed) => {
@@ -420,8 +426,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 	});
 
 	const api = {
-		async mount() {
-			if (!ready) ready = init().then((c) => (ctx = c));
+		async mount(progress = () => {}) {
+			if (!ready) ready = init(progress).then((c) => (ctx = c));
 			await ready;
 			controls.show(true);
 			syncControls();
@@ -429,6 +435,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		},
 		pause() {
 			controls.show(false);
+			audio.setListener(null);
 			if (ui.replaying) stopReplay();
 			if (ctx) ctx.stop();
 		},
@@ -451,6 +458,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			if (ctx && store.get().selected === r.id) ctx.focus(r.id);
 		},
 		debug: () => ctx,
+		onProgress: () => {},
+		available: webglAvailable(),
 		ui,
 		hint: "Drag to orbit, scroll or pinch to zoom, right-drag or two fingers to pan. Click a lake to fly in.",
 	};

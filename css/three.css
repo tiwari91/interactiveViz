@@ -193,3 +193,31 @@
 /* In 2D the north of the state sits top-left, so the card goes over the ocean instead. */
 body[data-mode="2d"] .detail-card { top: auto; bottom: 12px; }
 body:has(.detail-card:not([hidden])) .stage-hint { display: none; }
+
+.detail-sound { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px; margin-top: 8px; }
+
+.detail-sound-label { color: var(--ink-3); font-size: 0.7rem; }
+
+.detail-meter { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+
+.detail-meter span { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #7fb6d9, #1d5fa3); transition: width 0.4s ease; }
+
+.detail-meter.spill span { background: linear-gradient(90deg, #7fb6d9, #1d5fa3 70%, #e8f6ff); }
+
+.detail-sound-val { color: var(--ink); font-size: 0.72rem; white-space: nowrap; }
+
+.detail-listen {
+	padding: 3px 10px;
+	border: 1px solid var(--line);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--ink);
+	font-size: 0.72rem;
+	cursor: pointer;
+}
+
+.detail-listen[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+@media (max-width: 560px) {
+	.detail-sound { margin-top: 4px; }
+}

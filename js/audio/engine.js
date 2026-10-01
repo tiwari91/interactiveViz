@@ -1,7 +1,10 @@
 // Procedural sound with the Web Audio API: no audio files.
 // - Ambient bed follows the data: water (wet months) vs wind and cicadas (drought).
-// - Spatial dam roar in 3D, from the camera's distance and direction to releasing dams.
+// - Per-dam roar voices whose loudness and character follow storage, size and release,
+//   placed by the 3D camera's distance and direction.
 // - Quiet interface sounds: hover tick, select chime, fly-to whoosh, timeline tick, replay swell.
+import { createDamVoices } from "./damVoices.js";
+
 const calm = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function noiseBuffer(ctx, seconds, kind) {
@@ -32,10 +35,47 @@ function noiseBuffer(ctx, seconds, kind) {
 export function createAudio() {
 	let ctx = null;
 	let nodes = null;
-	let volume = 0.6;
+	let volume = 0.5;
 	let muted = true;
 	let lastTick = 0;
 	let built = 0;
+	let levels = new Map(); // id -> { level, size, spill, ... } for the current month
+	let listener = null; // 3D: [{ id, dist, pan }]; null in 2D
+	let focus = null;
+	let solo = null;
+	let lastSources = [];
+
+	// Turn data levels + listener position into per-dam voice gains.
+	function sourcesNow() {
+		const out = [];
+		for (const [ id, v ] of levels) {
+			if (v.level <= 0) continue;
+			let gain = 0;
+			let pan = 0;
+			if (solo) {
+				if (id !== solo) continue;
+				gain = 0.12 + 0.88 * v.level;
+			} else if (listener) {
+				const l = listener.get(id);
+				if (!l) continue;
+				const reach = 45 + 110 * v.size;
+				gain = v.level ** 1.15 / (1 + (l.dist / reach) ** 2);
+				if (id === focus) gain = Math.max(gain, v.level ** 1.15 * 0.8) * 1.25;
+				pan = l.pan;
+			} else if (id === focus) {
+				gain = 0.85 * v.level ** 1.15;
+			} else continue;
+			out.push({ id, level: v.level, spill: v.spill, gain, pan });
+		}
+		return out;
+	}
+
+	function mixDams() {
+		if (!ctx) return;
+		lastSources = sourcesNow();
+		nodes.voices.update(lastSources);
+		ramp(nodes.ambient.gain, solo ? 0.25 : 1, 0.4);
+	}
 
 	function loop(buffer) {
 		const s = ctx.createBufferSource();
@@ -62,13 +102,30 @@ export function createAudio() {
 		ctx = new (window.AudioContext || window.webkitAudioContext)();
 		const master = ctx.createGain();
 		master.gain.value = 0;
+		// Glue compressor, then a fast limiter so loud wet-year scenes never clip.
 		const comp = ctx.createDynamicsCompressor();
-		comp.threshold.value = -18;
+		comp.threshold.value = -20;
 		comp.ratio.value = 3;
-		master.connect(comp).connect(ctx.destination);
+		comp.knee.value = 10;
+		const limiter = ctx.createDynamicsCompressor();
+		limiter.threshold.value = -3;
+		limiter.knee.value = 0;
+		limiter.ratio.value = 20;
+		limiter.attack.value = 0.002;
+		limiter.release.value = 0.2;
+		master.connect(comp).connect(limiter).connect(ctx.destination);
 		const brown = noiseBuffer(ctx, 4, "brown");
 		const pink = noiseBuffer(ctx, 4, "pink");
 		const white = noiseBuffer(ctx, 2, "white");
+
+		// Ambient bed and dam voices on separate buses so a solo can duck the bed.
+		const ambient = ctx.createGain();
+		ambient.gain.value = 1;
+		ambient.connect(master);
+		const damBus = ctx.createGain();
+		damBus.gain.value = 0.9;
+		damBus.connect(master);
+		const voices = createDamVoices(ctx, damBus, { brown, pink, white });
 
 		// Water: brown noise through a moving low-pass, plus a bubbling band.
 		const waterLP = ctx.createBiquadFilter();
@@ -76,7 +133,7 @@ export function createAudio() {
 		waterLP.frequency.value = 700;
 		const waterGain = ctx.createGain();
 		waterGain.gain.value = 0;
-		loop(brown).connect(waterLP).connect(waterGain).connect(master);
+		loop(brown).connect(waterLP).connect(waterGain).connect(ambient);
 		const babbleBP = ctx.createBiquadFilter();
 		babbleBP.type = "bandpass";
 		babbleBP.frequency.value = 1100;
@@ -85,7 +142,7 @@ export function createAudio() {
 		babbleAmp.gain.value = 0.5;
 		const babbleGain = ctx.createGain();
 		babbleGain.gain.value = 0;
-		loop(pink).connect(babbleBP).connect(babbleAmp).connect(babbleGain).connect(master);
+		loop(pink).connect(babbleBP).connect(babbleAmp).connect(babbleGain).connect(ambient);
 		lfo(0.37, 0.35, babbleAmp.gain, 0.5);
 		lfo(0.11, 260, babbleBP.frequency, 1100);
 
@@ -96,7 +153,7 @@ export function createAudio() {
 		windBP.Q.value = 0.8;
 		const windGain = ctx.createGain();
 		windGain.gain.value = 0;
-		loop(pink).connect(windBP).connect(windGain).connect(master);
+		loop(pink).connect(windBP).connect(windGain).connect(ambient);
 		lfo(0.06, 260, windBP.frequency, 520);
 
 		// Cicadas: a high tone, buzzing amplitude and slow on/off pulses.
@@ -108,19 +165,11 @@ export function createAudio() {
 		cicPulse.gain.value = 0.5;
 		const cicGain = ctx.createGain();
 		cicGain.gain.value = 0;
-		cic.connect(cicAM).connect(cicPulse).connect(cicGain).connect(master);
+		cic.connect(cicAM).connect(cicPulse).connect(cicGain).connect(ambient);
 		cic.start();
 		lfo(42, 0.5, cicAM.gain, 0.5);
 		lfo(0.23, 0.5, cicPulse.gain, 0.5);
 
-		// Dam roar: filtered white noise with stereo pan driven by the 3D camera.
-		const roarLP = ctx.createBiquadFilter();
-		roarLP.type = "lowpass";
-		roarLP.frequency.value = 1500;
-		const roarPan = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
-		const roarGain = ctx.createGain();
-		roarGain.gain.value = 0;
-		loop(white).connect(roarLP).connect(roarPan).connect(roarGain).connect(master);
 
 		// Interface sounds share one bus.
 		const ui = ctx.createGain();
@@ -128,7 +177,8 @@ export function createAudio() {
 		ui.connect(master);
 
 		built += 20;
-		nodes = { master, waterLP, waterGain, babbleGain, windBP, windGain, cicGain, roarLP, roarPan, roarGain, ui, white };
+		nodes = { master, waterLP, waterGain, babbleGain, windBP, windGain, cicGain, ambient, damBus, voices, ui, white };
+		mixDams();
 	}
 
 	const ramp = (param, value, t = 0.6) => param.setTargetAtTime(value, ctx.currentTime, t);
@@ -185,18 +235,36 @@ export function createAudio() {
 			if (!ctx) return;
 			const dry = 1 - wet;
 			const k = calm() ? 0.7 : 1;
-			ramp(nodes.waterGain.gain, (0.05 + 0.32 * wet + 0.12 * flow) * k, 1.2);
+			ramp(nodes.waterGain.gain, (0.02 + 0.4 * wet + 0.12 * flow) * k, 1.2);
 			ramp(nodes.waterLP.frequency, 380 + 1500 * wet + 600 * flow, 1.2);
 			ramp(nodes.babbleGain.gain, (0.02 + 0.14 * wet * (0.5 + flow)) * k, 1.2);
-			ramp(nodes.windGain.gain, (0.02 + 0.2 * dry) * k, 1.5);
-			ramp(nodes.cicGain.gain, Math.max(0, dry - 0.35) * 0.018 * k, 2);
+			ramp(nodes.windGain.gain, (0.01 + 0.28 * dry * dry) * k, 1.5);
+			ramp(nodes.cicGain.gain, Math.max(0, dry - 0.35) * 0.03 * k, 2);
 		},
-		// 3D: gain 0..1 and pan -1..1 for dams releasing water near the camera.
-		setSpatial(gain, pan) {
-			if (!ctx) return;
-			ramp(nodes.roarGain.gain, Math.min(0.45, gain) * (calm() ? 0.6 : 1), 0.25);
-			if (nodes.roarPan.pan) ramp(nodes.roarPan.pan, Math.max(-1, Math.min(1, pan)), 0.25);
-			ramp(nodes.roarLP.frequency, 500 + 2200 * Math.min(1, gain * 2), 0.3);
+		// Per-dam data levels for the month (from release.js voicesAt).
+		setDamLevels(map) {
+			levels = map;
+			mixDams();
+		},
+		// 3D listener: distance and pan to every dam, or null when not in 3D.
+		setListener(list) {
+			listener = list ? new Map(list.map((l) => [ l.id, l ])) : null;
+			mixDams();
+		},
+		setFocus(id) {
+			focus = id;
+			mixDams();
+		},
+		setSolo(id) {
+			solo = id;
+			mixDams();
+		},
+		get solo() {
+			return solo;
+		},
+		// The dam's own data level (0..1), independent of the camera.
+		levelOf(id) {
+			return levels.get(id)?.level ?? 0;
 		},
 		hover() {
 			blip(1320, 0.07, 0.035);
@@ -259,7 +327,14 @@ export function createAudio() {
 				setTimeout(() => pad.oscs.forEach((o) => o.stop()), 4000);
 			}
 		},
-		// For tests.
+		// For tests: data levels and what each live voice is doing.
+		debugLevels() {
+			return {
+				levels: Object.fromEntries([ ...levels ].map(([ id, v ]) => [ id, { level: +v.level.toFixed(3), spill: +v.spill.toFixed(3) } ])),
+				sources: lastSources.map((x) => ({ id: x.id, gain: +x.gain.toFixed(3), spill: +x.spill.toFixed(3) })),
+				voices: ctx ? nodes.voices.snapshot() : [],
+			};
+		},
 		debugState() {
 			return { context: ctx ? ctx.state : "none", nodes: built, muted, gain: ctx ? nodes.master.gain.value : 0 };
 		},

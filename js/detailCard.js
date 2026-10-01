@@ -5,7 +5,7 @@ import { DAM_TYPES, damTypeOf } from "./three/damTypes.js";
 
 const d3 = window.d3;
 
-export function createDetailCard(stage, data, store) {
+export function createDetailCard(stage, data, store, sound) {
 	const el = document.createElement("section");
 	el.className = "detail-card";
 	el.hidden = true;
@@ -20,9 +20,26 @@ export function createDetailCard(stage, data, store) {
 		<div class="detail-bar"><span></span></div>
 		<dl class="detail-grid"></dl>
 		<svg class="detail-spark" aria-hidden="true"></svg>
+		<div class="detail-sound">
+			<span class="detail-sound-label">Dam sound</span>
+			<span class="detail-meter" aria-hidden="true"><span></span></span>
+			<span class="num detail-sound-val"></span>
+			<button type="button" class="detail-listen" aria-pressed="false">Listen</button>
+		</div>
 		<p class="detail-note"></p>`;
 	stage.appendChild(el);
 	el.querySelector(".detail-close").addEventListener("click", () => store.set({ selected: null }));
+	const listen = el.querySelector(".detail-listen");
+	listen.addEventListener("click", async () => {
+		const id = store.get().selected;
+		if (!id) return;
+		if (sound.audio.solo === id) sound.audio.setSolo(null);
+		else {
+			await sound.turnOn();
+			sound.audio.setSolo(id);
+		}
+		renderSound(store.get());
+	});
 	document.addEventListener("keydown", (e) => {
 		if (e.key === "Escape" && !el.hidden) store.set({ selected: null });
 	});
@@ -47,6 +64,21 @@ export function createDetailCard(stage, data, store) {
 			: storage === null ? `No reading for ${fmtMonth(data.dates[dateIndex])}.`
 				: `${fmtMonth(data.dates[dateIndex])}. Line shows storage as % of capacity, 2011–2017.`;
 		drawSpark(r, dateIndex);
+		renderSound({ selected, dateIndex });
+	}
+
+	// How loud this dam's voice is this month (storage, size and release), 0-100.
+	function renderSound({ selected, dateIndex }) {
+		const v = selected && sound.release.voicesAt(dateIndex).get(selected);
+		if (!v) return;
+		const pct = Math.round(v.level * 100);
+		el.querySelector(".detail-meter span").style.width = `${pct}%`;
+		el.querySelector(".detail-meter").classList.toggle("spill", v.spill > 0.05);
+		el.querySelector(".detail-sound-val").textContent = v.spill > 0.05 ? `${pct} · spilling` : String(pct);
+		const on = sound.audio.solo === selected;
+		listen.setAttribute("aria-pressed", String(on));
+		listen.textContent = on ? "Stop" : "Listen";
+		listen.setAttribute("aria-label", on ? "Stop listening to this dam" : "Listen to this dam on its own");
 	}
 
 	function drawSpark(r, i) {

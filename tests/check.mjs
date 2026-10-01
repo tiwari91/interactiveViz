@@ -33,9 +33,17 @@ function check(name, ok, detail = "") {
 	console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
 }
 
-async function openPage(browser, base, { phone = false, scheme = "light", query = "" } = {}) {
+async function openPage(browser, base, { phone = false, scheme = "light", query = "", noWebGL = false } = {}) {
 	const ctx = await browser.newContext({ ...(phone ? devices["iPhone 12"] : { viewport: { width: 1440, height: 1000 } }), colorScheme: scheme });
 	const page = await ctx.newPage();
+	if (noWebGL) {
+		await page.addInitScript(() => {
+			const orig = HTMLCanvasElement.prototype.getContext;
+			HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+				return /webgl/.test(type) ? null : orig.call(this, type, ...rest);
+			};
+		});
+	}
 	const errors = [];
 	page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
 	page.on("pageerror", (e) => errors.push(e.message));
@@ -79,8 +87,23 @@ async function main() {
 	const allErrors = [];
 
 	try {
-		// ---------- Desktop 2D ----------
+		// ---------- Default mode and WebGL fallback ----------
 		let { ctx, page, errors } = await openPage(browser, base);
+		check("Default view is 3D", (await stateOf(page)).mode === "3d" && (await page.locator("#view-3d canvas").count()) === 1);
+		check("Loading overlay clears after 3D builds", await page.locator("#loading.done").count() === 1);
+		await page.locator(".mode-switch button[data-mode=\"2d\"]").click();
+		await page.reload();
+		await page.waitForSelector("body[data-ready=true]", { timeout: 90000 });
+		check("A saved 2D choice is honoured", (await stateOf(page)).mode === "2d");
+		await ctx.close();
+		allErrors.push(...errors);
+		({ ctx, page, errors } = await openPage(browser, base, { noWebGL: true }));
+		check("Without WebGL the page falls back to 2D", (await stateOf(page)).mode === "2d" && (await page.locator(".mode-switch button[data-mode=\"3d\"]").isDisabled()));
+		await ctx.close();
+
+		// ---------- Desktop 2D ----------
+		({ ctx, page, errors } = await openPage(browser, base, { query: "?mode=2d" }));
+		check("?mode=2d opens the 2D map", (await stateOf(page)).mode === "2d");
 		const counts = await page.evaluate(() => ({
 			counties: document.querySelectorAll(".map-2d .county").length,
 			reservoirs: document.querySelectorAll(".map-2d .res").length,
@@ -191,6 +214,31 @@ async function main() {
 		await shot(page, "3d-compare.png", ".stage");
 		await page.locator(".js-compare").click();
 
+		// Per-dam sound: level follows storage + release; spillway layer above ~90% full.
+		await page.locator(".sound-toggle").click();
+		await page.waitForTimeout(500);
+		const damSound = async (month) => {
+			await setState(page, { dateIndex: await monthIndex(page, month), selected: "SHA" });
+			await waitStill(page, 2500);
+			return page.evaluate(() => window.droughtViz.audio.debugLevels());
+		};
+		const dry = await damSound("2014-09");
+		const wet = await damSound("2017-04");
+		const voice = (d, id) => d.voices.find((v) => v.id === id) ?? { live: 0, crash: 0 };
+		check("Shasta's dam voice is much louder in Apr 2017 than Sep 2014", voice(wet, "SHA").live > 1.8 * voice(dry, "SHA").live,
+			`gain ${voice(dry, "SHA").live.toFixed(3)} -> ${voice(wet, "SHA").live.toFixed(3)}`);
+		check("A small, low reservoir is far quieter than Shasta", wet.levels.BLB.level < 0.3 * wet.levels.SHA.level && dry.levels.BLB.level < 0.3 * dry.levels.SHA.level,
+			`Black Butte ${dry.levels.BLB.level} vs Shasta ${dry.levels.SHA.level} (Sep 2014)`);
+		check("Spillway layer only when over 90% full", voice(wet, "SHA").crash > 0.05 && voice(dry, "SHA").crash === 0 && wet.levels.SHA.spill > 0,
+			`crash ${voice(dry, "SHA").crash} -> ${voice(wet, "SHA").crash.toFixed(3)}`);
+		check("Detail card shows the dam's sound level", /spilling/.test(await page.locator(".detail-sound-val").innerText()));
+		await page.locator(".detail-listen").click();
+		await page.waitForTimeout(300);
+		check("Listen solos the selected dam", (await page.evaluate(() => window.droughtViz.audio.solo)) === "SHA");
+		await page.locator(".detail-listen").click();
+		await page.locator(".sound-toggle").click();
+		await setState(page, { selected: null });
+
 		await page.locator(".js-replay").click();
 		await page.waitForTimeout(3500);
 		const rp = await stateOf(page);
@@ -204,7 +252,7 @@ async function main() {
 		// ---------- iPhone 12 ----------
 		for (const scheme of [ "light", "dark" ]) {
 			for (const mode of [ "2d", "3d" ]) {
-				({ ctx, page, errors } = await openPage(browser, base, { phone: true, scheme, query: mode === "3d" ? "?mode=3d" : "" }));
+				({ ctx, page, errors } = await openPage(browser, base, { phone: true, scheme, query: `?mode=${mode}` }));
 				if (mode === "3d") await waitStill(page, 1500);
 				else await page.waitForTimeout(400);
 				check(`iPhone 12 ${mode} ${scheme}: no horizontal scroll`, await noHScroll(page));

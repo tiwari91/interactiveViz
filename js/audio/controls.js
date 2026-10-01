@@ -71,4 +71,5 @@ export function initSoundControls(root, audio, onEnable) {
 	}
 	document.addEventListener("visibilitychange", () => (document.hidden ? audio.suspend() : audio.resume()));
 	sync();
+	return { turnOn: () => (audio.muted ? turnOn() : Promise.resolve()), sync };
 }

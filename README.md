@@ -31,8 +31,12 @@ The original 2016 page is kept, unchanged apart from data paths, in [`legacy/`](
   Animated lakes and ocean, sky with Day / Golden hour / Night, fly-to on click with a detail card and
   sparkline, labels that fade with distance, a drought replay with a camera path, a compare split
   (e.g. Sep 2014 vs Apr 2017), and a Low/High quality setting (Low by default on phones).
-- **Sound (Web Audio, all procedural, off until you turn it on):** water in wet months, dry wind and faint
-  cicadas in drought months, dam roar panned by camera position in 3D, and quiet interface sounds.
+- **Sound (Web Audio, all procedural, off until you turn it on):** water in wet months, dry wind and cicadas in
+  drought months, and a voice per dam whose loudness and character follow its storage, size and estimated
+  release (deep rumble for a big full dam, thin hiss for a small low one, a crashing layer when the spillway
+  runs above ~90%). In 3D the nearest dams are mixed by distance and direction; the detail card shows each
+  dam's sound level and can solo it. A limiter keeps loud months from clipping.
+- Opens in 3D (2D if WebGL is off); `?mode=2d` or a previous choice of 2D is remembered.
 - One shared **timeline** (play/pause and scrub over a statewide storage sparkline), legend and summary panel
   for both views. Light/dark theme, works on phones.
 - Bugs fixed from 2016: swapped width/height that clipped the map, random stream shapes that changed on every
@@ -46,7 +50,7 @@ From the repo root:
 python3 -m http.server 8000
 ```
 
-Then open http://localhost:8000/ (`?mode=3d` opens the 3D view, `?month=2015-09` picks a month).
+Then open http://localhost:8000/ (`?mode=2d` opens the 2D map, `?month=2015-09` picks a month, `?quality=low|high`).
 The 2016 version is at http://localhost:8000/legacy/.
 
 Refresh the data:

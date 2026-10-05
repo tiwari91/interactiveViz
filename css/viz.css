@@ -153,6 +153,24 @@
 
 .summary-list .swatch { width: 10px; height: 10px; border-radius: 50%; }
 
+.summary-list .swatch.no-data, .lbl-dot.no-data {
+	background: repeating-linear-gradient(45deg, #8a8d92 0 1.4px, transparent 1.4px 3.5px) !important;
+	box-shadow: inset 0 0 0 1.4px #8a8d92, 0 0 0 1.5px rgb(255 255 255 / 85%);
+}
+
+.summary-list .swatch.flood, .lbl-dot.flood {
+	background: repeating-linear-gradient(0deg, #5b7c99 0 1.6px, rgb(91 124 153 / 25%) 1.6px 3.6px) !important;
+	box-shadow: inset 0 0 0 1.4px #5b7c99, 0 0 0 1.5px rgb(255 255 255 / 85%);
+}
+
+/* A flood-control basin with no data: hatched, with the flood-control ring. */
+.summary-list .swatch.flood.no-data, .lbl-dot.flood.no-data {
+	background: repeating-linear-gradient(45deg, #8a8d92 0 1.4px, transparent 1.4px 3.5px) !important;
+	box-shadow: inset 0 0 0 1.6px #5b7c99, 0 0 0 1.5px rgb(255 255 255 / 85%);
+}
+
+.summary-note { margin: 0; color: var(--ink-3); font-size: 0.72rem; line-height: 1.4; }
+
 .summary-list .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
 
 /* Tooltip */
@@ -220,13 +238,21 @@
 
 .track .spark-line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
 
-.track .drought-band { fill: var(--warm); opacity: 0.08; }
+.track .drought-band { fill: var(--warm); opacity: 0.06; }
+
+.track .drought-cap { fill: var(--warm); opacity: 0.7; }
 
 .track .band-label { fill: var(--warm); font: 500 10px var(--font-mono); }
 
 .track .year-tick text { fill: var(--ink-3); font: 400 10px var(--font-mono); }
 
 .track .year-tick line { stroke: var(--line); }
+
+.track .year-tick.minor line { opacity: 0.6; }
+
+.track .provisional-band { fill: url(#hatch-prov); opacity: 0.6; }
+
+.timeline.is-provisional .date-readout .meta { font-style: italic; }
 
 .track input[type="range"] {
 	position: absolute;
@@ -293,7 +319,12 @@
 
 .map-2d .res-fill { stroke: none; transition: r 0.35s ease, fill 0.35s ease; }
 
-.map-2d .res.no-data .res-cap { stroke-dasharray: 2 2; }
+/* No data: hollow, hatched ring, never a grey fill that could pass for a % full colour. */
+.map-2d .res.no-data .res-cap,
+.map-2d .res.missing .res-cap { fill: url(#hatch-nodata); fill-opacity: 1; stroke: var(--ink-3); stroke-dasharray: 2 2; }
+
+/* Flood-control basins: steel ring, striped disc, no drought colour. */
+.map-2d .res.flood .res-cap { stroke: #5b7c99; stroke-width: 1.6; }
 
 .map-2d .res:hover .res-cap, .map-2d .res:focus-visible .res-cap, .map-2d .res.active .res-cap { stroke: var(--ink); stroke-width: 2; }
 

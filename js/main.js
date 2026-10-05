@@ -15,6 +15,7 @@ import { flowScale } from "./scales.js";
 import { createRelease } from "./release.js";
 
 const $ = (sel) => document.querySelector(sel);
+const d3 = window.d3;
 
 const MODE_KEY = "cdi-mode";
 
@@ -41,6 +42,32 @@ function setProgress(f, text) {
 	if (text) el.querySelector(".loading-text").textContent = text;
 }
 
+// Every count and date range in the page copy comes from the data.
+function fillCounts(data) {
+	const long = d3.timeFormat("%B %Y");
+	const year = d3.timeFormat("%Y");
+	const names = (list) => list.map((r) => r.name.replace(/ (Dam|Reservoir)$/, "")).join(" and ");
+	const values = {
+		mapped: data.reservoirs.length,
+		reporting: data.reservoirs.filter((r) => r.hasData).length,
+		tracked: data.tracked.length,
+		"flood-names": names(data.floodControl),
+		"no-data-names": names(data.noData),
+		first: long(data.dates[0]),
+		last: long(data.dates[data.dates.length - 1]),
+		"first-year": year(data.dates[0]),
+		"last-year": year(data.dates[data.dates.length - 1]),
+		gauges: data.gauges.length,
+		"gauges-flow": data.gauges.filter((g) => g.flow).length,
+	};
+	document.querySelectorAll("[data-count]").forEach((el) => {
+		const v = values[el.dataset.count];
+		if (v !== undefined) el.textContent = String(v);
+	});
+	const desc = document.querySelector("meta[name=description]");
+	if (desc) desc.content = `Interactive 2D and 3D visualization of storage in ${values.reporting} California reservoirs, ${values["first-year"]} to ${values["last-year"]}.`;
+}
+
 async function start() {
 	const stage = $("#stage");
 	const loading = $("#loading");
@@ -63,7 +90,8 @@ async function start() {
 		selected: null,
 	});
 
-	const tooltip = createTooltip($("#tooltip"), stage);
+	const tooltip = createTooltip($("#tooltip"), stage, data);
+	fillCounts(data);
 	const audio = createAudio();
 	const views = {
 		"2d": createMap2D($("#view-2d"), data, store, tooltip, audio),
@@ -88,6 +116,8 @@ async function start() {
 	audio.setDamLevels(release.voicesAt(store.get().dateIndex));
 	store.subscribe((s, changed) => {
 		if (changed.includes("dateIndex")) {
+			// An open tooltip follows the timeline instead of showing the old month.
+			tooltip.refresh(s.dateIndex);
 			audio.tick();
 			mood(s.dateIndex);
 			audio.setDamLevels(release.voicesAt(s.dateIndex));

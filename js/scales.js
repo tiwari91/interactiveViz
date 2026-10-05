@@ -2,12 +2,22 @@
 const d3 = window.d3;
 
 // Percent full -> drought severity. Warm = low storage, blue = full.
-export const PCT_STOPS = [ 0, 0.25, 0.5, 0.75, 1 ];
-export const PCT_COLORS = [ "#b2182b", "#e8743b", "#e3b448", "#5aa3cf", "#1d5fa3" ];
-export const pctColor = d3.scaleLinear().domain(PCT_STOPS).range(PCT_COLORS).interpolate(d3.interpolateLab).clamp(true);
-export const NO_DATA_COLOR = "#9a9a9a";
+// Blended in HCL with a green-teal mid stop: a Lab blend from yellow straight to blue
+// passes through a grey (#a6a99c at ~65%) that reads as "no data". This keeps chroma
+// above ~35 everywhere and lightness falling steadily from yellow to deep blue.
+export const PCT_STOPS = [ 0, 0.25, 0.5, 0.625, 0.75, 1 ];
+export const PCT_COLORS = [ "#b2182b", "#e8743b", "#e3b448", "#7dbd8a", "#4f9fd1", "#1d5fa3" ];
+export const pctColor = d3.scaleLinear().domain(PCT_STOPS).range(PCT_COLORS).interpolate(d3.interpolateHcl).clamp(true);
+// No data is never a fill colour: it is drawn as a hollow, hatched mark (see legend.js).
+// This neutral is only for strokes and hatching.
+export const NO_DATA_COLOR = "#8a8d92";
+// Flood-control basins are kept empty by design, so the drought ramp does not apply;
+// they get a striped steel-blue mark instead.
+export const FLOOD_COLOR = "#5b7c99";
 
 export const colorFor = (pct) => (pct === null ? NO_DATA_COLOR : pctColor(pct));
+// Colour for a reservoir's mark this month: ramp, flood-control steel or null (= hollow).
+export const markColor = (r, pct) => (pct === null ? null : r.floodControl ? FLOOD_COLOR : pctColor(pct));
 
 export const fmtAF = (v) => (v === null ? "—" : `${d3.format(",.0f")(v)} AF`);
 export const fmtMAF = (v) => `${d3.format(".2f")(v / 1e6)}M AF`;

@@ -1,6 +1,6 @@
 // Everything month-dependent in the 3D scene, as plain arrays: lake levels and
 // tints, dam releases, river widths and how dry the land looks.
-import { colorFor } from "../scales.js";
+import { markColor, NO_DATA_COLOR } from "../scales.js";
 import { createRelease, smoothstep } from "../release.js";
 
 export function createSnapshots(data, basins, foamSpots) {
@@ -21,7 +21,7 @@ export function createSnapshots(data, basins, foamSpots) {
 			const pct = v === null ? null : v / b.r.capacity;
 			pcts.push(pct);
 			levels.push(b.levelFor(pct));
-			tints.push(colorFor(pct));
+			tints.push(markColor(b.r, pct) ?? NO_DATA_COLOR); // invisible when null
 			visible.push(pct !== null && pct > 0.003);
 			release.push(releaseOf(b.r, i));
 		}

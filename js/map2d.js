@@ -1,12 +1,14 @@
 // 2D view: D3 v7 map with reservoir glyphs and animated stream links.
 import { pctAt, flowAt } from "./data.js";
-import { colorFor, makeProjection, meander, flowScale, MAJOR_CAPACITY, fmtPct } from "./scales.js";
+import { markColor, makeProjection, meander, flowScale, MAJOR_CAPACITY, fmtPct } from "./scales.js";
+import { ensurePatterns } from "./legend.js";
 
 const d3 = window.d3;
 const LABEL_LEFT = new Set([ "CLE", "BER", "WHI" ]);
 
 export function createMap2D(container, data, store, tooltip, audio) {
 	const stage = container.parentElement;
+	ensurePatterns();
 	const svg = d3.select(container).append("svg").attr("class", "map-2d")
 		.attr("role", "img").attr("aria-label", "Map of California reservoirs coloured by percent full");
 	const world = svg.append("g");
@@ -41,7 +43,7 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		.on("pointerleave", () => tooltip.hide());
 
 	const res = gRes.selectAll("g").data(reservoirs, (d) => d.id).join("g")
-		.attr("class", (d) => `res${d.hasData ? "" : " no-data"}`)
+		.attr("class", (d) => `res${d.hasData ? "" : " no-data"}${d.floodControl ? " flood" : ""}`)
 		.attr("role", "listitem")
 		.attr("tabindex", 0);
 	res.append("circle").attr("class", "res-cap");
@@ -164,19 +166,21 @@ export function createMap2D(container, data, store, tooltip, audio) {
 	function update({ dateIndex, selected }) {
 		const grow = Math.sqrt(transform.k);
 		res.classed("active", (r) => r.id === selected)
-			.attr("aria-label", (r) => `${r.name}: ${fmtPct(pctAt(r, dateIndex))} full`);
+			.classed("missing", (r) => r.hasData && pctAt(r, dateIndex) === null)
+			.attr("aria-label", (r) => `${r.name}${r.floodControl ? " (flood-control basin)" : ""}: ${pctAt(r, dateIndex) === null ? "no data" : `${fmtPct(pctAt(r, dateIndex))} full`}`);
 		res.select(".res-fill")
 			.attr("r", (r) => {
 				const pct = pctAt(r, dateIndex);
 				return pct === null ? 0 : Math.max(1.5, rCap(r.capacity) * grow * Math.sqrt(Math.min(1, pct)));
 			})
-			.attr("fill", (r) => colorFor(pctAt(r, dateIndex)));
+			.attr("fill", (r) => (r.floodControl ? "url(#stripe-flood)" : markColor(r, pctAt(r, dateIndex)) ?? "none"));
+		// A gauge with no reading this month is drawn like one with no flow data at all.
 		const width = (d) => {
 			const f = flowAt(d.gauge, dateIndex);
-			return d.gauge.flow ? 0.8 + 5 * flowScale(f ?? 0) : 1.2;
+			return f !== null ? 0.8 + 5 * flowScale(f) : 1.2;
 		};
 		streamBase.attr("stroke-width", (d) => width(d) + 2);
-		streamFlow.attr("stroke-width", width);
+		streamFlow.attr("stroke-width", width).classed("no-flow", (d) => flowAt(d.gauge, dateIndex) === null);
 	}
 
 	store.subscribe((s, changed) => {

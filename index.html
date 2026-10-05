@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<title>California Drought Impact</title>
-	<meta name="description" content="Interactive 2D and 3D visualization of California reservoir storage and river links through the 2012–2016 drought.">
+	<meta name="description" content="Interactive 2D and 3D visualization of California reservoir storage and river links through the 2012–2016 and 2020–2022 droughts.">
 	<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -44,10 +44,12 @@
 			<p class="eyebrow">Cal State Fullerton · 2016 research prototype, rebuilt</p>
 			<h1>How full were California’s reservoirs during the drought?</h1>
 			<p class="lede">
-				Monthly storage for 36 reservoirs from October 2011 to September 2017, from the wet year before the
-				drought, through the record lows of 2014–2015, to the 2017 recovery. Lines link each reservoir
-				to a river gauge in its basin. Use the timeline to move through the months, and switch to 3D to fly over
-				real terrain where each lake shrinks and grows with its storage, with its dam at the outlet.
+				End-of-month storage for <span data-count="reporting"></span> reservoirs from
+				<span data-count="first"></span> to <span data-count="last"></span>: the wet year before the
+				2012–2016 drought, its record lows in 2014–2015, the 2017 recovery, the 2020–2022 drought and the
+				years since. Lines link each reservoir to a river gauge in its basin. Use the timeline to move through
+				the months, and switch to 3D to fly over real terrain where each lake shrinks and grows with its storage,
+				with its dam at the outlet.
 			</p>
 		</section>
 
@@ -106,9 +108,13 @@
 				</p>
 				<p>
 					Reservoir storage (sensor 15, acre-feet) and river flow (sensor 41, monthly mean of daily cfs) come from the
-					<a href="https://cdec.water.ca.gov/">California Data Exchange Center</a>. Only five of the fourteen river
-					gauges report daily flow, so the other links are drawn at a fixed width. Capacities and locations come from the
-					original 2016 dataset.
+					<a href="https://cdec.water.ca.gov/">California Data Exchange Center</a>, <span data-count="first-year"></span>
+					to <span data-count="last-year"></span>. Each monthly value is end-of-month storage; recent months are provisional
+					until the operators revise them, and short gaps are filled and flagged. Only <span data-count="gauges-flow"></span>
+					of the <span data-count="gauges"></span> river gauges report daily flow, so the other links are drawn at a fixed width.
+					Locations come from the original 2016 dataset; capacities do too, except where CDEC has since revised them.
+					The totals cover <span data-count="tracked"></span> storage reservoirs: <span data-count="flood-names"></span>
+					are flood-control basins, kept empty by design, and CDEC has no readings for <span data-count="no-data-names"></span>.
 				</p>
 			</div>
 		</section>

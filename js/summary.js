@@ -1,24 +1,25 @@
-// Side panel: statewide numbers and the largest reservoirs for the current month.
+// Side panel: totals over the tracked reservoirs and the largest reservoirs for the current month.
 import { pctAt } from "./data.js";
-import { colorFor, fmtMAF, fmtMonth, fmtPct } from "./scales.js";
+import { markColor, fmtMAF, fmtMonth, fmtPct } from "./scales.js";
 
 const TOP_N = 8;
 
 export function createSummary(el, data, store, onPick) {
-	const reporting = data.reservoirs.filter((r) => r.hasData).length;
 	const largest = [ ...data.reservoirs ].sort((a, b) => b.capacity - a.capacity).slice(0, TOP_N);
+	const excluded = [ ...data.floodControl.map((r) => r.name.replace(/ Dam$/, "")) ];
 
 	el.innerHTML = `
 		<div>
-			<h3 class="js-state-title">Statewide</h3>
+			<h3 class="js-state-title"></h3>
 			<div class="big num js-state-pct"></div>
 			<div class="sub js-state-sub"></div>
 		</div>
 		<div>
 			<h3>Below 40% full</h3>
 			<div class="big num js-low"></div>
-			<div class="sub">of ${reporting} reporting reservoirs</div>
+			<div class="sub js-low-sub"></div>
 		</div>
+		<p class="summary-note span-all js-note"></p>
 		<div class="span-all">
 			<h3>Largest reservoirs</h3>
 			<ul class="summary-list">
@@ -34,16 +35,29 @@ export function createSummary(el, data, store, onPick) {
 
 	function render({ dateIndex, selected }) {
 		const t = data.totals[dateIndex];
-		el.querySelector(".js-state-title").textContent = `Statewide, ${fmtMonth(data.dates[dateIndex])}`;
+		const prov = data.provisional[dateIndex] ? " · provisional" : "";
+		el.querySelector(".js-state-title").textContent = `${data.tracked.length} tracked reservoirs, ${fmtMonth(data.dates[dateIndex])}${prov}`;
 		el.querySelector(".js-state-pct").textContent = fmtPct(t.pct);
 		el.querySelector(".js-state-sub").textContent = `${fmtMAF(t.storage)} of ${fmtMAF(t.capacity)} capacity`;
 		el.querySelector(".js-low").textContent = t.low;
+		el.querySelector(".js-low-sub").textContent = `of ${t.reporting} reporting this month`;
+		const notes = [ `Excludes flood-control basins (${excluded.join(", ")}), which are kept empty by design.` ];
+		if (t.filled.length) {
+			const how = t.filled.map((r) => `${r.name} ${r.filled[dateIndex] === "carried" ? "carried forward" : "interpolated"}`);
+			notes.push(`Gap filled: ${how.join("; ")}.`);
+		}
+		if (t.reporting < data.tracked.length) notes.push(`${data.tracked.length - t.reporting} reservoir(s) not reporting.`);
+		el.querySelector(".js-note").textContent = notes.join(" ");
 		for (const { r, btn } of rows) {
 			const pct = pctAt(r, dateIndex);
-			btn.querySelector(".swatch").style.background = colorFor(pct);
+			const color = markColor(r, pct);
+			const sw = btn.querySelector(".swatch");
+			sw.style.background = color ?? "";
+			sw.classList.toggle("no-data", color === null);
+			sw.classList.toggle("flood", r.floodControl);
 			btn.querySelector(".pct").textContent = fmtPct(pct);
 			btn.setAttribute("aria-current", selected === r.id ? "true" : "false");
-			btn.setAttribute("aria-label", `${r.name}, ${fmtPct(pct)} full. Show on map`);
+			btn.setAttribute("aria-label", `${r.name}, ${pct === null ? "no data" : `${fmtPct(pct)} full`}. Show on map`);
 		}
 	}
 

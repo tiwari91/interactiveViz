@@ -1,7 +1,8 @@
 // Detail card for a selected reservoir: dam type, numbers and its own storage history.
 import { pctAt } from "./data.js";
-import { colorFor, fmtAF, fmtPct, fmtMonth } from "./scales.js";
+import { markColor, fmtAF, fmtPct, fmtMonth } from "./scales.js";
 import { DAM_TYPES, damTypeOf } from "./three/damTypes.js";
+import { reservoirNotes } from "./tooltip.js";
 
 const d3 = window.d3;
 
@@ -50,19 +51,24 @@ export function createDetailCard(stage, data, store, sound) {
 		if (!r) return;
 		const pct = pctAt(r, dateIndex);
 		const storage = r.series[dateIndex];
-		el.querySelector(".detail-kicker").textContent = `${DAM_TYPES[damTypeOf(r)]} · ${r.county} County`;
+		const kind = r.floodControl ? " · flood control" : "";
+		el.querySelector(".detail-kicker").textContent = `${DAM_TYPES[damTypeOf(r)]}${kind} · ${r.county} County`;
 		el.querySelector(".detail-title").textContent = r.name;
 		const bar = el.querySelector(".detail-bar span");
 		bar.style.width = `${Math.min(100, (pct ?? 0) * 100)}%`;
-		bar.style.background = colorFor(pct);
+		bar.style.background = markColor(r, pct) ?? "transparent";
 		el.querySelector(".detail-grid").innerHTML = `
-			<div><dt>Full</dt><dd class="num">${fmtPct(pct)}</dd></div>
+			<div><dt>Full</dt><dd class="num js-full">${fmtPct(pct)}</dd></div>
 			<div><dt>Storage</dt><dd class="num">${fmtAF(storage)}</dd></div>
 			<div><dt>Capacity</dt><dd class="num">${fmtAF(r.capacity)}</dd></div>
 			<div><dt>Built</dt><dd class="num">${r.yearBuilt}</dd></div>`;
-		el.querySelector(".detail-note").textContent = !r.hasData ? "No storage readings on CDEC for this station."
-			: storage === null ? `No reading for ${fmtMonth(data.dates[dateIndex])}.`
-				: `${fmtMonth(data.dates[dateIndex])}. Line shows storage as % of capacity, 2011–2017.`;
+		const y = d3.timeFormat("%Y");
+		const range = `${y(data.dates[0])}–${y(data.dates[data.dates.length - 1])}`;
+		const notes = reservoirNotes(data, r, dateIndex);
+		if (r.hasData) notes.unshift(`${fmtMonth(data.dates[dateIndex])}. Line shows storage as % of capacity, ${range}.`);
+		if (r.capacity !== r.capacity2016) notes.push(`Capacity from ${r.capacitySource}.`);
+		if (r.note && !r.floodControl) notes.push(r.note);
+		el.querySelector(".detail-note").textContent = notes.join(" ");
 		drawSpark(r, dateIndex);
 		renderSound({ selected, dateIndex });
 	}
@@ -97,9 +103,12 @@ export function createDetailCard(stage, data, store, sound) {
 		svg.append("path").attr("class", "spark-line").attr("d", line(pts));
 		const cur = pts[i];
 		svg.append("line").attr("class", "spark-now").attr("x1", x(cur.d)).attr("x2", x(cur.d)).attr("y1", 0).attr("y2", h - 12);
-		if (cur.p !== null) svg.append("circle").attr("cx", x(cur.d)).attr("cy", y(cur.p)).attr("r", 3.5).attr("fill", colorFor(cur.p));
-		svg.selectAll(".yr").data([ 2012, 2014, 2016 ]).join("text").attr("class", "spark-year")
-			.attr("x", (d) => x(new Date(d, 0, 1))).attr("y", h - 1).attr("text-anchor", "middle").text((d) => d);
+		if (cur.p !== null) svg.append("circle").attr("cx", x(cur.d)).attr("cy", y(cur.p)).attr("r", 3.5).attr("fill", markColor(r, cur.p));
+		// Year labels spaced to fit: every 2, 3 or 5 years depending on width.
+		const years = d3.timeYear.range(d3.timeYear.ceil(data.dates[0]), data.dates[data.dates.length - 1]);
+		const every = [ 1, 2, 3, 5, 10 ].find((k) => (years.length / k) * 34 <= w) ?? 10;
+		svg.selectAll(".yr").data(years.filter((d) => d.getFullYear() % every === 0)).join("text").attr("class", "spark-year")
+			.attr("x", (d) => x(d)).attr("y", h - 1).attr("text-anchor", "middle").text(d3.timeFormat("%Y"));
 	}
 
 	store.subscribe((s, changed) => {

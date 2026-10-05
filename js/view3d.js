@@ -19,7 +19,12 @@ import { currentTheme } from "./theme.js";
 
 const d3 = window.d3;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const REPLAY_MS_PER_MONTH = 650;
+// The replay lasts about a minute however many months there are, but never
+// rushes faster than this per month.
+const REPLAY_TOTAL_MS = 60000;
+const REPLAY_MIN_MS_PER_MONTH = 250;
+// Camera moves are instant under reduced motion.
+const motionMs = (ms) => (reducedMotion.matches ? 1 : ms);
 
 export function createView3D(container, data, store, tooltip, audio) {
 	const stage = container.parentElement;
@@ -146,7 +151,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const start = { ...home(), dist: home().dist * 1.35, polar: home().polar * 0.8 };
 		sc.controls.target.set(...start.target);
 		sc.camera.position.copy(poseToPosition(THREE, start));
-		let mover = flyTo(THREE, sc.camera, sc.controls, home(), reducedMotion.matches ? 1 : 1800);
+		let mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1800));
+		const replayMsPerMonth = Math.max(REPLAY_MIN_MS_PER_MONTH, REPLAY_TOTAL_MS / Math.max(1, data.months.length - 1));
 		let replayFn = null;
 		let replayStart = 0;
 
@@ -225,7 +231,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				dist: 16 + b.Lu * 3.4,
 				polar: 1.02,
 				az: Math.atan2(dir[0], dir[1]),
-			}, 1500);
+			}, motionMs(1500));
 			audio.whoosh();
 		}
 
@@ -237,7 +243,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			if (!reducedMotion.matches) shared.uTime.value = now / 1000;
 
 			if (replayFn) {
-				const t = (now - replayStart) / (REPLAY_MS_PER_MONTH * (data.months.length - 1));
+				// A frame's timestamp can predate replayStart by a few ms; never go below month 0.
+				const t = Math.max(0, (now - replayStart) / (replayMsPerMonth * (data.months.length - 1)));
 				if (t >= 1) stopReplay(true);
 				else {
 					const p = replayFn(t);
@@ -351,7 +358,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				cancelAnimationFrame(raf);
 			},
 			home() {
-				mover = flyTo(THREE, sc.camera, sc.controls, home(), 1200);
+				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
 				audio.whoosh();
 			},
 			preset(name) {
@@ -365,6 +372,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 						return { target: [ b.cx, b.P - 2, b.cz ], dist, az, polar };
 					};
 					const wide = home();
+					// Under reduced motion the camera cuts from stop to stop instead of flying.
 					replayFn = replayPath([
 						{ ...wide, dist: wide.dist * 1.05 },
 						keyAt("SHA", 230, 0.5),
@@ -373,7 +381,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 						keyAt("NML", 230, -0.25),
 						keyAt("PNF", 250, 0.45),
 						{ ...wide, dist: wide.dist * 1.08 },
-					]);
+					], { cut: reducedMotion.matches });
 					replayStart = performance.now();
 					mover = null;
 				} else replayFn = null;

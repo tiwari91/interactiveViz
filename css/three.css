@@ -56,11 +56,13 @@
 .lbl-text {
 	padding: 1px 6px;
 	border-radius: 4px;
-	background: rgb(16 22 30 / 62%);
+	/* --plate fades with distance; the text stays fully opaque for AA contrast. */
+	background: rgb(16 22 30 / calc(var(--plate, 0.88) * 100%));
 	color: #f4f1ea;
 	font: 500 11px/1.4 var(--font-body);
-	transition: opacity 0.2s;
 }
+
+.lbl-text.far { visibility: hidden; }
 
 .lbl-pct { font-family: var(--font-mono); color: #cfd8e3; }
 

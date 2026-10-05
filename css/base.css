@@ -5,7 +5,7 @@
 	--surface-2: #efe9dd;
 	--ink: #1f2328;
 	--ink-2: #4a4f57;
-	--ink-3: #6f747c;
+	--ink-3: #62676f; /* 5.1:1 on --bg, 4.7:1 on --surface-2 (AA for small text) */
 	--line: #ddd5c6;
 	--accent: #1f6fae;
 	--accent-ink: #ffffff;

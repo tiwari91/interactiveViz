@@ -41,10 +41,16 @@ export function flyTo(THREE, camera, controls, to, duration = 1400) {
 }
 
 // Cinematic path through the state, parameterised 0..1 by replay progress.
-export function replayPath(keys) {
+// With cut: true (reduced motion) it holds each stop and cuts to the next one,
+// so the camera never moves continuously.
+export function replayPath(keys, { cut = false } = {}) {
 	return (t) => {
 		const x = Math.min(0.9999, Math.max(0, t)) * (keys.length - 1);
 		const i = Math.floor(x);
+		if (cut) {
+			const k = keys[Math.min(keys.length - 1, Math.round(x))];
+			return { ...k, target: [ ...k.target ] };
+		}
 		return lerpPose(keys[i], keys[i + 1], ease(x - i));
 	};
 }

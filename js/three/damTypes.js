@@ -6,12 +6,13 @@ export const DAM_TYPES = {
 	gravity: "Concrete gravity",
 	earthfill: "Earthfill embankment",
 	rockfill: "Rockfill embankment",
+	natural: "Natural lake, outlet regulated by Cache Creek Dam",
 };
 
 const LOOKUP = {
 	SHA: "gravity-arch", ORO: "earthfill", FOL: "gravity", NML: "rockfill", DNP: "earthfill",
 	CLE: "earthfill", PNF: "gravity", BUL: "arch", BER: "arch", PAR: "gravity-arch", MIL: "gravity",
-	CLA: "gravity", ALM: "earthfill", CMN: "earthfill", NHG: "earthfill", ISB: "earthfill",
+	CLA: "natural", ALM: "earthfill", CMN: "earthfill", NHG: "earthfill", ISB: "earthfill",
 	DMV: "earthfill", CAS: "earthfill", PYM: "rockfill", CHV: "rockfill", HHL: "rockfill",
 	UNV: "earthfill", WHI: "earthfill", STP: "earthfill", BLB: "earthfill", TRM: "earthfill",
 	COY: "earthfill", WRS: "earthfill", INV: "earthfill", SVO: "earthfill", PRA: "earthfill",
@@ -21,5 +22,9 @@ const LOOKUP = {
 export function damTypeOf(r) {
 	return LOOKUP[r.id] ?? (r.elev > 3000 ? "rockfill" : "earthfill");
 }
+
+// What to build in 3D at the outlet. A natural lake gets its small regulating
+// structure (Clear Lake: the concrete Cache Creek Dam) rather than an impounding dam.
+export const structureOf = (type) => (type === "natural" ? "gravity" : type);
 
 export const isConcrete = (type) => type === "arch" || type === "gravity" || type === "gravity-arch";

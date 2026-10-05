@@ -1,0 +1,8 @@
+ID,capacity_af,capacity_source,purpose,note
+CLA,313000,"CDEC Reservoir Information (ResInfo), revised May 2015 from Yolo County Flood Control and Water Conservation District",natural-lake,"Clear Lake is a natural lake. Its capacity is the storage at full lake, 7.56 ft on the Rumsey gauge; above that the lake is in flood, so wet months can read over 100%."
+TRM,185600,"CDEC ResInfo; the Terminus Dam spillway was raised 21 ft with fuse gates in 2004 (US Army Corps of Engineers)",storage,
+UNV,266369,"CDEC ResInfo, revised April 2015 from Sacramento Municipal Utility District",storage,
+WSN,128300,"CDEC ResInfo, updated May 2015 from USBR",storage,
+PAR,203795,"CDEC ResInfo; East Bay MUD's revised elevation-capacity table of October 2016 (capacity at spillway crest)",storage,
+SVO,,,flood-control,"Seven Oaks is a flood-control dam on the upper Santa Ana River. It is kept nearly empty by design so it can catch storm runoff."
+PRA,,,flood-control,"Prado is a flood-control dam on the Santa Ana River. It is kept nearly empty by design so it can catch storm runoff. CDEC has no storage readings for it."

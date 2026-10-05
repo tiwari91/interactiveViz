@@ -132,6 +132,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	const out = { count: 0, side: [], along: [], meta: [], index: [] };
 	const strips = [];
 	const lengths = new Array(n).fill(0);
+	// The downstream lake an outflow runs into, if any (e.g. Courtright -> Wishon).
+	const into = new Array(n).fill(null);
 	const scales = list.map((b) => Math.max(0.7, Math.min(1.6, dams.info.get(b.r.id).scale)));
 	const smooth = (a, b, x) => {
 		const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -153,6 +155,9 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			const shape = (i, d) => sc * (0.55 + 0.45 * smooth(0, 3, d)) * (1 - 0.5 * smooth(5, 16, d));
 			strips.push({ ...st, kind: KIND.OUTFLOW, dam: di, centre: seq, shape, sample: ground });
 			lengths[di] = st.length;
+			const end = seq[seq.length - 1];
+			const next = list.find((o) => o !== b && o.sOf(...o.toLocal(end[0], end[2])) < 1.4);
+			if (next) into[di] = next.r.id;
 		}
 
 		// Inflow: start up the valley above the lake and let the water run down into it.
@@ -302,6 +307,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			id: b.r.id,
 			width: release[i] > 0.001 && lengths[i] > 0 ? widthFor(KIND.OUTFLOW, release[i]) * scales[i] : 0,
 			length: lengths[i],
+			into: into[i],
 			mist: mist[i],
 			chuteSpill: strips.some((s) => s.dam === i && s.kind === KIND.CHUTE) ? spill[i] : null,
 		})),

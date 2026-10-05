@@ -1,13 +1,16 @@
 // End-to-end checks for the drought visualization, run in headless Chromium.
 //   CHROME_BIN=/path/to/chrome-headless-shell node tests/check.mjs
+//   PLAYWRIGHT_FROM (or PW_REQUIRE)=/path/to/package.json picks the playwright install.
+//   CHROME_ARGS="--use-gl=angle --use-angle=metal" replaces the default SwiftShader GL flags.
 // Serves the repo on a free port, runs the checks, saves screenshots to tests/screenshots/.
+// Every expected count comes from the data files, never a hard-coded number.
 import { createRequire } from "module";
 import http from "http";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-const require = createRequire(process.env.PLAYWRIGHT_FROM ?? "/Users/shankartiwar/Cayuse/s2s-web-client/package.json");
+const require = createRequire(process.env.PLAYWRIGHT_FROM ?? process.env.PW_REQUIRE ?? "/Users/shankartiwar/Cayuse/s2s-web-client/package.json");
 const { chromium, devices } = require("playwright");
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -33,8 +36,8 @@ function check(name, ok, detail = "") {
 	console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
 }
 
-async function openPage(browser, base, { phone = false, scheme = "light", query = "", noWebGL = false } = {}) {
-	const ctx = await browser.newContext({ ...(phone ? devices["iPhone 12"] : { viewport: { width: 1440, height: 1000 } }), colorScheme: scheme });
+async function openPage(browser, base, { phone = false, scheme = "light", query = "", noWebGL = false, reducedMotion = "no-preference" } = {}) {
+	const ctx = await browser.newContext({ ...(phone ? devices["iPhone 12"] : { viewport: { width: 1440, height: 1000 } }), colorScheme: scheme, reducedMotion });
 	const page = await ctx.newPage();
 	if (noWebGL) {
 		await page.addInitScript(() => {
@@ -45,7 +48,7 @@ async function openPage(browser, base, { phone = false, scheme = "light", query 
 		});
 	}
 	const errors = [];
-	page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+	page.on("console", (m) => m.type() === "error" && errors.push(`${m.text()} @ ${query || "/"} ${m.location().url?.replace(base, "")}:${m.location().lineNumber}`));
 	page.on("pageerror", (e) => errors.push(e.message));
 	await page.goto(`${base}/${query}`);
 	await page.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 120000, polling: 500 });
@@ -54,8 +57,23 @@ async function openPage(browser, base, { phone = false, scheme = "light", query 
 
 const stateOf = (page) => page.evaluate(() => window.droughtViz.store.get());
 const setState = (page, patch) => page.evaluate((p) => window.droughtViz.store.set(p), patch);
-const monthIndex = (page, m) => page.evaluate((x) => window.droughtViz.data.months.indexOf(x), m);
+const monthIndex = async (page, m) => {
+	const i = await page.evaluate((x) => window.droughtViz.data.months.indexOf(x), m);
+	if (i < 0) throw new Error(`month ${m} is not in the data`);
+	return i;
+};
 const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+const facts = (page) => page.evaluate(() => {
+	const d = window.droughtViz.data;
+	return {
+		months: d.months,
+		reservoirs: d.reservoirs.length,
+		reporting: d.reservoirs.filter((r) => r.hasData).length,
+		tracked: d.tracked.map((r) => r.id),
+		flood: d.floodControl.map((r) => r.id),
+		links: d.links.length,
+	};
+});
 const debug3d = (page, expr) => page.evaluate(`(() => { const c = window.droughtViz.views["3d"].debug(); return ${expr}; })()`);
 
 // Element screenshot via a page clip (the WebGL canvas never "settles" for locator screenshots).
@@ -82,7 +100,7 @@ async function main() {
 	const base = `http://127.0.0.1:${server.address().port}`;
 	const browser = await chromium.launch({
 		executablePath: process.env.CHROME_BIN || undefined,
-		args: [ "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--autoplay-policy=user-gesture-required" ],
+		args: [ ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(/\s+/) : [ "--use-angle=swiftshader", "--enable-unsafe-swiftshader" ]), "--ignore-gpu-blocklist", "--autoplay-policy=user-gesture-required" ],
 	});
 	const allErrors = [];
 
@@ -104,6 +122,7 @@ async function main() {
 		// ---------- Desktop 2D ----------
 		({ ctx, page, errors } = await openPage(browser, base, { query: "?mode=2d" }));
 		check("?mode=2d opens the 2D map", (await stateOf(page)).mode === "2d");
+		const F = await facts(page);
 		const counts = await page.evaluate(() => ({
 			counties: document.querySelectorAll(".map-2d .county").length,
 			reservoirs: document.querySelectorAll(".map-2d .res").length,
@@ -111,15 +130,111 @@ async function main() {
 			filled: [ ...document.querySelectorAll(".map-2d .res-fill") ].filter((c) => +c.getAttribute("r") > 0).length,
 		}));
 		check("2D map renders 58 counties", counts.counties === 58, `${counts.counties}`);
-		check("2D renders all reservoirs", counts.reservoirs === 36, `${counts.reservoirs}`);
-		check("2D renders stream links", counts.streams > 40, `${counts.streams}`);
-		check("2D reservoirs show storage", counts.filled > 30, `${counts.filled} filled`);
+		check("2D renders all reservoirs", counts.reservoirs === F.reservoirs, `${counts.reservoirs} of ${F.reservoirs}`);
+		check("2D renders stream links", counts.streams === F.links, `${counts.streams} of ${F.links}`);
+		check("2D reservoirs show storage", counts.filled === F.reporting, `${counts.filled} filled, ${F.reporting} with data`);
+
+		// ---------- Data range ----------
+		const ym = (m) => { const [ y, mo ] = m.split("-").map(Number); return y * 12 + mo - 1; };
+		const first = F.months[0];
+		const last = F.months[F.months.length - 1];
+		const now = new Date();
+		const prevMonth = now.getFullYear() * 12 + now.getMonth() - 1;
+		check("Data starts in October 2011", first === "2011-10", first);
+		check("Data runs to a recent complete month", ym(last) >= prevMonth - 3 && ym(last) <= prevMonth, `${last} (previous month ${Math.floor(prevMonth / 12)}-${String(prevMonth % 12 + 1).padStart(2, "0")})`);
+		check("Months are contiguous", F.months.every((m, i) => i === 0 || ym(m) === ym(F.months[i - 1]) + 1), `${F.months.length} months`);
+		const lede = await page.locator(".lede").innerText();
+		check("Intro states the derived count and range", lede.includes(`${F.reporting} reservoirs`) && /October 2011/.test(lede) && lede.includes(last.slice(0, 4)), lede.slice(0, 90));
+		const ticks = await page.evaluate(() => ({ ticks: document.querySelectorAll(".track .year-tick").length, labels: document.querySelectorAll(".track .year-tick text").length, bands: document.querySelectorAll(".track .drought-band").length }));
+		check("Timeline has a tick per year and two drought bands", ticks.ticks >= Number(last.slice(0, 4)) - 2011 && ticks.bands === 2, JSON.stringify(ticks));
+		const gaps = await page.evaluate(() => {
+			const d = window.droughtViz.data;
+			const dmv = d.byId.get("DMV");
+			const i = d.months.indexOf("2012-11");
+			return { filled: dmv.filled[i], value: dmv.series[i], inTotal: d.totals[i].filled.some((r) => r.id === "DMV"), reporting: d.totals[i].reporting, tracked: d.tracked.length };
+		});
+		check("Missing month (Diamond Valley 2012-11) is interpolated and flagged", gaps.filled === "interpolated" && gaps.value > 0 && gaps.inTotal && gaps.reporting === gaps.tracked, JSON.stringify(gaps));
+		await setState(page, { dateIndex: await monthIndex(page, "2012-11") });
+		check("Summary names the filled month", /Diamond Valley interpolated/.test(await page.locator(".js-note").innerText()));
+		await setState(page, { dateIndex: F.months.length - 1 });
+		check("Latest months are marked provisional", /provisional/i.test(await page.locator(".date-readout .meta").innerText()), await page.locator(".date-readout .meta").innerText());
+		await setState(page, { dateIndex: await monthIndex(page, "2014-09") });
+
+		// ---------- Colour ramp vs no data ----------
+		const ramp = await page.evaluate(async () => {
+			const { pctColor, NO_DATA_COLOR } = await import("/js/scales.js");
+			const nd = window.d3.lab(NO_DATA_COLOR);
+			let minChroma = Infinity;
+			let minDist = Infinity;
+			for (let k = 0; k <= 200; k++) {
+				const c = pctColor(k / 200);
+				const l = window.d3.lab(c);
+				minChroma = Math.min(minChroma, window.d3.hcl(c).c);
+				minDist = Math.min(minDist, Math.hypot(l.l - nd.l, l.a - nd.a, l.b - nd.b));
+			}
+			const pra = document.querySelector(".map-2d .res.no-data");
+			return { minChroma, minDist, hollow: pra && +pra.querySelector(".res-fill").getAttribute("r") === 0, hatch: pra && getComputedStyle(pra.querySelector(".res-cap")).fill };
+		});
+		check("Ramp stays saturated (chroma >= 30 everywhere)", ramp.minChroma >= 30, `min chroma ${ramp.minChroma.toFixed(1)}`);
+		check("Ramp stays far from the no-data neutral (Lab distance >= 25)", ramp.minDist >= 25, `min distance ${ramp.minDist.toFixed(1)}`);
+		check("No data is drawn hollow and hatched, not grey-filled", ramp.hollow && /hatch-nodata/.test(ramp.hatch), ramp.hatch);
+
+		// ---------- Flood control ----------
+		const flood = await page.evaluate(() => {
+			const d = window.droughtViz.data;
+			const i = d.months.indexOf("2014-09");
+			const t = d.totals[i];
+			let s = 0, c = 0, low = 0;
+			for (const r of d.reservoirs) {
+				if (r.floodControl || r.series[i] === null) continue;
+				s += r.series[i];
+				c += r.capacity;
+				if (r.series[i] / r.capacity < 0.4) low += 1;
+			}
+			const svo = d.byId.get("SVO");
+			return { ok: Math.abs(t.pct - s / c) < 1e-9 && t.low === low, svoPct: svo.series[i] / svo.capacity, svoTracked: d.tracked.includes(svo), marks: document.querySelectorAll(".map-2d .res.flood").length };
+		});
+		check("Flood-control basins are tagged", F.flood.sort().join() === "PRA,SVO", F.flood.join());
+		check("Flood-control basins are left out of the totals and the low count", flood.ok && !flood.svoTracked && flood.svoPct < 0.4, `Seven Oaks ${(flood.svoPct * 100).toFixed(1)}% full, excluded`);
+		check("Flood-control basins have their own 2D mark", flood.marks === F.flood.length);
+		check("Summary title counts the tracked reservoirs", (await page.locator(".js-state-title").innerText()).toLowerCase().startsWith(`${F.tracked.length} tracked reservoirs`), await page.locator(".js-state-title").innerText());
+		await page.locator(".map-2d .res.flood").first().hover({ force: true });
+		check("Flood-control tooltip explains it", /kept nearly empty by design/.test(await page.locator("#tooltip").innerText()));
+		await page.mouse.move(5, 5);
+
+		// ---------- Tooltip follows the date ----------
+		await setState(page, { selected: "SHA", dateIndex: await monthIndex(page, "2014-09") });
+		await page.locator(".map-2d .res[aria-label^=\"Shasta\"]").hover({ force: true });
+		const tipBefore = await page.locator("#tooltip .tt-pct").innerText();
+		await setState(page, { dateIndex: await monthIndex(page, "2017-04") });
+		const tipAfter = { pct: await page.locator("#tooltip .tt-pct").innerText(), month: await page.locator("#tooltip .tt-month").innerText() };
+		const card = { pct: await page.locator(".detail-grid .js-full").innerText(), month: await page.locator(".date-readout .month").innerText() };
+		check("2D tooltip re-renders on a date change", tipBefore !== tipAfter.pct && tipAfter.month === card.month, `${tipBefore} -> ${tipAfter.pct}, ${tipAfter.month}`);
+		check("2D tooltip agrees with the detail card", tipAfter.pct === card.pct, `tooltip ${tipAfter.pct}, card ${card.pct}`);
+		await setState(page, { selected: null });
+		await page.mouse.move(5, 5);
+
+		// ---------- Contrast ----------
+		const footer = await page.evaluate(() => {
+			const lum = (c) => {
+				const [ r, g, b ] = c.match(/\d+(\.\d+)?/g).slice(0, 3).map((v) => {
+					const x = +v / 255;
+					return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+				});
+				return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+			};
+			const fg = lum(getComputedStyle(document.querySelector(".site-footer span")).color);
+			const bg = lum(getComputedStyle(document.body).backgroundColor);
+			return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+		});
+		check("Footer text meets AA contrast (4.5:1)", footer >= 4.5, `${footer.toFixed(2)}:1`);
 
 		await page.locator(".map-2d .res").first().hover();
 		const tip2d = await page.locator("#tooltip").innerText();
 		check("2D hover shows tooltip", await page.locator("#tooltip").isVisible() && /Shasta/.test(tip2d), tip2d.split("\n")[0]);
 		await page.mouse.move(5, 5);
 
+		await setState(page, { dateIndex: await monthIndex(page, "2014-09") });
 		const before = await page.locator(".js-state-pct").innerText();
 		await page.locator(".timeline input[type=range]").focus();
 		for (let i = 0; i < 20; i++) await page.keyboard.press("ArrowRight");
@@ -183,6 +298,12 @@ async function main() {
 		await page.waitForTimeout(400);
 		const tip3d = await page.locator("#tooltip").innerText().catch(() => "");
 		check("3D raycast hover shows tooltip", await page.locator("#tooltip").isVisible() && /Oroville/.test(tip3d), tip3d.split("\n")[0]);
+		// The open tooltip in 3D follows the timeline too (the pointer stays still).
+		const m3 = await page.locator("#tooltip .tt-month").innerText().catch(() => "");
+		await setState(page, { dateIndex: await monthIndex(page, "2015-11") });
+		const m3b = await page.locator("#tooltip .tt-month").innerText().catch(() => "");
+		check("3D tooltip re-renders on a date change", m3 !== m3b && m3b === await page.locator(".date-readout .month").innerText(), `${m3} -> ${m3b}`);
+		await setState(page, { dateIndex: await monthIndex(page, "2017-04") });
 		await page.mouse.click(box.x + sx, box.y + sy);
 		await page.waitForTimeout(300);
 		const sel = await stateOf(page);
@@ -197,7 +318,8 @@ async function main() {
 			await page.waitForTimeout(3500);
 			const out = await debug3d(page, "c.outflow()");
 			const wet = out.filter((o) => o.pct !== null && o.pct > 0.003);
-			const bad = wet.filter((o) => !(o.width > 0.3 && o.length > 3));
+			// Long enough to see, unless it runs straight into the next lake downstream.
+			const bad = wet.filter((o) => !(o.width > 0.3 && (o.length > 3 || o.into)));
 			check(`${month}: every dam with water has a visible outflow`, wet.length > 30 && bad.length === 0, `${wet.length} dams, min width ${Math.min(...wet.map((o) => o.width)).toFixed(2)}${bad.length ? `, missing: ${bad.map((o) => o.id).join(",")}` : ""}`);
 			const wrong = out.filter((o) => (o.spill > 0.05) !== (o.pct !== null && o.pct > 0.9));
 			check(`${month}: spillway cascade only above 90% full`, wrong.length === 0, `${out.filter((o) => o.spill > 0.05).map((o) => o.id).join(",") || "none spilling"}${wrong.length ? `; wrong: ${wrong.map((o) => `${o.id}@${(o.pct * 100).toFixed(0)}%`).join(",")}` : ""}`);
@@ -208,7 +330,14 @@ async function main() {
 		check("Rivers and outflows lie on the terrain", water.maxGap < 0.35, `max gap ${water.maxGap} (${water.worst}), ${water.strips} strips`);
 		check("Rivers and outflows only run downhill", water.maxClimb <= 0.46, `max climb ${water.maxClimb}`);
 		const longOut = await debug3d(page, "c.outflow().filter((o) => o.length >= 8).length");
-		check("Most outflows run well downstream", longOut >= 28, `${longOut} of 36 longer than 8 units`);
+		const nOut = await debug3d(page, "c.outflow().length");
+		check("Most outflows run well downstream", longOut >= 28, `${longOut} of ${nOut} longer than 8 units`);
+
+		// 3D labels: text stays fully opaque; only the plate fades.
+		const lbl = await page.evaluate(() => [ ...document.querySelectorAll(".labels-3d .lbl-text") ]
+			.filter((e) => e.offsetParent && getComputedStyle(e).visibility !== "hidden")
+			.map((e) => +getComputedStyle(e).opacity));
+		check("3D label text is never faded", lbl.length > 0 && lbl.every((o) => o === 1), `${lbl.length} visible labels`);
 
 		// Gauge links are data: hidden by default, shown for a selection or with the toggle.
 		await setState(page, { selected: null });
@@ -217,7 +346,7 @@ async function main() {
 		check("No gauge links visible by default", (await debug3d(page, "c.linksVisible()")) === 0);
 		await page.locator(".js-links").click();
 		await page.waitForTimeout(300);
-		check("Gauge links toggle shows all links", (await debug3d(page, "c.linksVisible()")) === 54);
+		check("Gauge links toggle shows all links", (await debug3d(page, "c.linksVisible()")) === (await facts(page)).links);
 		await shot(page, "3d-gauge-links-on.png", ".stage");
 		await page.locator(".js-links").click();
 		await setState(page, { selected: "PNF" });
@@ -321,6 +450,22 @@ async function main() {
 		await shot(page, "3d-replay.png", ".stage");
 		await page.locator(".js-replay").click();
 		check("Replay stops on request", (await page.locator(".js-replay").getAttribute("aria-pressed")) === "false");
+		allErrors.push(...errors);
+		await ctx.close();
+
+		// ---------- Reduced motion: replay cuts between stops ----------
+		({ ctx, page, errors } = await openPage(browser, base, { query: "?mode=3d", reducedMotion: "reduce" }));
+		await waitStill(page, 500);
+		await page.locator(".js-replay").click();
+		const poses = [];
+		for (let k = 0; k < 40; k++) {
+			poses.push(await debug3d(page, "(() => { const p = c.pose(); return [ p.dist, p.az, p.polar, ...p.target ].map((v) => v.toFixed(2)).join(','); })()"));
+			await page.waitForTimeout(100);
+		}
+		const changes = poses.filter((p, k) => k > 0 && p !== poses[k - 1]).length;
+		const rm = await stateOf(page);
+		check("Reduced motion: replay cuts between stops instead of flying", changes <= 2 && rm.dateIndex > 3, `${changes} camera changes in 4 s, month index ${rm.dateIndex}`);
+		await page.locator(".js-replay").click();
 		allErrors.push(...errors);
 		await ctx.close();
 

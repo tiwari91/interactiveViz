@@ -102,6 +102,18 @@ export async function loadData(base = "data/") {
 		r.filled = fillGaps(r.series);
 	}
 
+	// The average for each calendar month over the record on the page (Oct 2011 onward), from
+	// reported values only (not gap-filled ones), so "% of average" says how this month compares
+	// with the same month in other years: the measure California's water agencies publish.
+	// A month needs at least five years behind it to have an average.
+	const calMonth = months.map((m) => +m.slice(5, 7) - 1);
+	const avgYears = { from: months[0].slice(0, 4), to: months[months.length - 1].slice(0, 4) };
+	for (const r of reservoirs) {
+		const sum = new Array(12).fill(0), n = new Array(12).fill(0);
+		r.series.forEach((v, i) => { if (v !== null && !r.filled[i]) { sum[calMonth[i]] += v; n[calMonth[i]] += 1; } });
+		r.avgByMonth = sum.map((s, k) => (n[k] >= 5 ? s / n[k] : null));
+	}
+
 	// CDEC data stay provisional until operators revise them, which the big
 	// reservoirs do once a water year closes: months after the last revised value are provisional.
 	const provisional = months.map((_, i) => i > lastRevised);
@@ -154,6 +166,8 @@ export async function loadData(base = "data/") {
 		let capacitySum = 0;
 		let low = 0;
 		let reporting = 0;
+		let avgSum = 0;
+		let avgStorage = 0;
 		const filled = [];
 		for (const r of tracked) {
 			const v = r.series[i];
@@ -163,8 +177,10 @@ export async function loadData(base = "data/") {
 			capacitySum += r.capacity;
 			if (v / r.capacity < 0.4) low += 1;
 			if (r.filled[i]) filled.push(r);
+			const avg = r.avgByMonth[calMonth[i]];
+			if (avg) { avgSum += avg; avgStorage += v; }   // like for like: only reservoirs with an average this month
 		}
-		return { storage: storageSum, capacity: capacitySum, pct: capacitySum ? storageSum / capacitySum : 0, low, reporting, filled };
+		return { storage: storageSum, capacity: capacitySum, pct: capacitySum ? storageSum / capacitySum : 0, low, reporting, filled, ofAvg: avgSum ? avgStorage / avgSum : null };
 	});
 
 	const counties = topojson.feature(topo, topo.objects.counties);
@@ -172,7 +188,7 @@ export async function loadData(base = "data/") {
 	const countyMesh = topojson.mesh(topo, topo.objects.counties, (a, b) => a !== b);
 
 	return {
-		months, dates, reservoirs, byId, tracked, floodControl, noData, provisional, droughtPeriods,
+		months, dates, calMonth, avgYears, reservoirs, byId, tracked, floodControl, noData, provisional, droughtPeriods,
 		gauges: [ ...gauges.values() ], links: linkList, totals, counties, outline, countyMesh,
 	};
 }
@@ -185,6 +201,12 @@ export function storageAt(r, i) {
 export function pctAt(r, i) {
 	const v = r.series[i];
 	return v === null ? null : v / r.capacity;
+}
+
+// This month's storage as a share of the average for the same calendar month (null when unknown).
+export function ofAvgAt(data, r, i) {
+	const v = r.series[i], avg = r.avgByMonth ? r.avgByMonth[data.calMonth[i]] : null;
+	return v === null || !avg ? null : v / avg;
 }
 
 export function flowAt(gauge, i) {

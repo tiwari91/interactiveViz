@@ -1,5 +1,5 @@
 // Side panel: totals over the tracked reservoirs and the largest reservoirs for the current month.
-import { pctAt } from "./data.js";
+import { pctAt, ofAvgAt } from "./data.js";
 import { markColor, fmtMAF, fmtMonth, fmtPct } from "./scales.js";
 
 const TOP_N = 8;
@@ -13,6 +13,7 @@ export function createSummary(el, data, store, onPick) {
 			<h3 class="js-state-title"></h3>
 			<div class="big num js-state-pct"></div>
 			<div class="sub js-state-sub"></div>
+			<div class="sub js-state-avg"></div>
 		</div>
 		<div>
 			<h3>Below 40% full</h3>
@@ -39,6 +40,8 @@ export function createSummary(el, data, store, onPick) {
 		el.querySelector(".js-state-title").textContent = `${data.tracked.length} tracked reservoirs, ${fmtMonth(data.dates[dateIndex])}${prov}`;
 		el.querySelector(".js-state-pct").textContent = fmtPct(t.pct);
 		el.querySelector(".js-state-sub").textContent = `${fmtMAF(t.storage)} of ${fmtMAF(t.capacity)} capacity`;
+		const mName = d3.timeFormat("%B")(data.dates[dateIndex]);
+		el.querySelector(".js-state-avg").innerHTML = t.ofAvg === null ? "" : `<strong class="${t.ofAvg < 0.8 ? "below-avg" : t.ofAvg > 1.1 ? "above-avg" : ""}">${fmtPct(t.ofAvg)} of average</strong> for ${mName} (${data.avgYears.from}–${data.avgYears.to})`;
 		el.querySelector(".js-low").textContent = t.low;
 		el.querySelector(".js-low-sub").textContent = `of ${t.reporting} reporting this month`;
 		const notes = [ `Excludes flood-control basins (${excluded.join(", ")}), which are kept empty by design.` ];
@@ -57,7 +60,9 @@ export function createSummary(el, data, store, onPick) {
 			sw.classList.toggle("flood", r.floodControl);
 			btn.querySelector(".pct").textContent = fmtPct(pct);
 			btn.setAttribute("aria-current", selected === r.id ? "true" : "false");
-			btn.setAttribute("aria-label", `${r.name}, ${pct === null ? "no data" : `${fmtPct(pct)} full`}. Show on map`);
+			const oa = ofAvgAt(data, r, dateIndex);
+			btn.title = oa === null ? "" : `${fmtPct(oa)} of the average for this month`;
+			btn.setAttribute("aria-label", `${r.name}, ${pct === null ? "no data" : `${fmtPct(pct)} full`}${oa === null ? "" : `, ${fmtPct(oa)} of average`}. Show on map`);
 		}
 	}
 

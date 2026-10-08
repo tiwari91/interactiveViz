@@ -364,3 +364,20 @@
 	.summary .big { font-size: 1.6rem; }
 	.stage-hint { display: none; }
 }
+
+/* % of average for this calendar month: below 80% reads as a shortfall, above 110% as a surplus. */
+.js-state-avg { margin-top: 2px; }
+.js-state-avg strong { font-weight: 700; }
+.js-state-avg .below-avg { color: #c2410c; }
+.js-state-avg .above-avg { color: #1d6fa5; }
+.tt-avg-note { opacity: 0.7; font-size: 0.92em; }
+
+/* The legend's fold: a plain "Legend" toggle on phones, invisible on wider screens. */
+.legend-wrap > summary { display: none; }
+@media (max-width: 700px) {
+	.legend-wrap > summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; color: var(--ink-2); padding: 6px 12px; border: 1px solid var(--line, rgba(0,0,0,0.15)); border-radius: 999px; list-style: none; }
+	.legend-wrap > summary::-webkit-details-marker { display: none; }
+	.legend-wrap > summary::after { content: "▾"; font-size: 0.8em; }
+	.legend-wrap[open] > summary::after { content: "▴"; }
+	.legend-wrap[open] > .legend { margin-top: 10px; }
+}

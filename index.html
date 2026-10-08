@@ -59,7 +59,10 @@
 					<button type="button" data-mode="2d" aria-pressed="true">2D map</button>
 					<button type="button" data-mode="3d" aria-pressed="false">3D</button>
 				</div>
-				<div class="legend" id="legend" aria-label="Legend"></div>
+				<details class="legend-wrap" id="legendWrap" open>
+					<summary>Legend</summary>
+					<div class="legend" id="legend" aria-label="Legend"></div>
+				</details>
 			</div>
 
 			<div class="viz-body">

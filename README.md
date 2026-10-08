@@ -35,6 +35,9 @@ The original 2016 page is kept, unchanged apart from data paths, in [`legacy/`](
   sparkline, labels that give way with distance (the text keeps full contrast; only its backing plate fades), a drought
   replay with a camera path (cuts between stops under reduced motion), a compare split
   (e.g. Sep 2014 vs Apr 2017), and a Low/High quality setting (Low by default on phones).
+- **% of average.** Each reservoir's storage and the statewide total are also shown as a share of the average
+  for the same calendar month over the record on the page (reported values only, at least five years per month),
+  the way California's water agencies report reservoir conditions. Shown in the summary, tooltips and detail card.
 - **Sound (Web Audio, all procedural, off until you turn it on):** water in wet months, dry wind and cicadas in
   drought months, and a voice per dam whose loudness and character follow its storage, size and estimated
   release (deep rumble for a big full dam, thin hiss for a small low one, a crashing layer when the spillway

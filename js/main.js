@@ -11,6 +11,13 @@ import { createView3D } from "./view3d.js";
 import { createDetailCard } from "./detailCard.js";
 import { createAudio } from "./audio/engine.js";
 import { initSoundControls } from "./audio/controls.js";
+
+// On a phone the legend folds away behind "Legend", so the map is near the top of the screen;
+// wider screens keep it open (its summary line is hidden there by CSS).
+{
+	const lw = document.getElementById("legendWrap");
+	if (lw && window.matchMedia && window.matchMedia("(max-width: 700px)").matches) { lw.open = false; }
+}
 import { flowScale } from "./scales.js";
 import { createRelease } from "./release.js";
 

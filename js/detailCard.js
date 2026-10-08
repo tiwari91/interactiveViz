@@ -1,5 +1,5 @@
 // Detail card for a selected reservoir: dam type, numbers and its own storage history.
-import { pctAt } from "./data.js";
+import { pctAt, ofAvgAt } from "./data.js";
 import { markColor, fmtAF, fmtPct, fmtMonth } from "./scales.js";
 import { DAM_TYPES, damTypeOf } from "./three/damTypes.js";
 import { reservoirNotes } from "./tooltip.js";
@@ -61,7 +61,8 @@ export function createDetailCard(stage, data, store, sound) {
 			<div><dt>Full</dt><dd class="num js-full">${fmtPct(pct)}</dd></div>
 			<div><dt>Storage</dt><dd class="num">${fmtAF(storage)}</dd></div>
 			<div><dt>Capacity</dt><dd class="num">${fmtAF(r.capacity)}</dd></div>
-			<div><dt>Built</dt><dd class="num">${r.yearBuilt}</dd></div>`;
+			<div><dt>Built</dt><dd class="num">${r.yearBuilt}</dd></div>
+			${ofAvgAt(data, r, dateIndex) === null ? "" : `<div><dt>Of ${d3.timeFormat("%b")(data.dates[dateIndex])} avg</dt><dd class="num js-ofavg">${fmtPct(ofAvgAt(data, r, dateIndex))}</dd></div>`}`;
 		const y = d3.timeFormat("%Y");
 		const range = `${y(data.dates[0])}–${y(data.dates[data.dates.length - 1])}`;
 		const notes = reservoirNotes(data, r, dateIndex);

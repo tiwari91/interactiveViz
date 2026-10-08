@@ -234,6 +234,12 @@ async function main() {
 		check("2D hover shows tooltip", await page.locator("#tooltip").isVisible() && /Shasta/.test(tip2d), tip2d.split("\n")[0]);
 		await page.mouse.move(5, 5);
 
+		// % of average: the statewide line for the same calendar month, low in the drought, high after 2017's wet winter.
+		const avgOf = async (m) => { await setState(page, { dateIndex: await monthIndex(page, m) }); await page.waitForTimeout(100); return page.locator(".js-state-avg").innerText(); };
+		const dryAvg = await avgOf("2014-09"), wetAvg = await avgOf("2017-04");
+		const pctIn = (t) => +((t.match(/(\d+)% of average/) || [])[1] || NaN);
+		check("Statewide storage is shown as % of the average for that month", /of average for September/.test(dryAvg) && /of average for April/.test(wetAvg), `${dryAvg} | ${wetAvg}`);
+		check("Sep 2014 is well below average and Apr 2017 above it", pctIn(dryAvg) < 80 && pctIn(wetAvg) > 100, `${pctIn(dryAvg)}% vs ${pctIn(wetAvg)}%`);
 		await setState(page, { dateIndex: await monthIndex(page, "2014-09") });
 		const before = await page.locator(".js-state-pct").innerText();
 		await page.locator(".timeline input[type=range]").focus();

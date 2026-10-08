@@ -1,6 +1,6 @@
 // One tooltip element positioned inside the stage, used by both views.
 // It remembers what it is showing so a date change re-renders it in place.
-import { pctAt, flowAt, valueNote } from "./data.js";
+import { pctAt, flowAt, valueNote, ofAvgAt } from "./data.js";
 import { markColor, fmtAF, fmtPct, fmtCfs, fmtMonth } from "./scales.js";
 
 // Notes shared by the tooltip and the detail card so both always say the same thing.
@@ -54,6 +54,7 @@ export function createTooltip(el, stage, data) {
 				<dt>Storage</dt><dd>${fmtAF(storage)}</dd>
 				<dt>Capacity</dt><dd>${fmtAF(r.capacity)}</dd>
 				<dt>Full</dt><dd class="tt-pct">${fmtPct(pct)}</dd>
+				${ofAvgAt(data, r, i) === null ? "" : `<dt>Of average</dt><dd class="tt-avg">${fmtPct(ofAvgAt(data, r, i))} <span class="tt-avg-note">for ${d3.timeFormat("%B")(data.dates[i])}</span></dd>`}
 				<dt>Month</dt><dd class="tt-month">${fmtMonth(data.dates[i])}</dd>
 				<dt>County</dt><dd>${r.county}</dd>
 				<dt>Built</dt><dd>${r.yearBuilt}</dd>

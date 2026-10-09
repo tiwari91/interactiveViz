@@ -46,12 +46,11 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		.attr("class", (d) => `res${d.hasData ? "" : " no-data"}${d.floodControl ? " flood" : ""}`)
 		.attr("role", "listitem")
 		.attr("tabindex", 0);
-	// Hit area first (invisible, never overlapping a neighbour), then basin, water and dam wall.
+	// Hit area first (invisible, never overlapping a neighbour), then basin and water.
 	res.append("circle").attr("class", "res-hit");
 	res.append("circle").attr("class", "res-cap");
 	res.append("circle").attr("class", "res-fill");
 	res.append("circle").attr("class", "res-shore");
-	res.append("path").attr("class", "res-dam");
 
 	const labels = gLabels.selectAll("text").data(majors, (d) => d.id).join("text").attr("class", "label")
 		.attr("text-anchor", (d) => (LABEL_LEFT.has(d.id) ? "end" : "start"))
@@ -143,12 +142,6 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		});
 		const capR = (r) => Math.max(3, rCap(r.capacity) * grow);
 		res.select(".res-cap").attr("r", capR);
-		// Dam wall: a short concrete arc on the downstream (south) rim of the basin.
-		res.select(".res-dam").attr("d", (r) => {
-			const R = capR(r);
-			const h = Math.max(2.2, R * 0.5);
-			return `M${-h},${R + 0.8}L${h},${R + 0.8}`;
-		}).attr("stroke-width", (r) => Math.min(3.2, 1.6 + capR(r) * 0.1));
 		// Hover target: each reservoir's own ring, cut back to half the distance to its nearest neighbour,
 		// so a big basin never covers a smaller neighbour's marker.
 		const pts = reservoirs.map((r) => screenPos(r.id));

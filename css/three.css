@@ -160,24 +160,24 @@
 	--scene-sky-1: #e9f0f2; --scene-sky-2: #f8f4ea;
 	--scene-far-1: #a9b7c3; --scene-far-2: #c9cfc9;
 	--scene-near-1: #9aa47e; --scene-near-2: #b9b08a;
-	--scene-earth: #b8956a; --scene-ring: #e7dcc6; --scene-bank: #8a6b48;
+	--scene-earth: #b8956a; --scene-ring: #f3ead6; --scene-bank: #8a6b48;
 	--scene-embank-1: #a99f86; --scene-embank-2: #857a62;
 	display: block; width: 100%; height: auto; margin: 2px 0 10px; border-radius: 8px;
 }
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) .detail-dam {
 		--scene-sky-1: #1b2836; --scene-sky-2: #233140; --scene-far-1: #3e4d5e; --scene-far-2: #34404b;
-		--scene-near-1: #4a5340; --scene-near-2: #3d4234; --scene-earth: #7a6246; --scene-ring: #b9ab92; --scene-bank: #5d4a35;
+		--scene-near-1: #4a5340; --scene-near-2: #3d4234; --scene-earth: #7a6246; --scene-ring: #cfc0a3; --scene-bank: #5d4a35;
 	}
 }
 :root[data-theme="dark"] .detail-dam {
 	--scene-sky-1: #1b2836; --scene-sky-2: #233140; --scene-far-1: #3e4d5e; --scene-far-2: #34404b;
-	--scene-near-1: #4a5340; --scene-near-2: #3d4234; --scene-earth: #7a6246; --scene-ring: #b9ab92; --scene-bank: #5d4a35;
+	--scene-near-1: #4a5340; --scene-near-2: #3d4234; --scene-earth: #7a6246; --scene-ring: #cfc0a3; --scene-bank: #5d4a35;
 }
 .detail-dam .scene-snow { fill: #f6f8fa; opacity: 0.85; }
 .detail-dam .dam-bed { fill: var(--scene-earth); }
 .detail-dam .dam-bed { stroke: var(--scene-bank); stroke-width: 1; }
-.detail-dam .dam-ring-band { fill: none; stroke: var(--scene-ring); stroke-width: 7; stroke-linecap: round; }
+.detail-dam .dam-ring-band { fill: none; stroke: var(--scene-ring); stroke-width: 11; stroke-linecap: round; filter: drop-shadow(0 1px 0 rgb(0 0 0 / 18%)); }
 .detail-dam .dam-surface { stroke: #ffffff; stroke-width: 1.2; opacity: 0.55; }
 .detail-dam .dam-shimmer line { stroke: #ffffff; stroke-width: 1; stroke-linecap: round; opacity: 0.35; animation: dam-shimmer 4s ease-in-out infinite alternate; }
 .detail-dam .dam-shimmer line:nth-child(2) { animation-delay: -1.5s; }
@@ -190,7 +190,7 @@
 .detail-dam .dam-wall.embankment { stroke: #6d644f; }
 .detail-dam .dam-joint { stroke: #7d7970; stroke-width: 0.5; opacity: 0.6; }
 .detail-dam .dam-fullmark { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
-.detail-dam .dam-fulltext { fill: var(--ink-2); font: 500 8.5px var(--font-mono); }
+.detail-dam .dam-fulltext { fill: var(--ink); font: 600 8px var(--font-mono); letter-spacing: 0.02em; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
 .detail-dam .dam-level { fill: #ffffff; font: 600 11px var(--font-mono); paint-order: stroke; stroke: rgb(0 0 0 / 25%); stroke-width: 2px; }
 .detail-dam.low .dam-level, .detail-dam.no-data .dam-level { fill: var(--ink); stroke: none; }
 @media (prefers-reduced-motion: reduce) { .detail-dam .dam-shimmer line { animation: none; } }

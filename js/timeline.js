@@ -63,7 +63,8 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 			.on("click", (_, [ , i ]) => store.set({ dateIndex: i, playing: false }));
 		mark.append("title").text(([ k, i ]) => `${k === "Low" ? "Lowest" : "Highest"} month on record: ${fmtMonthLong(dates[i])}, ${fmtPct(totals[i].pct)} full. Click to jump.`);
 		mark.append("circle").attr("r", 3);
-		mark.append("text").attr("class", "extreme-label").attr("y", -7).attr("text-anchor", "middle")
+		// High sits above its dot; Low sits below so it clears the drought-band labels along the top.
+		mark.append("text").attr("class", "extreme-label").attr("y", ([ k ]) => (k === "Low" ? 12 : -7)).attr("text-anchor", "middle")
 			.text(([ k, i ]) => `${k} ${fmtPct(totals[i].pct)}`);
 		// The selected month: a line and a dot riding the storage curve.
 		head = svg.append("g").attr("class", "playhead");

@@ -259,7 +259,7 @@ async function main() {
 			return { wrong, overlapped };
 		});
 		check("Hover targets the reservoir under the pointer, not a neighbour's ring", hits.wrong.length === 0 && hits.overlapped > 0, `${hits.overlapped} markers inside a neighbour's ring; wrong: ${hits.wrong.join(", ") || "none"}`);
-		check("Each 2D reservoir has a dam wall mark", (await page.locator(".map-2d .res .res-dam").count()) === F.reservoirs);
+		check("2D markers carry no dam bar that reads as a stand", (await page.locator(".map-2d .res .res-dam").count()) === 0);
 
 		// Detail card scene: waterline follows % full, low lakes show a bathtub ring, full ones barely any.
 		const scene = async (id, m) => {

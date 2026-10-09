@@ -98,7 +98,8 @@ export function createDamScene(svgEl) {
 		joints.attr("display", concrete ? null : "none");
 	};
 	svg.append("line").attr("class", "dam-fullmark").attr("x1", 30).attr("x2", DAM_X + 9).attr("y1", FULL_Y).attr("y2", FULL_Y);
-	svg.append("text").attr("class", "dam-fulltext").attr("x", 34).attr("y", FULL_Y - 3).text("full pool");
+	// Label at the dam end of the line, haloed so it stays legible over the ridges.
+	svg.append("text").attr("class", "dam-fulltext").attr("x", DAM_X - 8).attr("y", FULL_Y - 3).attr("text-anchor", "end").text("full pool");
 	const label = svg.append("text").attr("class", "dam-level").attr("x", 150).attr("text-anchor", "middle");
 
 	let lastId = null;

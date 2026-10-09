@@ -90,12 +90,12 @@ export function createDetailCard(stage, data, store, sound) {
 
 	function drawSpark(r, i) {
 		const svg = d3.select(el.querySelector(".detail-spark"));
-		const w = el.clientWidth - 32 || 240;
+		const w = Math.round(el.querySelector(".detail-spark").getBoundingClientRect().width) || el.clientWidth - 32 || 240;
 		const h = 64;
 		svg.attr("viewBox", `0 0 ${w} ${h}`).attr("width", w).attr("height", h);
 		svg.selectAll("*").remove();
 		const x = d3.scaleTime().domain(d3.extent(data.dates)).range([ 0, w ]);
-		const y = d3.scaleLinear().domain([ 0, 1.05 ]).range([ h - 12, 2 ]);
+		const y = d3.scaleLinear().domain([ 0, 1.05 ]).range([ h - 12, 11 ]);
 		const pts = r.series.map((v, k) => ({ d: data.dates[k], p: v === null ? null : Math.min(1.05, v / r.capacity) }));
 		const line = d3.line().defined((d) => d.p !== null).x((d) => x(d.d)).y((d) => y(d.p)).curve(d3.curveMonotoneX);
 		const area = d3.area().defined((d) => d.p !== null).x((d) => x(d.d)).y0(h - 12).y1((d) => y(d.p)).curve(d3.curveMonotoneX);
@@ -103,7 +103,7 @@ export function createDetailCard(stage, data, store, sound) {
 		// Seasonal average for each calendar month (reported values only), as a share of capacity.
 		const avgPts = r.avgByMonth ? data.dates.map((d, k) => { const a = r.avgByMonth[data.calMonth[k]]; return { d, p: a ? Math.min(1.05, a / r.capacity) : null }; }) : [];
 		if (avgPts.some((q) => q.p !== null)) svg.append("path").attr("class", "spark-avg").attr("d", line(avgPts));
-		svg.append("text").attr("class", "spark-cap").attr("x", w - 1).attr("y", y(1) + 8).attr("text-anchor", "end").text("capacity");
+		svg.append("text").attr("class", "spark-cap").attr("x", w - 1).attr("y", y(1) - 3).attr("text-anchor", "end").text("capacity");
 		svg.append("path").attr("class", "spark-area").attr("d", area(pts));
 		svg.append("path").attr("class", "spark-line").attr("d", line(pts));
 		const cur = pts[i];

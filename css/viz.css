@@ -241,7 +241,7 @@
 .track .extreme { pointer-events: all; cursor: pointer; }
 .track .extreme circle { fill: var(--surface); stroke: var(--ink-2); stroke-width: 1.5; }
 .track .extreme:hover circle { stroke: var(--accent); fill: var(--accent); }
-.track .extreme-label { fill: var(--ink-2); font: 500 9px var(--font-mono); }
+.track .extreme-label { fill: var(--ink-2); font: 500 9px var(--font-mono); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
 .track .playhead { pointer-events: none; }
 .track .playhead line { stroke: var(--ink); stroke-width: 1; opacity: 0.55; }
 .track .playhead circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
@@ -336,8 +336,6 @@
 .map-2d .res-fill { stroke: none; transition: r 0.45s cubic-bezier(0.22, 1, 0.36, 1), fill 0.45s ease; }
 /* Shoreline: a pale "bathtub ring" edge just outside the water. */
 .map-2d .res-shore { fill: none; stroke: #fbf7ee; stroke-width: 1; stroke-opacity: 0.85; transition: r 0.45s cubic-bezier(0.22, 1, 0.36, 1); vector-effect: non-scaling-stroke; }
-.map-2d .res-dam { fill: none; stroke: #9b968c; stroke-linecap: round; paint-order: stroke; filter: drop-shadow(0 0.6px 0 #5f5b55); }
-.map-2d .res.flood .res-dam, .map-2d .res.no-data .res-dam { stroke: #8a8d92; }
 @media (prefers-reduced-motion: reduce) { .map-2d .res-fill, .map-2d .res-shore { transition: none; } }
 
 /* No data: hollow, hatched ring, never a grey fill that could pass for a % full colour. */

@@ -75,7 +75,20 @@ function fillCounts(data) {
 	if (desc) desc.content = `Interactive 2D and 3D visualization of storage in ${values.reporting} California reservoirs, ${values["first-year"]} to ${values["last-year"]}.`;
 }
 
+// On phones the intro is clamped so the map shows in the first screen; the button expands it.
+function setupLede() {
+	const btn = document.querySelector(".lede-toggle");
+	if (!btn) return;
+	btn.addEventListener("click", () => {
+		const open = btn.getAttribute("aria-expanded") !== "true";
+		btn.setAttribute("aria-expanded", String(open));
+		btn.textContent = open ? "Show less" : "Read more";
+		document.querySelector(".lede").classList.toggle("expanded", open);
+	});
+}
+
 async function start() {
+	setupLede();
 	const stage = $("#stage");
 	const loading = $("#loading");
 	let data;

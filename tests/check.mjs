@@ -145,6 +145,13 @@ async function main() {
 		check("Months are contiguous", F.months.every((m, i) => i === 0 || ym(m) === ym(F.months[i - 1]) + 1), `${F.months.length} months`);
 		const lede = await page.locator(".lede").innerText();
 		check("Intro states the derived count and range", lede.includes(`${F.reporting} reservoirs`) && /October 2011/.test(lede) && lede.includes(last.slice(0, 4)), lede.slice(0, 90));
+		check("Intro explains 35 vs tracked count", lede.includes(`Statewide totals use ${F.tracked.length} of them`), `tracked ${F.tracked.length}`);
+		const tl = await page.evaluate(() => { const i = document.querySelector(".timeline input"); i.value = 40; i.dispatchEvent(new Event("input", { bubbles: true })); const a = document.querySelector(".date-readout").innerText; i.value = 0; i.dispatchEvent(new Event("input", { bubbles: true })); return { a, b: document.querySelector(".date-readout").innerText }; });
+		check("Timeline readout flags drought-emergency months only", /drought emergency/.test(tl.a) && !/drought emergency/.test(tl.b), `${tl.a.replace("\n", " ")} | ${tl.b.replace("\n", " ")}`);
+		const ac = await page.locator(".js-state-sub").innerText();
+		check("Acre-feet abbreviation is spelled out", /acre-feet/.test(ac), ac);
+		const lc = await page.evaluate(() => { const l = document.querySelector(".lede"), b = document.querySelector(".lede-toggle"); const vis = getComputedStyle(b).display !== "none"; const h0 = l.getBoundingClientRect().height; if (vis) b.click(); const h1 = l.getBoundingClientRect().height; if (vis) b.click(); return { vis, h0, h1, vw: innerWidth }; });
+		check("Phone intro is clamped and expandable; desktop shows it whole", lc.vw <= 560 ? lc.vis && lc.h1 > lc.h0 : !lc.vis, JSON.stringify(lc));
 		const ticks = await page.evaluate(() => ({ ticks: document.querySelectorAll(".track .year-tick").length, labels: document.querySelectorAll(".track .year-tick text").length, bands: document.querySelectorAll(".track .drought-band").length }));
 		check("Timeline has a tick per year and two drought bands", ticks.ticks >= Number(last.slice(0, 4)) - 2011 && ticks.bands === 2, JSON.stringify(ticks));
 		const gaps = await page.evaluate(() => {

@@ -39,7 +39,7 @@ export function createSummary(el, data, store, onPick) {
 		const prov = data.provisional[dateIndex] ? " · provisional" : "";
 		el.querySelector(".js-state-title").textContent = `${data.tracked.length} tracked reservoirs, ${fmtMonth(data.dates[dateIndex])}${prov}`;
 		el.querySelector(".js-state-pct").textContent = fmtPct(t.pct);
-		el.querySelector(".js-state-sub").textContent = `${fmtMAF(t.storage)} of ${fmtMAF(t.capacity)} capacity`;
+		el.querySelector(".js-state-sub").textContent = `${fmtMAF(t.storage)} of ${fmtMAF(t.capacity)} capacity (AF = acre-feet)`;
 		const mName = d3.timeFormat("%B")(data.dates[dateIndex]);
 		el.querySelector(".js-state-avg").innerHTML = t.ofAvg === null ? "" : `<strong class="${t.ofAvg < 0.8 ? "below-avg" : t.ofAvg > 1.1 ? "above-avg" : ""}">${fmtPct(t.ofAvg)} of average</strong> for ${mName} (${data.avgYears.from}–${data.avgYears.to})`;
 		el.querySelector(".js-low").textContent = t.low;

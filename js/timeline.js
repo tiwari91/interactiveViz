@@ -67,7 +67,8 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 		const prov = provisional[dateIndex];
 		input.setAttribute("aria-valuetext", `${label}, ${fmtPct(t.pct)} of tracked capacity${prov ? ", provisional data" : ""}`);
 		monthEl.textContent = fmtMonth(dates[dateIndex]);
-		metaEl.textContent = `${fmtPct(t.pct)} full, tracked${prov ? " · provisional" : ""}`;
+		const dr = droughtPeriods.find((p) => dates[dateIndex] >= p.start && dates[dateIndex] <= p.end);
+		metaEl.textContent = `${fmtPct(t.pct)} full, tracked${prov ? " · provisional" : ""}${dr ? " · state drought emergency" : ""}`;
 		el.classList.toggle("is-provisional", prov);
 		btn.innerHTML = playing ? PAUSE : PLAY;
 		btn.setAttribute("aria-label", playing ? "Pause timeline" : "Play timeline");

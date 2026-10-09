@@ -126,3 +126,10 @@ main { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
 .sound-pop input { width: 100%; accent-color: var(--accent); }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Phones: clamp the intro so the map and timeline are visible without scrolling past a wall of text. */
+.lede-toggle { display: none; }
+@media (max-width: 560px) {
+	.lede:not(.expanded) { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+	.lede-toggle { display: inline-block; margin-top: 2px; min-height: 44px; padding: 0 4px; background: none; border: 0; color: var(--accent, #e8833a); font: inherit; font-weight: 600; cursor: pointer; }
+}

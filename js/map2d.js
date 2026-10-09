@@ -46,8 +46,12 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		.attr("class", (d) => `res${d.hasData ? "" : " no-data"}${d.floodControl ? " flood" : ""}`)
 		.attr("role", "listitem")
 		.attr("tabindex", 0);
+	// Hit area first (invisible, never overlapping a neighbour), then basin, water and dam wall.
+	res.append("circle").attr("class", "res-hit");
 	res.append("circle").attr("class", "res-cap");
 	res.append("circle").attr("class", "res-fill");
+	res.append("circle").attr("class", "res-shore");
+	res.append("path").attr("class", "res-dam");
 
 	const labels = gLabels.selectAll("text").data(majors, (d) => d.id).join("text").attr("class", "label")
 		.attr("text-anchor", (d) => (LABEL_LEFT.has(d.id) ? "end" : "start"))
@@ -137,7 +141,24 @@ export function createMap2D(container, data, store, tooltip, audio) {
 			const [ x, y ] = screenPos(r.id);
 			return `translate(${x},${y})`;
 		});
-		res.select(".res-cap").attr("r", (r) => Math.max(3, rCap(r.capacity) * grow));
+		const capR = (r) => Math.max(3, rCap(r.capacity) * grow);
+		res.select(".res-cap").attr("r", capR);
+		// Dam wall: a short concrete arc on the downstream (south) rim of the basin.
+		res.select(".res-dam").attr("d", (r) => {
+			const R = capR(r);
+			const h = Math.max(2.2, R * 0.5);
+			return `M${-h},${R + 0.8}L${h},${R + 0.8}`;
+		}).attr("stroke-width", (r) => Math.min(3.2, 1.6 + capR(r) * 0.1));
+		// Hover target: each reservoir's own ring, cut back to half the distance to its nearest neighbour,
+		// so a big basin never covers a smaller neighbour's marker.
+		const pts = reservoirs.map((r) => screenPos(r.id));
+		res.select(".res-hit").attr("r", (r, k) => {
+			let d = Infinity;
+			pts.forEach((p, j) => {
+				if (j !== k) d = Math.min(d, Math.hypot(p[0] - pts[k][0], p[1] - pts[k][1]));
+			});
+			return Math.max(Math.min(capR(r) + 2, d / 2), Math.min(4, d / 2));
+		});
 		gauges.attr("x", function () {
 			return transform.applyX(this.__pos[0]) - 3.5;
 		}).attr("y", function () {
@@ -174,6 +195,11 @@ export function createMap2D(container, data, store, tooltip, audio) {
 				return pct === null ? 0 : Math.max(1.5, rCap(r.capacity) * grow * Math.sqrt(Math.min(1, pct)));
 			})
 			.attr("fill", (r) => (r.floodControl ? "url(#stripe-flood)" : markColor(r, pctAt(r, dateIndex)) ?? "none"));
+		res.select(".res-shore").attr("r", (r) => {
+			const pct = pctAt(r, dateIndex);
+			return pct === null ? 0 : Math.max(1.5, rCap(r.capacity) * grow * Math.sqrt(Math.min(1, pct)));
+		});
+		res.classed("low", (r) => !r.floodControl && pctAt(r, dateIndex) !== null && pctAt(r, dateIndex) < 0.5);
 		// A gauge with no reading this month is drawn like one with no flow data at all.
 		const width = (d) => {
 			const f = flowAt(d.gauge, dateIndex);

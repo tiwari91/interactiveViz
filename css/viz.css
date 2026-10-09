@@ -328,9 +328,17 @@
 
 .map-2d .res { cursor: pointer; outline: none; }
 
-.map-2d .res-cap { fill: var(--surface); fill-opacity: 0.55; stroke: var(--glass); stroke-width: 1; vector-effect: non-scaling-stroke; }
-
-.map-2d .res-fill { stroke: none; transition: r 0.35s ease, fill 0.35s ease; }
+/* Basin = dry earth up to the capacity rim; disc = water; arc on the south rim = dam wall. */
+.map-2d .res > :not(.res-hit) { pointer-events: none; }
+.map-2d .res-hit { fill: transparent; cursor: pointer; }
+.map-2d .res-cap { fill: #d8c4a0; fill-opacity: 0.75; stroke: #9a7f5c; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.map-2d .res.low .res-cap { fill: #e6d8bd; }
+.map-2d .res-fill { stroke: none; transition: r 0.45s cubic-bezier(0.22, 1, 0.36, 1), fill 0.45s ease; }
+/* Shoreline: a pale "bathtub ring" edge just outside the water. */
+.map-2d .res-shore { fill: none; stroke: #fbf7ee; stroke-width: 1; stroke-opacity: 0.85; transition: r 0.45s cubic-bezier(0.22, 1, 0.36, 1); vector-effect: non-scaling-stroke; }
+.map-2d .res-dam { fill: none; stroke: #9b968c; stroke-linecap: round; paint-order: stroke; filter: drop-shadow(0 0.6px 0 #5f5b55); }
+.map-2d .res.flood .res-dam, .map-2d .res.no-data .res-dam { stroke: #8a8d92; }
+@media (prefers-reduced-motion: reduce) { .map-2d .res-fill, .map-2d .res-shore { transition: none; } }
 
 /* No data: hollow, hatched ring, never a grey fill that could pass for a % full colour. */
 .map-2d .res.no-data .res-cap,

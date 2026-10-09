@@ -155,9 +155,48 @@
 
 .detail-title { margin: 0 24px 8px 0; color: var(--ink); font: 650 1.15rem/1.2 var(--font-display); }
 
-.detail-bar { height: 6px; margin-bottom: 10px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+/* Dam-and-lake scene: hills, a lake filled to % of capacity, bathtub ring and dam wall. */
+.detail-dam {
+	--scene-sky-1: #e9f0f2; --scene-sky-2: #f8f4ea;
+	--scene-far-1: #a9b7c3; --scene-far-2: #c9cfc9;
+	--scene-near-1: #9aa47e; --scene-near-2: #b9b08a;
+	--scene-earth: #b8956a; --scene-ring: #e7dcc6; --scene-bank: #8a6b48;
+	--scene-embank-1: #a99f86; --scene-embank-2: #857a62;
+	display: block; width: 100%; height: auto; margin: 2px 0 10px; border-radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) .detail-dam {
+		--scene-sky-1: #1b2836; --scene-sky-2: #233140; --scene-far-1: #3e4d5e; --scene-far-2: #34404b;
+		--scene-near-1: #4a5340; --scene-near-2: #3d4234; --scene-earth: #7a6246; --scene-ring: #b9ab92; --scene-bank: #5d4a35;
+	}
+}
+:root[data-theme="dark"] .detail-dam {
+	--scene-sky-1: #1b2836; --scene-sky-2: #233140; --scene-far-1: #3e4d5e; --scene-far-2: #34404b;
+	--scene-near-1: #4a5340; --scene-near-2: #3d4234; --scene-earth: #7a6246; --scene-ring: #b9ab92; --scene-bank: #5d4a35;
+}
+.detail-dam .scene-snow { fill: #f6f8fa; opacity: 0.85; }
+.detail-dam .dam-bed { fill: var(--scene-earth); }
+.detail-dam .dam-bed { stroke: var(--scene-bank); stroke-width: 1; }
+.detail-dam .dam-ring-band { fill: none; stroke: var(--scene-ring); stroke-width: 7; stroke-linecap: round; }
+.detail-dam .dam-surface { stroke: #ffffff; stroke-width: 1.2; opacity: 0.55; }
+.detail-dam .dam-shimmer line { stroke: #ffffff; stroke-width: 1; stroke-linecap: round; opacity: 0.35; animation: dam-shimmer 4s ease-in-out infinite alternate; }
+.detail-dam .dam-shimmer line:nth-child(2) { animation-delay: -1.5s; }
+.detail-dam .dam-shimmer line:nth-child(3) { animation-delay: -3s; }
+@keyframes dam-shimmer { from { opacity: 0.1; } to { opacity: 0.45; } }
+.detail-dam .dam-ground { fill: var(--scene-near-2); }
+.detail-dam .dam-river { fill: none; stroke: #5d97be; stroke-width: 2; stroke-linecap: round; opacity: 0.7; }
+.detail-dam .dam-wall { stroke: #6f6b64; stroke-width: 0.8; stroke-linejoin: round; }
+.detail-dam .dam-crest { stroke: #5f5b55; stroke-width: 2; stroke-linecap: round; }
+.detail-dam .dam-wall.embankment { stroke: #6d644f; }
+.detail-dam .dam-joint { stroke: #7d7970; stroke-width: 0.5; opacity: 0.6; }
+.detail-dam .dam-fullmark { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
+.detail-dam .dam-fulltext { fill: var(--ink-2); font: 500 8.5px var(--font-mono); }
+.detail-dam .dam-level { fill: #ffffff; font: 600 11px var(--font-mono); paint-order: stroke; stroke: rgb(0 0 0 / 25%); stroke-width: 2px; }
+.detail-dam.low .dam-level, .detail-dam.no-data .dam-level { fill: var(--ink); stroke: none; }
+@media (prefers-reduced-motion: reduce) { .detail-dam .dam-shimmer line { animation: none; } }
 
-.detail-bar span { display: block; height: 100%; border-radius: 3px; transition: width 0.4s ease, background 0.4s ease; }
+.detail-spark .spark-avg { fill: none; stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
+.detail-spark .spark-cap { font: 400 9px var(--font-mono); fill: var(--ink-3); }
 
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 0 0 8px; }
 
@@ -185,7 +224,7 @@
 	.chip { height: 30px; padding: 0 10px; font-size: 0.75rem; }
 	.detail-card { top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; max-width: none; padding: 10px 12px 8px; }
 	.detail-title { font-size: 1rem; margin-bottom: 6px; }
-	.detail-bar { margin-bottom: 6px; }
+	.detail-dam { margin-bottom: 6px; }
 	.detail-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px 8px; margin-bottom: 4px; }
 	.detail-grid dd { font-size: 0.72rem; }
 	.detail-spark, .detail-note { display: none; }

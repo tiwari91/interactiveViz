@@ -241,6 +241,43 @@ async function main() {
 		check("2D hover shows tooltip", await page.locator("#tooltip").isVisible() && /Shasta/.test(tip2d), tip2d.split("\n")[0]);
 		await page.mouse.move(5, 5);
 
+		// Hit-testing: the point at each reservoir's centre belongs to that reservoir, even inside a bigger neighbour's ring.
+		const hits = await page.evaluate(() => {
+			const svg = document.querySelector(".map-2d");
+			const box = svg.getBoundingClientRect();
+			const wrong = [];
+			let overlapped = 0;
+			const marks = [ ...svg.querySelectorAll(".res") ];
+			const at = (g) => { const m = g.getAttribute("transform").match(/translate\(([-\d.]+),([-\d.]+)\)/); return [ +m[1], +m[2] ]; };
+			for (const g of marks) {
+				const [ x, y ] = at(g);
+				if (x < 0 || y < 0 || x > box.width || y > box.height) continue;
+				if (marks.some((o) => o !== g && Math.hypot(at(o)[0] - x, at(o)[1] - y) < +o.querySelector(".res-cap").getAttribute("r"))) overlapped++;
+				const hit = document.elementFromPoint(box.left + x, box.top + y)?.closest(".res");
+				if (hit !== g) wrong.push(g.getAttribute("aria-label").split(":")[0]);
+			}
+			return { wrong, overlapped };
+		});
+		check("Hover targets the reservoir under the pointer, not a neighbour's ring", hits.wrong.length === 0 && hits.overlapped > 0, `${hits.overlapped} markers inside a neighbour's ring; wrong: ${hits.wrong.join(", ") || "none"}`);
+		check("Each 2D reservoir has a dam wall mark", (await page.locator(".map-2d .res .res-dam").count()) === F.reservoirs);
+
+		// Detail card scene: waterline follows % full, low lakes show a bathtub ring, full ones barely any.
+		const scene = async (id, m) => {
+			await setState(page, { selected: id, dateIndex: await monthIndex(page, m) });
+			await page.waitForTimeout(700);
+			return page.evaluate(() => {
+				const s = document.querySelector(".detail-dam");
+				return { pct: +s.dataset.pct, water: +s.querySelector(".dam-water").getAttribute("y"), ring: +s.querySelector("clipPath rect").getAttribute("height"), low: s.classList.contains("low"), label: s.getAttribute("aria-label") };
+			});
+		};
+		const sWet = await scene("ORO", "2017-04");
+		const sDry = await scene("ORO", "2014-09");
+		check("Detail scene waterline rises with % full", sDry.pct < sWet.pct && sDry.water > sWet.water, `${(sDry.pct * 100).toFixed(0)}% y=${sDry.water.toFixed(1)} vs ${(sWet.pct * 100).toFixed(0)}% y=${sWet.water.toFixed(1)}`);
+		check("Low reservoir shows a bathtub ring above the water", sDry.low && sDry.ring > sWet.ring && sDry.ring > 20, `ring ${sDry.ring.toFixed(1)} vs ${sWet.ring.toFixed(1)}`);
+		check("Detail scene is labelled with the % full", /Oroville/.test(sDry.label) && /of capacity/.test(sDry.label), sDry.label);
+		await shot(page, "desktop-2d-detail-scene-drought.png", ".detail-card");
+		await setState(page, { selected: null });
+
 		// % of average: the statewide line for the same calendar month, low in the drought, high after 2017's wet winter.
 		const avgOf = async (m) => { await setState(page, { dateIndex: await monthIndex(page, m) }); await page.waitForTimeout(100); return page.locator(".js-state-avg").innerText(); };
 		const dryAvg = await avgOf("2014-09"), wetAvg = await avgOf("2017-04");

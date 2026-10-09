@@ -3,6 +3,7 @@ import { pctAt, ofAvgAt } from "./data.js";
 import { markColor, fmtAF, fmtPct, fmtMonth } from "./scales.js";
 import { DAM_TYPES, damTypeOf } from "./three/damTypes.js";
 import { reservoirNotes } from "./tooltip.js";
+import { createDamScene } from "./damScene.js";
 
 const d3 = window.d3;
 
@@ -18,7 +19,7 @@ export function createDetailCard(stage, data, store, sound) {
 		</button>
 		<p class="detail-kicker"></p>
 		<h3 class="detail-title"></h3>
-		<div class="detail-bar"><span></span></div>
+		<svg class="detail-dam" role="img"></svg>
 		<dl class="detail-grid"></dl>
 		<svg class="detail-spark" aria-hidden="true"></svg>
 		<div class="detail-sound">
@@ -29,6 +30,7 @@ export function createDetailCard(stage, data, store, sound) {
 		</div>
 		<p class="detail-note"></p>`;
 	stage.appendChild(el);
+	const drawScene = createDamScene(el.querySelector(".detail-dam"));
 	el.querySelector(".detail-close").addEventListener("click", () => store.set({ selected: null }));
 	const listen = el.querySelector(".detail-listen");
 	listen.addEventListener("click", async () => {
@@ -54,9 +56,7 @@ export function createDetailCard(stage, data, store, sound) {
 		const kind = r.floodControl ? " · flood control" : "";
 		el.querySelector(".detail-kicker").textContent = `${DAM_TYPES[damTypeOf(r)]}${kind} · ${r.county} County`;
 		el.querySelector(".detail-title").textContent = r.name;
-		const bar = el.querySelector(".detail-bar span");
-		bar.style.width = `${Math.min(100, (pct ?? 0) * 100)}%`;
-		bar.style.background = markColor(r, pct) ?? "transparent";
+		drawScene(data, r, dateIndex);
 		el.querySelector(".detail-grid").innerHTML = `
 			<div><dt>Full</dt><dd class="num js-full">${fmtPct(pct)}</dd></div>
 			<div><dt>Storage</dt><dd class="num">${fmtAF(storage)}</dd></div>

@@ -62,6 +62,8 @@ export function createLabels(THREE, container, basins, maxCap) {
 				if (show) placed.push(box);
 				it.el.style.display = "";
 				it.el.classList.toggle("active", isActive);
+				// Named labels sit above bare dots, so a neighbour's dot never cuts through a name.
+				it.el.style.zIndex = isActive ? 3 : show ? 2 : 1;
 				it.text.classList.toggle("far", !show);
 				const t = (fade - SHOW_AT) / (1 - SHOW_AT);
 				it.text.style.setProperty("--plate", (PLATE_FAR + (PLATE_NEAR - PLATE_FAR) * Math.max(0, t)).toFixed(2));

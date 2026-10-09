@@ -152,6 +152,7 @@ async function main() {
 		check("Acre-feet abbreviation is spelled out", /acre-feet/.test(ac), ac);
 		const lc = await page.evaluate(() => { const l = document.querySelector(".lede"), b = document.querySelector(".lede-toggle"); const vis = getComputedStyle(b).display !== "none"; const h0 = l.getBoundingClientRect().height; if (vis) b.click(); const h1 = l.getBoundingClientRect().height; if (vis) b.click(); return { vis, h0, h1, vw: innerWidth }; });
 		check("Phone intro is clamped and expandable; desktop shows it whole", lc.vw <= 560 ? lc.vis && lc.h1 > lc.h0 : !lc.vis, JSON.stringify(lc));
+		if (lc.vw > 900) check("Desktop dek is not truncated", await page.evaluate(() => { const l = document.querySelector(".lede"); return l.scrollHeight <= l.clientHeight + 1 && getComputedStyle(l).webkitLineClamp === "none"; }));
 		const ticks = await page.evaluate(() => ({ ticks: document.querySelectorAll(".track .year-tick").length, labels: document.querySelectorAll(".track .year-tick text").length, bands: document.querySelectorAll(".track .drought-band").length }));
 		check("Timeline has a tick per year and two drought bands", ticks.ticks >= Number(last.slice(0, 4)) - 2011 && ticks.bands === 2, JSON.stringify(ticks));
 		const gaps = await page.evaluate(() => {

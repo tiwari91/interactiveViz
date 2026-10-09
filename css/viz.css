@@ -236,6 +236,8 @@
 
 .track .spark-area { fill: var(--accent); opacity: 0.14; }
 
+.track .spark-avg { fill: none; stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.8; }
+.track .spark-cap { font-size: 9px; fill: var(--ink-2); }
 .track .spark-line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
 
 .track .drought-band { fill: var(--warm); opacity: 0.06; }

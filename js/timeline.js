@@ -34,7 +34,7 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 		// Drought emergencies (from data/drought_periods.csv), labelled when there is room.
 		for (const p of droughtPeriods) {
 			const x0 = x(p.start);
-			const bw = x(p.end) - x0;
+			const bw = Math.max(0, x(p.end) - x0);
 			svg.append("rect").attr("class", "drought-band").attr("x", x0).attr("width", bw).attr("y", 0).attr("height", h);
 			svg.append("rect").attr("class", "drought-cap").attr("x", x0).attr("width", bw).attr("y", 0).attr("height", 2.5);
 			const label = bw >= 118 ? "Drought emergency" : bw >= 50 ? "Drought" : "";

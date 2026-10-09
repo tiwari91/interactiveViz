@@ -260,6 +260,7 @@ async function main() {
 		await page.waitForTimeout(300);
 		check("2D click opens the detail card", await page.locator(".detail-card").isVisible() && /Oroville/.test(await page.locator(".detail-title").innerText()));
 		check("Detail card has a storage sparkline", (await page.locator(".detail-spark .spark-line").count()) === 1);
+		check("Sparkline shows capacity label and seasonal-average line", (await page.locator(".detail-spark .spark-cap").count()) === 1 && (await page.locator(".detail-spark .spark-avg").count()) === 1);
 		await page.keyboard.press("Escape");
 		check("Escape closes the detail card", !(await page.locator(".detail-card").isVisible()));
 

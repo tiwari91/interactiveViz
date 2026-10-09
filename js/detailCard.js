@@ -100,6 +100,10 @@ export function createDetailCard(stage, data, store, sound) {
 		const line = d3.line().defined((d) => d.p !== null).x((d) => x(d.d)).y((d) => y(d.p)).curve(d3.curveMonotoneX);
 		const area = d3.area().defined((d) => d.p !== null).x((d) => x(d.d)).y0(h - 12).y1((d) => y(d.p)).curve(d3.curveMonotoneX);
 		svg.append("line").attr("class", "spark-full").attr("x1", 0).attr("x2", w).attr("y1", y(1)).attr("y2", y(1));
+		// Seasonal average for each calendar month (reported values only), as a share of capacity.
+		const avgPts = r.avgByMonth ? data.dates.map((d, k) => { const a = r.avgByMonth[data.calMonth[k]]; return { d, p: a ? Math.min(1.05, a / r.capacity) : null }; }) : [];
+		if (avgPts.some((q) => q.p !== null)) svg.append("path").attr("class", "spark-avg").attr("d", line(avgPts));
+		svg.append("text").attr("class", "spark-cap").attr("x", w - 1).attr("y", y(1) + 8).attr("text-anchor", "end").text("capacity");
 		svg.append("path").attr("class", "spark-area").attr("d", area(pts));
 		svg.append("path").attr("class", "spark-line").attr("d", line(pts));
 		const cur = pts[i];

@@ -6,9 +6,11 @@ const PLAY = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M7 4.5v1
 const PAUSE = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 4h4.5v16H6zM13.5 4H18v16h-4.5z\"/></svg>";
 // Playback lasts about 45 s however long the record is, within these bounds per month.
 const STEP_MS = (n) => Math.max(160, Math.min(420, 45000 / n));
+const SPEEDS = [ 1, 2, 4 ];
 
 export function createTimeline(el, { dates, totals, droughtPeriods, provisional }, store) {
-	const stepMs = STEP_MS(dates.length);
+	const baseMs = STEP_MS(dates.length);
+	let speed = 1;
 	const provFrom = provisional.indexOf(true);
 	el.innerHTML = `
 		<button type="button" class="play-btn" aria-label="Play timeline">${PLAY}</button>
@@ -16,9 +18,11 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 			<svg aria-hidden="true"></svg>
 			<input type="range" min="0" max="${dates.length - 1}" step="1" aria-label="Month">
 		</div>
-		<div class="date-readout" aria-hidden="true"><span class="month"></span><span class="meta"></span></div>`;
+		<div class="date-readout" aria-hidden="true"><span class="month"></span><span class="meta"></span></div>
+		<button type="button" class="speed-btn" aria-label="Playback speed 1x">1×</button>`;
 	const btn = el.querySelector(".play-btn");
 	const input = el.querySelector("input");
+	const speedBtn = el.querySelector(".speed-btn");
 	const svg = d3.select(el.querySelector(".track svg"));
 	const monthEl = el.querySelector(".month");
 	const metaEl = el.querySelector(".meta");
@@ -110,10 +114,29 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 			const next = store.get().dateIndex + 1;
 			if (next >= dates.length) store.set({ playing: false });
 			else store.set({ dateIndex: next });
-		}, stepMs);
+		}, baseMs / speed);
 	}
 
 	btn.addEventListener("click", () => store.set({ playing: !store.get().playing }));
+	speedBtn.addEventListener("click", () => {
+		speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+		speedBtn.textContent = `${speed}×`;
+		speedBtn.setAttribute("aria-label", `Playback speed ${speed}x`);
+		if (timer) start();
+	});
+	// Arrow keys step a month (Shift: a year), Space plays or pauses, unless a control has focus.
+	document.addEventListener("keydown", (e) => {
+		if (e.altKey || e.ctrlKey || e.metaKey || e.target.closest?.("input, button, select, textarea, summary, [role=button]")) return;
+		const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+		if (dir) {
+			e.preventDefault();
+			const next = Math.min(dates.length - 1, Math.max(0, store.get().dateIndex + dir * (e.shiftKey ? 12 : 1)));
+			store.set({ dateIndex: next, playing: false });
+		} else if (e.key === " ") {
+			e.preventDefault();
+			store.set({ playing: !store.get().playing });
+		}
+	});
 	input.addEventListener("input", () => store.set({ dateIndex: +input.value, playing: false }));
 
 	store.subscribe((s, changed) => {

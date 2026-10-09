@@ -236,7 +236,7 @@ async function main() {
 		});
 		check("Footer text meets AA contrast (4.5:1)", footer >= 4.5, `${footer.toFixed(2)}:1`);
 
-		await page.locator(".map-2d .res").first().hover();
+		await page.locator(".map-2d .res").first().hover({ force: true });
 		const tip2d = await page.locator("#tooltip").innerText();
 		check("2D hover shows tooltip", await page.locator("#tooltip").isVisible() && /Shasta/.test(tip2d), tip2d.split("\n")[0]);
 		await page.mouse.move(5, 5);
@@ -269,6 +269,30 @@ async function main() {
 		check("Play advances the timeline", s1.playing && s1.dateIndex > i0, `${i0} -> ${s1.dateIndex}`);
 		await page.locator(".play-btn").click();
 		check("Pause stops the timeline", !(await stateOf(page)).playing);
+
+		// Keyboard: arrows step a month (Shift a year), Space plays; speed button cycles 1x/2x/4x.
+		await page.evaluate(() => { document.activeElement?.blur(); document.body.focus(); });
+		await setState(page, { dateIndex: 40 });
+		await page.keyboard.press("ArrowRight");
+		check("Right arrow steps one month on the page", (await stateOf(page)).dateIndex === 41);
+		await page.keyboard.press("Shift+ArrowLeft");
+		check("Shift+Left arrow steps back a year", (await stateOf(page)).dateIndex === 29);
+		await page.keyboard.press(" ");
+		check("Space starts playback", (await stateOf(page)).playing);
+		await page.keyboard.press(" ");
+		check("Space pauses playback", !(await stateOf(page)).playing);
+		await page.locator(".speed-btn").click();
+		await page.locator(".speed-btn").click();
+		check("Speed button cycles to 4x", /4/.test(await page.locator(".speed-btn").innerText()));
+		await setState(page, { dateIndex: 10 });
+		await page.locator(".play-btn").click();
+		await page.waitForTimeout(1300);
+		const fast = (await stateOf(page)).dateIndex - 10;
+		await page.locator(".play-btn").click();
+		check("4x playback advances faster than 1x would", fast >= 8, `${fast} months in 1.3 s`);
+		await page.locator(".speed-btn").click();
+		const fit = await page.evaluate(() => { const r = document.querySelector(".timeline").getBoundingClientRect(); return { b: r.bottom, vh: innerHeight, vw: innerWidth }; });
+		check("Map, summary and timeline fit the first screen on desktop", fit.vw < 1000 || fit.b <= fit.vh, `timeline bottom ${Math.round(fit.b)} of ${fit.vh}`);
 
 		await page.locator(".map-2d .res[aria-label^=\"Oroville\"]").click({ force: true });
 		await page.waitForTimeout(300);

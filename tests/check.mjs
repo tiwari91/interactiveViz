@@ -255,6 +255,13 @@ async function main() {
 		check("Timeline scrub changes statewide value", before !== after, `${before} -> ${after}`);
 		check("Timeline scrub updates month label", /2016/.test(await page.locator(".date-readout .month").innerText()), await page.locator(".date-readout .month").innerText());
 
+		check("Timeline marks the selected month with a playhead dot", (await page.locator(".track .playhead circle").count()) === 1);
+		const ex = await page.evaluate(() => { const t = window.droughtViz.data.totals; const lo = t.reduce((m, d, i) => (d.pct < t[m].pct ? i : m), 0); return { lo, n: document.querySelectorAll(".track .extreme").length }; });
+		check("Timeline marks the record low and high", ex.n === 2);
+		await page.locator(".track .extreme").first().dispatchEvent("click");
+		check("Clicking the low marker jumps to the lowest month", (await stateOf(page)).dateIndex === ex.lo, String((await stateOf(page)).dateIndex));
+		await setState(page, { dateIndex: 40 });
+		check("Summary shows change since the previous month", /since/.test(await page.locator(".js-state-delta").innerText()), await page.locator(".js-state-delta").innerText());
 		await page.locator(".play-btn").click();
 		const i0 = (await stateOf(page)).dateIndex;
 		await page.waitForTimeout(1300);

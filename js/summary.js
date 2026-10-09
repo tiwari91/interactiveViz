@@ -14,6 +14,7 @@ export function createSummary(el, data, store, onPick) {
 			<div class="big num js-state-pct"></div>
 			<div class="sub js-state-sub"></div>
 			<div class="sub js-state-avg"></div>
+			<div class="sub js-state-delta"></div>
 		</div>
 		<div>
 			<h3>Below 40% full</h3>
@@ -42,6 +43,12 @@ export function createSummary(el, data, store, onPick) {
 		el.querySelector(".js-state-sub").textContent = `${fmtMAF(t.storage)} of ${fmtMAF(t.capacity)} capacity (AF = acre-feet)`;
 		const mName = d3.timeFormat("%B")(data.dates[dateIndex]);
 		el.querySelector(".js-state-avg").innerHTML = t.ofAvg === null ? "" : `<strong class="${t.ofAvg < 0.8 ? "below-avg" : t.ofAvg > 1.1 ? "above-avg" : ""}">${fmtPct(t.ofAvg)} of average</strong> for ${mName} (${data.avgYears.from}–${data.avgYears.to})`;
+		const dEl = el.querySelector(".js-state-delta");
+		if (dateIndex > 0) {
+			const diff = (t.pct - data.totals[dateIndex - 1].pct) * 100;
+			dEl.textContent = `${Math.abs(diff) < 0.05 ? "No change" : `${diff > 0 ? "Up" : "Down"} ${Math.abs(diff).toFixed(1)} points`} since ${fmtMonth(data.dates[dateIndex - 1])}`;
+			dEl.className = `sub js-state-delta ${diff > 0.05 ? "up" : diff < -0.05 ? "down" : ""}`;
+		} else dEl.textContent = "";
 		el.querySelector(".js-low").textContent = t.low;
 		el.querySelector(".js-low-sub").textContent = `of ${t.reporting} reporting this month`;
 		const notes = [ `Excludes flood-control basins (${excluded.join(", ")}), which are kept empty by design.` ];

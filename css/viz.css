@@ -234,6 +234,14 @@
 
 .track svg { position: absolute; inset: 0 0 18px; width: 100%; height: 36px; overflow: visible; }
 
+.track svg { pointer-events: none; z-index: 2; }
+.track .extreme { pointer-events: all; cursor: pointer; }
+.track .extreme circle { fill: var(--surface); stroke: var(--ink-2); stroke-width: 1.5; }
+.track .extreme:hover circle { stroke: var(--accent); fill: var(--accent); }
+.track .extreme-label { fill: var(--ink-2); font: 500 9px var(--font-mono); }
+.track .playhead { pointer-events: none; }
+.track .playhead line { stroke: var(--ink); stroke-width: 1; opacity: 0.55; }
+.track .playhead circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
 .track .spark-area { fill: var(--accent); opacity: 0.14; }
 
 .track .spark-avg { fill: none; stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.8; }
@@ -383,3 +391,5 @@
 	.legend-wrap[open] > summary::after { content: "▴"; }
 	.legend-wrap[open] > .legend { margin-top: 10px; }
 }
+
+.js-state-delta { margin-top: 2px; }

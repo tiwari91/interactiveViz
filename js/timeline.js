@@ -23,6 +23,8 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 	const monthEl = el.querySelector(".month");
 	const metaEl = el.querySelector(".meta");
 	let timer = null;
+	let head = null;
+	let xOf = null;
 
 	function drawSpark() {
 		const w = el.querySelector(".track").clientWidth;
@@ -30,6 +32,7 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 		// Thumb centre travels from 2px to w-2px; match it.
 		const x = d3.scaleTime().domain(d3.extent(dates)).range([ 2, w - 2 ]);
 		const y = d3.scaleLinear().domain([ 0, 1 ]).range([ h, 4 ]);
+		xOf = x;
 		svg.selectAll("*").remove();
 		// Drought emergencies (from data/drought_periods.csv), labelled when there is room.
 		for (const p of droughtPeriods) {
@@ -49,7 +52,21 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 		const area = d3.area().x((_, i) => x(dates[i])).y0(h).y1((d) => y(d.pct)).curve(d3.curveMonotoneX);
 		svg.append("path").attr("class", "spark-area").attr("d", area(totals));
 		svg.append("path").attr("class", "spark-line").attr("d", area.lineY1()(totals));
+		// Statewide extremes of the record: click to jump there and compare.
+		const ext = [ [ "Low", d3.least(totals.keys(), (i) => totals[i].pct) ], [ "High", d3.greatest(totals.keys(), (i) => totals[i].pct) ] ];
+		const mark = svg.selectAll(".extreme").data(ext).join("g").attr("class", "extreme")
+			.attr("transform", ([ , i ]) => `translate(${x(dates[i])},${y(totals[i].pct)})`)
+			.on("click", (_, [ , i ]) => store.set({ dateIndex: i, playing: false }));
+		mark.append("title").text(([ k, i ]) => `${k === "Low" ? "Lowest" : "Highest"} month on record: ${fmtMonthLong(dates[i])}, ${fmtPct(totals[i].pct)} full. Click to jump.`);
+		mark.append("circle").attr("r", 3);
+		mark.append("text").attr("class", "extreme-label").attr("y", -7).attr("text-anchor", "middle")
+			.text(([ k, i ]) => `${k} ${fmtPct(totals[i].pct)}`);
+		// The selected month: a line and a dot riding the storage curve.
+		head = svg.append("g").attr("class", "playhead");
+		head.append("line").attr("y1", 0).attr("y2", h);
+		head.append("circle").attr("r", 4.5);
 		const years = d3.timeYear.range(d3.timeYear.ceil(dates[0]), dates[dates.length - 1]);
+		placeHead(store.get().dateIndex);
 		// A tick for every year; labels thin out to every 2 or 5 years on narrow screens.
 		const every = [ 1, 2, 5, 10 ].find((k) => (years.length / k) * 38 <= w) ?? 10;
 		const ticks = svg.selectAll(".year-tick").data(years).join("g")
@@ -60,7 +77,14 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 			.append("text").attr("y", h + 15).attr("text-anchor", "middle").text(d3.timeFormat("%Y"));
 	}
 
+	function placeHead(i) {
+		if (!head || !xOf) return;
+		head.attr("transform", `translate(${xOf(dates[i])},0)`);
+		head.select("circle").attr("cy", 36 - totals[i].pct * 32);
+	}
+
 	function render({ dateIndex, playing }) {
+		placeHead(dateIndex);
 		input.value = dateIndex;
 		const t = totals[dateIndex];
 		const label = fmtMonthLong(dates[dateIndex]);

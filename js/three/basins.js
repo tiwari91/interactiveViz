@@ -237,9 +237,22 @@ function makeBasin(r, maxCap, world) {
 			floors.push(carve(u, v, world.groundY(x, z)).h);
 		}
 	}
-	const vol = (L) => floors.reduce((acc, f) => acc + Math.max(0, L - f), 0);
+	// Water volume below level L: sorted floors with prefix sums make it a binary search.
+	floors.sort((a, b) => a - b);
+	const prefix = new Float64Array(floors.length + 1);
+	floors.forEach((f, i) => (prefix[i + 1] = prefix[i] + f));
+	const vol = (L) => {
+		let lo = 0;
+		let hi = floors.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (floors[mid] < L) lo = mid + 1;
+			else hi = mid;
+		}
+		return lo * L - prefix[lo];
+	};
 	const vFull = vol(P);
-	const minFloor = floors.length ? Math.min(...floors) : P - D;
+	const minFloor = floors.length ? floors[0] : P - D;
 	basin.levelFor = (pct) => {
 		if (pct === null) return minFloor - 0.5;
 		const target = Math.max(0, Math.min(1, pct)) * vFull;

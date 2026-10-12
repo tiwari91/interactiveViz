@@ -497,6 +497,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			},
 			moonDir: () => shared.uMoonDir.value.clone(),
 			gold: () => terrain.gold,
+			groundSamples: () => outflow.groundSamples(),
+			riverLevelsReady: () => outflow.levelsReady(),
 			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),
 			riparian: () => ({ ...riparian.counts, minVeg: riparian.minVegetation(), fade: riparian.fade }),
 			// For tests: the largest step (metres) between a land DEM cell and the mean of its neighbours.

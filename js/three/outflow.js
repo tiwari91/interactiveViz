@@ -369,16 +369,62 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 
 	// Half-width scale per kind for a release value.
 	const widthFor = (kind, rel) => (kind === KIND.OUTFLOW ? 0.38 + 0.8 * rel : kind === KIND.INFLOW ? 0.3 + 0.25 * rel : 1);
+	// Ground heights under each strip at five release levels. They are sampled in idle time
+	// after the first frame; from then on a month change only interpolates between them
+	// instead of re-sampling the terrain for every vertex, which used to cost a dropped
+	// frame on every step of the drought replay.
+	const LEVELS = [ 0, 0.25, 0.5, 0.75, 1 ];
+	let groundSamples = 0;
+	const pending = [];
+	for (const st of strips) {
+		if (st.kind === KIND.CHUTE) continue;
+		const sample = st.sample;
+		st.sample = (x, z, y) => {
+			groundSamples++;
+			return sample(x, z, y);
+		};
+		pending.push(st);
+	}
+	function fillLevels(st) {
+		st.ys = LEVELS.map((rel) => {
+			const k = widthFor(st.kind, rel) * BANK;
+			const tmp = new Float32Array(st.rows * ACROSS.length * 3);
+			placeStrip({ ...st, start: 0 }, st.centre, (i, d) => st.shape(i, d) * k, st.sample, tmp);
+			const ys = new Float32Array(st.rows * ACROSS.length);
+			for (let v = 0; v < ys.length; v++) ys[v] = tmp[v * 3 + 1];
+			return ys;
+		});
+	}
+	const idle = window.requestIdleCallback ?? ((fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 50));
+	const work = (deadline) => {
+		while (pending.length && deadline.timeRemaining() > 2) fillLevels(pending.shift());
+		if (pending.length) idle(work);
+	};
+	idle(work);
 	function place(outlet) {
 		for (const st of strips) {
-			const k = widthFor(st.kind, outlet[st.dam]);
+			const rel = Math.min(1, Math.max(0, outlet[st.dam]));
+			const k = widthFor(st.kind, rel);
 			const bank = st.kind === KIND.CHUTE ? 1 : BANK;
-			placeStrip(st, st.centre, (i, d) => st.shape(i, d) * k * bank, st.sample, positions);
+			if (!st.ys) {
+				placeStrip(st, st.centre, (i, d) => st.shape(i, d) * k * bank, st.sample, positions);
+				continue;
+			}
+			const seg = Math.min(LEVELS.length - 2, Math.floor(rel * (LEVELS.length - 1)));
+			const lo = st.ys[seg];
+			const hi = st.ys[seg + 1];
+			const t = rel * (LEVELS.length - 1) - seg;
+			let local = 0;
+			placeStrip(st, st.centre, (i, d) => st.shape(i, d) * k * bank, () => {
+				const y = lo[local] + (hi[local] - lo[local]) * t;
+				local++;
+				return y;
+			}, positions);
 		}
 		geom.attributes.position.needsUpdate = true;
-		geom.computeBoundingSphere();
 	}
 	place(new Array(n).fill(0.5));
+	geom.computeBoundingSphere();
 
 	// Points along both banks of every river, for riparian trees and boulders.
 	function bankPoints(step = 1.1) {
@@ -413,6 +459,9 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		bankPoints,
 		nearChute,
 		router,
+		// For tests: terrain samples taken so far while placing strips (a month change takes none).
+		groundSamples: () => groundSamples,
+		levelsReady: () => pending.length === 0,
 		// Rebuild the strips on the ground for a month's release (called on month change).
 		setWidths(outlet) {
 			place(outlet);

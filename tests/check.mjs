@@ -448,6 +448,12 @@ async function main() {
 		check("San Francisco and San Pablo bays are water; the Delta islands stay land", bays[0] && bays[1] && !bays[2], JSON.stringify(bays));
 		const rivers = await debug3d(page, "c.mainRivers()");
 		check("Overview shows the main-stem rivers", [ "Sacramento", "Feather", "American", "San Joaquin" ].every((n) => rivers.includes(n)), rivers.join(", "));
+		await page.waitForFunction(() => window.droughtViz.views["3d"].debug().riverLevelsReady(), null, { timeout: 30000 });
+		const samples0 = await debug3d(page, "c.groundSamples()");
+		for (const m of [ "2015-09", "2017-02", "2021-09" ]) await setState(page, { dateIndex: await monthIndex(page, m) });
+		const samples1 = await debug3d(page, "c.groundSamples()");
+		const gap1 = (await debug3d(page, "c.verifyWater()")).maxGap;
+		check("A month change re-places the rivers without re-sampling the terrain, still on the ground", samples1 === samples0 && gap1 < 0.35, `${samples1 - samples0} ground samples over 3 month changes, max gap ${gap1} in Sep 2021`);
 		const gold = [];
 		for (const m of [ "2017-04", "2014-09" ]) {
 			await setState(page, { dateIndex: await monthIndex(page, m) });

@@ -395,7 +395,11 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			return ys;
 		});
 	}
-	const idle = window.requestIdleCallback ?? ((fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 50));
+	// Safari has no requestIdleCallback: fall back to short timer slices with a real budget.
+	const idle = window.requestIdleCallback ?? ((fn) => setTimeout(() => {
+		const t0 = performance.now();
+		fn({ timeRemaining: () => 8 - (performance.now() - t0) });
+	}, 50));
 	const work = (deadline) => {
 		while (pending.length && deadline.timeRemaining() > 2) fillLevels(pending.shift());
 		if (pending.length) idle(work);

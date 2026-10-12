@@ -656,8 +656,15 @@ async function main() {
 						const byName = new Map(window.droughtViz.data.reservoirs.map((r) => [ r.name.replace(/ \(.*\)$/, "").replace(/ (Dam|Reservoir)$/, ""), r ]));
 						return [ ...document.querySelectorAll(".labels-3d .lbl") ].filter((e) => e.style.display !== "none" && !e.querySelector(".lbl-text").classList.contains("far")).map((e) => byName.get(e.querySelector(".lbl-name").textContent)).filter(Boolean).map((r) => ({ id: r.id, lat: r.lat }));
 					});
-					const boxes = await page.evaluate(() => [ ...document.querySelectorAll(".labels-3d .lbl-text:not(.far)") ].filter((t) => t.closest(".lbl").style.display !== "none").map((t) => t.getBoundingClientRect()).map((b) => [ b.left, b.top, b.right, b.bottom ]));
-					const overlap = boxes.some((a, i) => boxes.some((b, j) => j > i && a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1]));
+					const overlaps = async () => {
+						const boxes = await page.evaluate(() => [ ...document.querySelectorAll(".labels-3d .lbl-text:not(.far)") ].filter((t) => t.closest(".lbl").style.display !== "none").map((t) => t.getBoundingClientRect()).map((b) => [ b.left, b.top, b.right, b.bottom ]));
+						return boxes.some((a, i) => boxes.some((b, j) => j > i && a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1]));
+					};
+					let overlap = await overlaps();
+					// Values change the text width: still no overlaps after a month change (labels re-measure).
+					await setState(page, { dateIndex: await monthIndex(page, "2017-02") });
+					await page.waitForTimeout(300);
+					overlap = overlap || await overlaps();
 					check("iPhone 12 overview names at least 6 reservoirs, southern ones too, none overlapping", phoneNamed.length >= 6 && phoneNamed.some((r) => r.lat < 35) && !overlap, `${phoneNamed.map((r) => r.id).join(", ")}${overlap ? "; names overlap" : ""}`);
 					await page.locator("#view-3d").scrollIntoViewIfNeeded();
 					const b2 = await page.locator("#view-3d").boundingBox();

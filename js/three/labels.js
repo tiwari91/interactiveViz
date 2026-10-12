@@ -37,6 +37,7 @@ export function createLabels(THREE, container, basins, maxCap) {
 				it.dot.classList.toggle("no-data", c === null);
 				it.dot.classList.toggle("flood", r.floodControl);
 				it.pct.textContent = p === null ? "no data" : r.floodControl ? `${fmtPct(p)} · flood control` : fmtPct(p);
+				it.w = 0; // the text width changes with the value; measure again when next shown
 			}
 		},
 		// reach: how much further than the wide desktop view the home view sits (a portrait
@@ -75,7 +76,11 @@ export function createLabels(THREE, container, basins, maxCap) {
 				const isActive = it.b.r.id === active;
 				const far = it.far * reachScale;
 				const fade = isActive ? 1 : 1 - Math.min(1, Math.max(0, (dist - far * 0.75) / (far * 0.35)));
-				if (!it.w) it.w = it.text.offsetWidth + 16;
+				if (!it.w) {
+					// Measure while displayed: a hidden label has no width.
+					it.el.style.display = "";
+					it.w = it.text.offsetWidth + 16;
+				}
 				// The name goes right of its dot, or left of it when that side is taken or off screen.
 				const right = [ x - 6, y - 10, x + it.w, y + 10 ];
 				const left = [ x - it.w, y - 10, x + 6, y + 10 ];
@@ -97,8 +102,9 @@ export function createLabels(THREE, container, basins, maxCap) {
 				it.text.classList.toggle("far", !show);
 				const t = (fade - SHOW_AT) / (1 - SHOW_AT);
 				it.text.style.setProperty("--plate", (PLATE_FAR + (PLATE_NEAR - PLATE_FAR) * Math.max(0, t)).toFixed(2));
-				const ox = onLeft ? it.w - 6 : 5;
-				it.el.style.transform = `translate(${Math.round(x - ox)}px, ${Math.round(y - 9)}px)`;
+				// A left-flipped label is anchored by its right edge, so the dot stays on the lake
+				// whatever the width of the text.
+				it.el.style.transform = onLeft ? `translate(${Math.round(x + 5)}px, ${Math.round(y - 9)}px) translateX(-100%)` : `translate(${Math.round(x - 5)}px, ${Math.round(y - 9)}px)`;
 			}
 		},
 	};

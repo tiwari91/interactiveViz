@@ -382,10 +382,21 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		return pts;
 	}
 
+	// True when a point is on or beside a spillway chute.
+	function nearChute(x, z, pad = 0.8) {
+		for (const st of strips) {
+			if (st.kind !== KIND.CHUTE) continue;
+			const w = st.shape() + pad;
+			for (const p of st.centre) if (Math.hypot(p[0] - x, p[2] - z) < w) return true;
+		}
+		return false;
+	}
+
 	return {
 		group,
 		lengths,
 		bankPoints,
+		nearChute,
 		router,
 		// Rebuild the strips on the ground for a month's release (called on month change).
 		setWidths(outlet) {

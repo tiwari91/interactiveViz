@@ -10,15 +10,23 @@ const VERT = `
 	varying vec2 vUv;
 	#ifdef USE_INSTANCING
 		attribute float aHighlight;
+		attribute float aRow;
+		attribute float aFull;
 	#endif
+	varying float vRow;
+	varying float vFull;
 	void main() {
 		vUv = uv;
 		vec4 p = vec4(position, 1.0);
 		#ifdef USE_INSTANCING
 			p = instanceMatrix * p;
 			vHi = aHighlight;
+			vRow = aRow;
+			vFull = aFull;
 		#else
 			vHi = 0.0;
+			vRow = -1.0;
+			vFull = 0.0;
 		#endif
 		#ifdef USE_INSTANCING_COLOR
 			vTint = instanceColor;
@@ -46,6 +54,13 @@ const FRAG = `
 	uniform float uFogFar;
 	uniform float uClip;
 	uniform float uLift;
+	uniform sampler2D uBed;
+	uniform float uRows;
+	uniform float uBedScale;
+	uniform vec3 uSand;
+	uniform vec3 uFoamCol;
+	varying float vRow;
+	varying float vFull;
 	varying vec3 vWorld;
 	varying vec3 vTint;
 	varying float vHi;
@@ -66,6 +81,14 @@ const FRAG = `
 			float vn = (vUv.y - 0.5) * 2.9;
 			if (length(vec2(un, vn)) > 1.32) discard;
 		}
+		// Water depth from the lake's bed map (depth below full pool): soft shoreline and
+		// shallow-to-deep colour.
+		float depth = 6.0;
+		if (vRow >= 0.0) {
+			float below = texture2D(uBed, vec2(vUv.x, (vRow + vUv.y) / uRows)).r * uBedScale;
+			depth = vWorld.y - (vFull - below);
+			if (depth < 0.0) discard;
+		}
 		gDist = length(cameraPosition - vWorld);
 		vec2 p = vWorld.xz * uScale;
 		vec3 g = wave(p, normalize(vec2(0.8, 0.6)), 1.9, 1.3, 0.032)
@@ -80,16 +103,23 @@ const FRAG = `
 		float fres = 0.03 + 0.97 * pow(1.0 - ndv, 5.0);
 		vec3 R = reflect(-V, n);
 		vec3 sky = mix(uSkyHorizon, uSkyTop, clamp(R.y * 1.4, 0.0, 1.0));
-		vec3 body = mix(uDeep, uShallow, 0.35 + 0.35 * g.z / 0.1);
+		// Shallows show the bed through clearer, lighter water; deep water is dark.
+		float deepness = vRow >= 0.0 ? smoothstep(0.15, 3.5, depth) : 0.6;
+		vec3 shallowCol = mix(uShallow * 1.45, uSand, 0.3 * (1.0 - smoothstep(0.0, 0.8, depth)));
+		vec3 body = mix(shallowCol, uDeep * 0.85, deepness) * (0.92 + 0.16 * g.z / 0.1);
 		body = mix(body, vTint, uTintMix);
 		vec3 col = mix(body, sky, fres * 0.6);
+		// A thin lapping line right at the water's edge.
+		float lap = vRow >= 0.0 ? smoothstep(0.0, 0.05, depth) * (1.0 - smoothstep(0.06, 0.22, depth)) : 0.0;
+		col = mix(col, uFoamCol, lap * (0.3 + 0.2 * sin(uTime * 1.3 + vWorld.x * 0.7 + vWorld.z * 0.5)));
 		float spec = pow(max(dot(R, uSunDir), 0.0), 260.0);
 		col += uSunColor * spec * 2.4;
 		col += vec3(0.9, 0.95, 1.0) * vHi * 0.07;
 		// Night: moonlit sheen so water still reads against dark land.
 		col += uLift * (vec3(0.02, 0.035, 0.055) + uSunColor * spec * 1.5);
 		float fog = smoothstep(uFogNear, uFogFar, gDist);
-		gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha);
+		float edgeA = vRow >= 0.0 ? smoothstep(0.0, 0.12, depth) : 1.0;
+		gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha * edgeA);
 		#include <encodings_fragment>
 	}`;
 
@@ -116,11 +146,48 @@ function makeMaterial(THREE, shared, own) {
 	});
 }
 
+// Depth below the full pool for every lake, sampled over its water plane, packed one lake
+// per band of rows into a byte texture (linear filtering works everywhere).
+const BED_W = 64;
+const BED_H = 48;
+function bedAtlas(THREE, basins) {
+	const list = basins.basins;
+	const below = new Float32Array(BED_W * BED_H * list.length);
+	let scale = 0.5;
+	list.forEach((b, k) => {
+		for (let j = 0; j < BED_H; j++) {
+			for (let i = 0; i < BED_W; i++) {
+				// Same mapping as the plane: uv.x along u from u0 to 1.45 Lu, uv.y across v.
+				const u = b.u0 + (b.Lu * 1.45 - b.u0) * (i + 0.5) / BED_W;
+				const v = (0.5 - (j + 0.5) / BED_H) * 2.9 * b.Lv;
+				const [ x, z ] = b.toWorld(u, v);
+				const sfc = basins.surfaceAt(x, z);
+				const d = Math.max(0, b.P - (sfc ? sfc.h : b.P + 1));
+				below[(k * BED_H + j) * BED_W + i] = d;
+				scale = Math.max(scale, d);
+			}
+		}
+	});
+	const bytes = new Uint8Array(below.length * 4);
+	below.forEach((d, n) => {
+		bytes[n * 4] = Math.round(d / scale * 255);
+		bytes[n * 4 + 3] = 255;
+	});
+	const tex = new THREE.DataTexture(bytes, BED_W, BED_H * list.length, THREE.RGBAFormat);
+	tex.magFilter = THREE.LinearFilter;
+	tex.minFilter = THREE.LinearFilter;
+	tex.needsUpdate = true;
+	return { tex, scale };
+}
+
 export function createLakes(THREE, basins, shared) {
 	const list = basins.basins;
 	const geom = new THREE.PlaneGeometry(1, 1);
 	geom.rotateX(-Math.PI / 2);
 	geom.setAttribute("aHighlight", new THREE.InstancedBufferAttribute(new Float32Array(list.length), 1));
+	geom.setAttribute("aRow", new THREE.InstancedBufferAttribute(new Float32Array(list.map((_, k) => k)), 1));
+	geom.setAttribute("aFull", new THREE.InstancedBufferAttribute(new Float32Array(list.map((b) => b.P)), 1));
+	const bed = bedAtlas(THREE, basins);
 	const mat = makeMaterial(THREE, shared, {
 		uScale: { value: 0.9 },
 		uTintMix: { value: 0.05 },
@@ -128,6 +195,11 @@ export function createLakes(THREE, basins, shared) {
 		uAlpha: { value: 0.94 },
 		uDeep: { value: new THREE.Color(0x174a63) },
 		uShallow: { value: new THREE.Color(0x2c7189) },
+		uBed: { value: bed.tex },
+		uRows: { value: list.length },
+		uBedScale: { value: bed.scale },
+		uSand: { value: new THREE.Color(0x8f8a6e) },
+		uFoamCol: { value: new THREE.Color(0xe8f2f2) },
 	});
 	const mesh = new THREE.InstancedMesh(geom, mat, list.length);
 	mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(list.length * 3), 3);
@@ -175,6 +247,11 @@ export function createOcean(THREE, shared) {
 		uAlpha: { value: 1 },
 		uDeep: { value: new THREE.Color(0x163a52) },
 		uShallow: { value: new THREE.Color(0x2c6178) },
+		uBed: { value: null },
+		uRows: { value: 1 },
+		uBedScale: { value: 1 },
+		uSand: { value: new THREE.Color(0) },
+		uFoamCol: { value: new THREE.Color(0) },
 	});
 	mat.depthWrite = false;
 	const mesh = new THREE.Mesh(geom, mat);

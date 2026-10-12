@@ -454,6 +454,8 @@ async function main() {
 		const samples1 = await debug3d(page, "c.groundSamples()");
 		const gap1 = (await debug3d(page, "c.verifyWater()")).maxGap;
 		check("A month change re-places the rivers without re-sampling the terrain, still on the ground", samples1 === samples0 && gap1 < 0.35, `${samples1 - samples0} ground samples over 3 month changes, max gap ${gap1} in Sep 2021`);
+		const bare = await debug3d(page, "(() => { let n = 0; c.sc.scene.traverse((o) => { const a = o.geometry?.attributes?.bare; if (a) for (let i = 0; i < a.count; i++) n += a.getX(i) > 0.5; }); return n; })()");
+		check("Exposed lake beds are marked bare, so the grass and fields shader skips them", bare > 1000, `${bare} lake-bed vertices`);
 		const gold = [];
 		for (const m of [ "2017-04", "2014-09" ]) {
 			await setState(page, { dateIndex: await monthIndex(page, m) });

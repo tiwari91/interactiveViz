@@ -141,8 +141,8 @@ function material(THREE, uniforms) {
 		shader.uniforms.uNight = uniforms.uNight;
 		shader.uniforms.uGold = uniforms.uGold;
 		shader.vertexShader = shader.vertexShader
-			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nuniform float uDry;\nvarying vec3 vWPos;\nvarying vec3 vWN;")
-			.replace("#include <color_vertex>", "#include <color_vertex>\n\tvColor.rgb = mix(color.rgb, colorDry, uDry);")
+			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nattribute float bare;\nuniform float uDry;\nvarying vec3 vWPos;\nvarying vec3 vWN;\nvarying float vBare;")
+			.replace("#include <color_vertex>", "#include <color_vertex>\n\tvColor.rgb = mix(color.rgb, colorDry, uDry);\n\tvBare = bare;")
 			.replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\n\tvWN = normalize(mat3(modelMatrix) * objectNormal);")
 			.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n\tvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
 		// Close-up detail: grass grain and tufts on gentle ground, cracked rock on steep ground,
@@ -151,6 +151,7 @@ function material(THREE, uniforms) {
 			.replace("#include <common>", `#include <common>
 varying vec3 vWPos;
 varying vec3 vWN;
+varying float vBare;
 uniform sampler2D uDetail;
 uniform float uNight;
 uniform float uGold;
@@ -178,11 +179,12 @@ vec4 gD1;`)
 		// Natural cover in patches: dark chaparral/scrub clumps and open grass that turns
 		// golden in late summer and drought (uGold), staying green in spring.
 		// Any non-rock, non-snow ground carries cover, whatever its colour this month.
-		float veg = (1.0 - smoothstep(0.25, 0.45, slope)) * (1.0 - step(0.8, lum)) * smoothstep(0.02, 0.06, lum);
+		// Exposed lake bed (vBare) is mineral and silt, never grass or fields.
+		float veg = (1.0 - smoothstep(0.25, 0.45, slope)) * (1.0 - step(0.8, lum)) * smoothstep(0.02, 0.06, lum) * (1.0 - vBare);
 		vec4 d4 = texture2D(uDetail, vWPos.xz * 0.023 + 0.13);
 		float scrubN = d2.g * 0.45 + d4.r * 0.25 + d3.r * 0.3;
 		// The flat valley floor is farmland, not scrub: rectangular fields instead.
-		float valley = smoothstep(1.9, 1.0, vWPos.y) * (1.0 - smoothstep(0.02, 0.06, slope));
+		float valley = smoothstep(1.9, 1.0, vWPos.y) * (1.0 - smoothstep(0.02, 0.06, slope)) * (1.0 - vBare);
 		float patchNear = 1.0 - smoothstep(90.0, 260.0, dist);
 		float scrub = smoothstep(0.44, 0.6, scrubN) * veg * (1.0 - valley) * (0.35 + 0.65 * patchNear);
 		float clumps = smoothstep(0.3, 0.7, gD1.a + gD1.g * 0.5);
@@ -324,6 +326,7 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	}
 	geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
 	geom.setAttribute("colorDry", new THREE.BufferAttribute(colDry, 3));
+	geom.setAttribute("bare", new THREE.BufferAttribute(new Float32Array(n), 1));
 
 	const detail = detailTexture(THREE);
 	const uniforms = { uDry: { value: 0.4 }, uDetail: { value: detail }, uNight: { value: 0 }, uGold: { value: 0.5 } };
@@ -376,6 +379,7 @@ function buildPatches(THREE, P, world, basins, quality) {
 	const positions = [];
 	const colors = [];
 	const colorsDry = [];
+	const bare = [];
 	const indices = [];
 	const a = new THREE.Color();
 	const b = new THREE.Color();
@@ -444,6 +448,7 @@ function buildPatches(THREE, P, world, basins, quality) {
 				}
 				colors.push(a.r, a.g, a.b);
 				colorsDry.push(b.r, b.g, b.b);
+				bare.push(s && zone === "bowl" ? 1 : 0);
 			}
 		}
 		base += (nu + 1) * (nv + 1);
@@ -452,6 +457,7 @@ function buildPatches(THREE, P, world, basins, quality) {
 	g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
 	g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
 	g.setAttribute("colorDry", new THREE.Float32BufferAttribute(colorsDry, 3));
+	g.setAttribute("bare", new THREE.Float32BufferAttribute(bare, 1));
 	g.setIndex(indices);
 	g.computeVertexNormals();
 	return g;
@@ -501,6 +507,7 @@ function buildSurround(THREE, P, world) {
 	geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
 	geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
 	geom.setAttribute("colorDry", new THREE.BufferAttribute(col.slice(), 3));
+	geom.setAttribute("bare", new THREE.BufferAttribute(new Float32Array(n), 1));
 	geom.setIndex(index);
 	geom.computeVertexNormals();
 	return geom;

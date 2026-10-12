@@ -135,6 +135,7 @@ function material(THREE, uniforms) {
 		shader.uniforms.uDry = uniforms.uDry;
 		shader.uniforms.uDetail = uniforms.uDetail;
 		shader.uniforms.uNight = uniforms.uNight;
+		shader.uniforms.uGold = uniforms.uGold;
 		shader.vertexShader = shader.vertexShader
 			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nuniform float uDry;\nvarying vec3 vWPos;\nvarying vec3 vWN;")
 			.replace("#include <color_vertex>", "#include <color_vertex>\n\tvColor.rgb = mix(color.rgb, colorDry, uDry);")
@@ -148,6 +149,7 @@ varying vec3 vWPos;
 varying vec3 vWN;
 uniform sampler2D uDetail;
 uniform float uNight;
+uniform float uGold;
 float gNear;
 float gRock;
 vec4 gD1;`)
@@ -169,10 +171,29 @@ vec4 gD1;`)
 		// Vegetated ground: darker tufts and lighter dry blades.
 		ground = mix(ground, ground * vec3(0.62, 0.74, 0.55), smoothstep(0.08, 0.5, gD1.a) * (0.35 + 0.65 * green));
 		ground = mix(ground, ground * vec3(1.12, 1.08, 0.92), smoothstep(0.62, 0.9, gD1.r) * green * 0.5);
+		// Natural cover in patches: dark chaparral/scrub clumps and open grass that turns
+		// golden in late summer and drought (uGold), staying green in spring.
+		// Any non-rock, non-snow ground carries cover, whatever its colour this month.
+		float veg = (1.0 - smoothstep(0.25, 0.45, slope)) * (1.0 - step(0.8, lum)) * smoothstep(0.02, 0.06, lum);
+		vec4 d4 = texture2D(uDetail, vWPos.xz * 0.023 + 0.13);
+		float scrubN = d2.g * 0.45 + d4.r * 0.25 + d3.r * 0.3;
+		float scrub = smoothstep(0.47, 0.56, scrubN) * veg;
+		float clumps = smoothstep(0.3, 0.7, gD1.a + gD1.g * 0.5);
+		vec3 scrubC = mix(vec3(0.07, 0.09, 0.035), vec3(0.13, 0.12, 0.06), uGold * 0.5) * (0.7 + 0.7 * clumps);
+		float open = (1.0 - scrub) * veg * smoothstep(0.35, 0.6, d3.g * 0.6 + d4.g * 0.4);
+		vec3 goldC = vec3(0.36, 0.27, 0.1) * mix(0.82, 1.15, gD1.r);
+		ground = mix(ground, goldC, open * uGold * 0.85);
+		ground = mix(ground, scrubC, scrub * 0.9);
+		// Creases and steep faces sit in shade; rounded tops catch light.
+		ground *= 1.0 - 0.22 * smoothstep(0.12, 0.42, slope) * (1.0 - gRock * 0.5);
 		// Rock: greyer, cracked, with lighter weathered faces.
 		vec3 rockC = mix(vec3(lum) * vec3(1.02, 0.98, 0.93), c, 0.45) * mix(0.78, 1.16, gD1.r);
 		rockC *= 1.0 - gD1.b * 0.45;
 		ground = mix(ground, rockC, gRock * 0.75);
+		// Rocky outcrops breaking through on ridges and knolls.
+		float outcrop = smoothstep(0.62, 0.78, texture2D(uDetail, vWPos.xz * 0.045 + 0.51).b + d2.g * 0.15) * smoothstep(0.06, 0.2, slope);
+		ground = mix(ground, rockC * (1.0 - gD1.b * 0.3), outcrop * 0.85);
+		gRock = max(gRock, outcrop);
 		diffuseColor.rgb = mix(c, ground, gNear);
 	}`)
 			.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
@@ -260,7 +281,7 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	geom.setAttribute("colorDry", new THREE.BufferAttribute(colDry, 3));
 
 	const detail = detailTexture(THREE);
-	const uniforms = { uDry: { value: 0.4 }, uDetail: { value: detail }, uNight: { value: 0 } };
+	const uniforms = { uDry: { value: 0.4 }, uDetail: { value: detail }, uNight: { value: 0 }, uGold: { value: 0.5 } };
 	const mat = material(THREE, uniforms);
 	const mesh = new THREE.Mesh(geom, mat);
 	mesh.receiveShadow = true;
@@ -282,6 +303,14 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	return {
 		group,
 		detail,
+		// Golden grass: late summer and autumn, and more of it in a dry year.
+		setSeason(month, dryness) {
+			const season = [ 0.25, 0.15, 0.05, 0, 0.1, 0.45, 0.8, 1, 1, 0.9, 0.65, 0.4 ][month];
+			uniforms.uGold.value = Math.min(1, season * (0.55 + 0.6 * dryness) + dryness * 0.25);
+		},
+		get gold() {
+			return uniforms.uGold.value;
+		},
 		setNight(v) {
 			uniforms.uNight.value = v;
 		},

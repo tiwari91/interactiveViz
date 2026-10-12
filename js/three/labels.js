@@ -22,7 +22,7 @@ export function createLabels(THREE, container, basins, maxCap) {
 		el.querySelector(".lbl-name").textContent = b.r.name.replace(/ \(.*\)$/, "").replace(/ (Dam|Reservoir)$/, "");
 		layer.appendChild(el);
 		const k = Math.sqrt(b.r.capacity / maxCap);
-		return { b, el, dot: el.querySelector(".lbl-dot"), pct: el.querySelector(".lbl-pct"), text: el.querySelector(".lbl-text"), far: 220 + 1700 * k * k + 500 * k, w: 0 };
+		return { b, el, dot: el.querySelector(".lbl-dot"), pct: el.querySelector(".lbl-pct"), text: el.querySelector(".lbl-text"), far: 600 + 2200 * k, w: 0 };
 	});
 
 	return {

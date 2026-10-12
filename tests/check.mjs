@@ -441,6 +441,7 @@ async function main() {
 		const spike = await debug3d(page, "c.maxSpike()");
 		check("No terrain spikes: every land cell within 220 m of its neighbours' mean", spike <= 221, `${spike.toFixed(0)} m`);
 		const rip = await debug3d(page, "c.riparian()");
+		check("No lake water above the shoreline: the water fades out where the bed meets the level", await debug3d(page, "c.lakeEdgeSoft()"));
 		check("Rivers have trees and boulders along their banks", rip.pine + rip.broad > 1000 && rip.rock > 200, `${rip.pine} conifers, ${rip.broad} broadleaf, ${rip.rock} boulders`);
 		check("Bank trees grow only on vegetated ground", rip.minVeg >= 0.05, `lowest vegetation under a tree ${rip.minVeg.toFixed(2)}`);
 		const homeDist = await page.evaluate(() => { const v = window.droughtViz.views["3d"].debug(); return v.sc.camera.aspect >= 1 ? 1180 : 1700; });
@@ -617,6 +618,9 @@ async function main() {
 				check(`iPhone 12 ${mode} ${scheme}: no horizontal scroll`, await noHScroll(page));
 				if (mode === "3d" && scheme === "light") {
 					check("iPhone 12 defaults to low quality", (await page.locator(".js-quality").inputValue()) === "low");
+					const ripLow = await debug3d(page, "c.riparian()");
+					check("Low quality keeps bank trees light", ripLow.pine + ripLow.broad <= 2200 && ripLow.rock <= 400, `${ripLow.pine + ripLow.broad} trees, ${ripLow.rock} boulders`);
+					check("Bank trees are skipped at the overview", !(await debug3d(page, "(() => { let v = null; c.sc.scene.traverse((o) => { if (o.isInstancedMesh && o.material.vertexColors && o.parent && o.parent.children.length === 4) v = o.parent.visible; }); return v; })()")));
 					await page.locator("#view-3d").scrollIntoViewIfNeeded();
 					const b2 = await page.locator("#view-3d").boundingBox();
 					const [ x, y ] = await page.evaluate(() => window.droughtViz.views["3d"].screenPos("SHA"));

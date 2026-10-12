@@ -472,6 +472,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
 			verifyWater: () => outflow.verify(),
 			anisotropy: () => terrain.detail.anisotropy,
+			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),
 			riparian: () => ({ ...riparian.counts, minVeg: riparian.minVegetation(), fade: riparian.fade }),
 			// For tests: the largest step (metres) between a land DEM cell and the mean of its neighbours.
 			maxSpike() {

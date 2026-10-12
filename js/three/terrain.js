@@ -26,6 +26,15 @@ function palette(THREE) {
 	};
 }
 
+// How wooded the ground is (0..1) at an elevation, slope and place: the same belts the
+// terrain colours use, so trees only grow where the ground reads as vegetated.
+export function vegetation(m, slopeY, lon, lat) {
+	if (m < 5) return 0;
+	const desert = Math.min(1, smoothstep(-118.9, -118.1, lon) * (1 - smoothstep(36.4, 37.4, lat)) + smoothstep(-121.2, -120.4, lon) * smoothstep(40.2, 40.9, lat) * 0.6);
+	const belt = Math.max(0.55 * smoothstep(60, 300, m), smoothstep(500, 1000, m)) * (1 - smoothstep(2500, 2900, m));
+	return belt * (1 - desert) * smoothstep(0.72, 0.86, slopeY);
+}
+
 // Colour for natural terrain; writes linear RGB into out (wet) and outDry.
 function shadeTerrain(P, m, slopeY, lon, lat, nz, inCA, out, outDry) {
 	const tmp = out;
@@ -61,36 +70,108 @@ function shadeTerrain(P, m, slopeY, lon, lat, nz, inCA, out, outDry) {
 	}
 }
 
+// Tileable detail texture for close views (mipmapped, anisotropic): R fine grain, G medium
+// blotches, B rock cracks, A grass tufts. Periodic value noise so it tiles without seams.
+export function detailTexture(THREE, size = 256) {
+	const per = (x, y, p, seed) => {
+		const xi = Math.floor(x);
+		const yi = Math.floor(y);
+		const tx = x - xi;
+		const ty = y - yi;
+		const sx = tx * tx * (3 - 2 * tx);
+		const sy = ty * ty * (3 - 2 * ty);
+		const h = (a, b) => hash2(((a % p) + p) % p + seed, ((b % p) + p) % p);
+		return (h(xi, yi) * (1 - sx) + h(xi + 1, yi) * sx) * (1 - sy) + (h(xi, yi + 1) * (1 - sx) + h(xi + 1, yi + 1) * sx) * sy;
+	};
+	const oct = (u, v, base, n, seed) => {
+		let val = 0;
+		let amp = 0.5;
+		let f = base;
+		for (let i = 0; i < n; i++) {
+			val += amp * per(u * f, v * f, f, seed + i * 17);
+			f *= 2;
+			amp *= 0.5;
+		}
+		return val / (1 - Math.pow(0.5, n));
+	};
+	const data = new Uint8Array(size * size * 4);
+	for (let y = 0; y < size; y++) {
+		for (let x = 0; x < size; x++) {
+			const u = x / size;
+			const v = y / size;
+			const fine = oct(u, v, 16, 4, 1);
+			const blot = oct(u, v, 4, 4, 50);
+			const ridge = 1 - Math.abs(oct(u, v, 8, 3, 90) * 2 - 1);
+			const tuft = Math.pow(oct(u, v, 32, 2, 130), 2.2);
+			const i = (y * size + x) * 4;
+			data[i] = fine * 255;
+			data[i + 1] = blot * 255;
+			data[i + 2] = Math.pow(ridge, 3) * 255;
+			data[i + 3] = tuft * 255;
+		}
+	}
+	const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+	tex.magFilter = THREE.LinearFilter;
+	tex.minFilter = THREE.LinearMipmapLinearFilter;
+	tex.generateMipmaps = true;
+	tex.needsUpdate = true;
+	return tex;
+}
+
 function material(THREE, uniforms) {
 	const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.96, metalness: 0 });
 	mat.onBeforeCompile = (shader) => {
 		shader.uniforms.uDry = uniforms.uDry;
+		shader.uniforms.uDetail = uniforms.uDetail;
 		shader.vertexShader = shader.vertexShader
-			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nuniform float uDry;\nvarying vec3 vWPos;")
+			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nuniform float uDry;\nvarying vec3 vWPos;\nvarying vec3 vWN;")
 			.replace("#include <color_vertex>", "#include <color_vertex>\n\tvColor.rgb = mix(color.rgb, colorDry, uDry);")
+			.replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\n\tvWN = normalize(mat3(modelMatrix) * objectNormal);")
 			.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n\tvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-		// Procedural micro-relief: perturb the normal with value noise so close-ups
-		// read as rough ground rather than smooth triangles. Fades out with distance.
+		// Close-up detail: grass grain and tufts on gentle ground, cracked rock on steep ground,
+		// from a mipmapped detail texture at two scales, plus matching bumps. Fades with distance.
 		shader.fragmentShader = shader.fragmentShader
 			.replace("#include <common>", `#include <common>
 varying vec3 vWPos;
-float th(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-float vn(vec3 p) {
-	vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(mix(th(i), th(i + vec3(1,0,0)), f.x), mix(th(i + vec3(0,1,0)), th(i + vec3(1,1,0)), f.x), f.y),
-		mix(mix(th(i + vec3(0,0,1)), th(i + vec3(1,0,1)), f.x), mix(th(i + vec3(0,1,1)), th(i + vec3(1,1,1)), f.x), f.y), f.z);
-}
-float rough(vec3 p) { return vn(p * 0.9) * 0.6 + vn(p * 2.7) * 0.3 + vn(p * 7.0) * 0.1; }`)
-			.replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
+varying vec3 vWN;
+uniform sampler2D uDetail;
+float gNear;
+float gRock;
+vec4 gD1;`)
+			.replace("#include <color_fragment>", `#include <color_fragment>
 	{
 		float dist = length(cameraPosition - vWPos);
-		float k = 0.55 * (1.0 - smoothstep(60.0, 420.0, dist));
-		if (k > 0.0) {
-			float e = 0.15;
-			float h0 = rough(vWPos);
-			vec3 g = vec3(rough(vWPos + vec3(e, 0, 0)) - h0, 0.0, rough(vWPos + vec3(0, 0, e)) - h0) / e;
-			normal = normalize(normal - (viewMatrix * vec4(g.x, 0.0, g.z, 0.0)).xyz * k);
-		}
+		gNear = 1.0 - smoothstep(70.0, 520.0, dist);
+		gD1 = texture2D(uDetail, vWPos.xz * 0.32);
+		vec4 d2 = texture2D(uDetail, vWPos.xz * 0.055 + 0.37);
+		float slope = 1.0 - normalize(vWN).y;
+		vec3 c = diffuseColor.rgb;
+		float lum = dot(c, vec3(0.3, 0.59, 0.11));
+		float green = clamp((c.g - max(c.r, c.b)) * 10.0, 0.0, 1.0);
+		gRock = smoothstep(0.14, 0.34, slope + (d2.g - 0.5) * 0.18) * (1.0 - step(0.8, lum));
+		// Large-scale mottling everywhere, so close ground is never a flat wash.
+		vec4 d3 = texture2D(uDetail, vWPos.xz * 0.011 + 0.71);
+		float mott = mix(0.74, 1.22, d2.g) * mix(0.82, 1.12, gD1.r) * mix(0.8, 1.15, smoothstep(0.25, 0.75, d3.g));
+		vec3 ground = c * mott;
+		// Vegetated ground: darker tufts and lighter dry blades.
+		ground = mix(ground, ground * vec3(0.62, 0.74, 0.55), smoothstep(0.08, 0.5, gD1.a) * (0.35 + 0.65 * green));
+		ground = mix(ground, ground * vec3(1.12, 1.08, 0.92), smoothstep(0.62, 0.9, gD1.r) * green * 0.5);
+		// Rock: greyer, cracked, with lighter weathered faces.
+		vec3 rockC = mix(vec3(lum) * vec3(1.02, 0.98, 0.93), c, 0.45) * mix(0.78, 1.16, gD1.r);
+		rockC *= 1.0 - gD1.b * 0.45;
+		ground = mix(ground, rockC, gRock * 0.75);
+		diffuseColor.rgb = mix(c, ground, gNear);
+	}`)
+			.replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
+	if (gNear > 0.0) {
+		float e = 1.0 / 256.0;
+		vec2 uv = vWPos.xz * 0.32;
+		float h0 = gD1.r + gD1.b * gRock;
+		vec4 tx = texture2D(uDetail, uv + vec2(e, 0.0));
+		vec4 tz = texture2D(uDetail, uv + vec2(0.0, e));
+		vec2 g = vec2(tx.r + tx.b * gRock - h0, tz.r + tz.b * gRock - h0) * (5.0 + 6.0 * gRock);
+		normal = normalize(normal - (viewMatrix * vec4(g.x, 0.0, g.y, 0.0)).xyz * gNear);
 	}`);
 	};
 	return mat;
@@ -156,7 +237,8 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	geom.setAttribute("color", new THREE.BufferAttribute(col, 3));
 	geom.setAttribute("colorDry", new THREE.BufferAttribute(colDry, 3));
 
-	const uniforms = { uDry: { value: 0.4 } };
+	const detail = detailTexture(THREE);
+	const uniforms = { uDry: { value: 0.4 }, uDetail: { value: detail } };
 	const mat = material(THREE, uniforms);
 	const mesh = new THREE.Mesh(geom, mat);
 	mesh.receiveShadow = true;
@@ -177,6 +259,7 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	group.add(surround, mesh, patches, border);
 	return {
 		group,
+		detail,
 		setDryness(v) {
 			uniforms.uDry.value = v;
 		},

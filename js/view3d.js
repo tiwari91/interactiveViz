@@ -93,6 +93,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const basins = createBasins(data, world);
 		await step(0.55, "Building terrain…");
 		const terrain = createTerrain(THREE, data, world, basins, ui.quality);
+		terrain.detail.anisotropy = sc.renderer.capabilities.getMaxAnisotropy();
 		await step(0.8, "Placing dams and rivers…");
 		const shared = waterUniforms(THREE);
 		const lakes = createLakes(THREE, basins, shared);
@@ -100,7 +101,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const dams = createDams(THREE, data, basins);
 		const links = createGaugeLinks(THREE, data, world, basins);
 		const outflow = createOutflow(THREE, basins, dams, world, shared, ui.quality);
-		const riparian = createRiparian(THREE, outflow, outflow.router, basins, ui.quality);
+		const riparian = createRiparian(THREE, outflow, outflow.router, basins, world, ui.quality);
 		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
 		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
@@ -216,6 +217,35 @@ export function createView3D(container, data, store, tooltip, audio) {
 				tooltip.hide();
 			}
 		});
+		// Zoom toward the point under the cursor: before the controls dolly, slide the
+		// target (and camera with it) a little toward the ground point under the pointer.
+		canvas.addEventListener("wheel", (e) => {
+			if (ui.replaying || e.deltaY >= 0) return;
+			const p = local(e);
+			ndc.set((p[0] / canvas.clientWidth) * 2 - 1, -(p[1] / canvas.clientHeight) * 2 + 1);
+			raycaster.setFromCamera(ndc, sc.camera);
+			const o = raycaster.ray.origin;
+			const d = raycaster.ray.direction;
+			if (d.y >= -0.02) return;
+			// March the ray down to the ground.
+			let hit = null;
+			const far = sc.camera.position.distanceTo(sc.controls.target) * 3;
+			for (let t = 0; t < far; t += far / 160) {
+				const x = o.x + d.x * t;
+				const y = o.y + d.y * t;
+				const z = o.z + d.z * t;
+				if (y <= groundAt(x, z)) {
+					hit = [ x, y, z ];
+					break;
+				}
+			}
+			if (!hit) return;
+			const k = Math.min(0.2, 0.0015 * Math.min(200, -e.deltaY));
+			const shift = new THREE.Vector3(hit[0] - sc.controls.target.x, hit[1] - sc.controls.target.y, hit[2] - sc.controls.target.z).multiplyScalar(k);
+			sc.controls.target.add(shift);
+			sc.camera.position.add(shift);
+			mover = null;
+		}, { passive: true, capture: true });
 		sc.controls.addEventListener("start", () => {
 			dragging = true;
 			mover = null;
@@ -439,7 +469,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// For tests: what each dam is visibly releasing right now.
 			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
 			verifyWater: () => outflow.verify(),
-			riparian: () => ({ ...riparian.counts }),
+			anisotropy: () => terrain.detail.anisotropy,
+			riparian: () => ({ ...riparian.counts, minVeg: riparian.minVegetation(), fade: riparian.fade }),
 			// For tests: the largest step (metres) between a land DEM cell and the mean of its neighbours.
 			maxSpike() {
 				const { rows, cols, data: z } = world.elev;

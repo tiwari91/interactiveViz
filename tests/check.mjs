@@ -441,7 +441,26 @@ async function main() {
 		const spike = await debug3d(page, "c.maxSpike()");
 		check("No terrain spikes: every land cell within 220 m of its neighbours' mean", spike <= 221, `${spike.toFixed(0)} m`);
 		const rip = await debug3d(page, "c.riparian()");
-		check("Rivers have trees and boulders along their banks", rip.pine + rip.broad > 1000 && rip.rock > 200, JSON.stringify(rip));
+		check("Rivers have trees and boulders along their banks", rip.pine + rip.broad > 1000 && rip.rock > 200, `${rip.pine} conifers, ${rip.broad} broadleaf, ${rip.rock} boulders`);
+		check("Bank trees grow only on vegetated ground", rip.minVeg >= 0.05, `lowest vegetation under a tree ${rip.minVeg.toFixed(2)}`);
+		const homeDist = await page.evaluate(() => { const v = window.droughtViz.views["3d"].debug(); return v.sc.camera.aspect >= 1 ? 1180 : 1700; });
+		check("Bank trees fade out well before the state overview", rip.fade[1] < homeDist / 2, `gone by ${rip.fade[1]} units; overview at ${homeDist}`);
+		const aniso = await debug3d(page, "[ c.anisotropy(), c.renderer.capabilities.getMaxAnisotropy() ]");
+		check("Terrain detail texture uses the GPU's full anisotropic filtering", aniso[0] === aniso[1] && aniso[0] >= 1, `${aniso[0]} of ${aniso[1]}`);
+		// Zooming in hard with the wheel stops at the minimum distance, toward the cursor.
+		await debug3d(page, "c.focus('NML')");
+		await page.waitForFunction(() => !window.droughtViz.views["3d"].debug().moving(), null, { timeout: 30000, polling: 200 }).catch(() => {});
+		const zb = await page.locator("#view-3d").boundingBox();
+		const t0 = await debug3d(page, "c.sc.controls.target.toArray()");
+		await page.mouse.move(zb.x + zb.width * 0.7, zb.y + zb.height * 0.6);
+		for (let k = 0; k < 25; k++) {
+			await page.mouse.wheel(0, -400);
+			await page.waitForTimeout(40);
+		}
+		await page.waitForTimeout(1200);
+		const z1 = await debug3d(page, "({ dist: c.pose().dist, min: c.sc.controls.minDistance, t: c.sc.controls.target.toArray(), clear: c.clearance() })");
+		check("Zoom stops at the minimum distance and above the ground", z1.dist >= z1.min - 0.5 && z1.clear > 1, `${z1.dist.toFixed(1)} (min ${z1.min}), clearance ${z1.clear.toFixed(1)}`);
+		check("Wheel zoom moves toward the cursor", Math.hypot(z1.t[0] - t0[0], z1.t[2] - t0[2]) > 1, `target moved ${Math.hypot(z1.t[0] - t0[0], z1.t[2] - t0[2]).toFixed(1)} units`);
 		await debug3d(page, "c.home()");
 		await waitStill(page, 500);
 

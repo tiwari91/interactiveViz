@@ -304,3 +304,6 @@ body:has(.detail-card:not([hidden])) .stage-hint { display: none; }
 .compass path { fill: #f4f1ea; }
 
 .compass text { fill: #f4f1ea; font: 700 8px var(--font-body); }
+
+/* Keyboard focus on the 3D view: an inset ring, since the stage clips anything outside it. */
+.view-3d canvas:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }

@@ -146,7 +146,7 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 	});
 	// Arrow keys step a month (Shift: a year), Space plays or pauses, unless a control has focus.
 	document.addEventListener("keydown", (e) => {
-		if (e.altKey || e.ctrlKey || e.metaKey || e.target.closest?.("input, button, select, textarea, summary, [role=button]")) return;
+		if (e.altKey || e.ctrlKey || e.metaKey || e.target.closest?.("input, button, select, textarea, summary, [role=button], [role=application], .map-2d .res, .compare-handle")) return;
 		const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
 		if (dir) {
 			e.preventDefault();

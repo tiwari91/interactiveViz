@@ -233,6 +233,68 @@ export function createView3D(container, data, store, tooltip, audio) {
 				tooltip.hide();
 			}
 		});
+		// Keyboard: the 3D view is one tab stop. Arrow keys move between the reservoirs on
+		// screen (nearest in that direction), announced through the live tooltip; Enter or
+		// Space flies to one; Escape goes back to the state view.
+		canvas.tabIndex = 0;
+		canvas.setAttribute("role", "application");
+		canvas.setAttribute("aria-roledescription", "3D map");
+		canvas.setAttribute("aria-label", "3D terrain of California with reservoirs, dams and rivers. Arrow keys move between reservoirs, Enter flies to one, Escape returns to the state view.");
+		let kbId = null;
+		const kbV = new THREE.Vector3();
+		const onScreen = () => basins.basins.map((b, index) => {
+			kbV.set(b.cx, b.P + 2.2, b.cz).project(sc.camera);
+			return { b, index, x: (kbV.x + 1) / 2 * canvas.clientWidth, y: (1 - kbV.y) / 2 * canvas.clientHeight, ok: kbV.z < 1 && Math.abs(kbV.x) < 1 && Math.abs(kbV.y) < 1 };
+		}).filter((p) => p.ok);
+		function kbShow(p) {
+			kbId = p.b.r.id;
+			hovered = kbId;
+			lakes.setHighlight(p.index);
+			links.setActive(store.get().selected ?? kbId);
+			const i = store.get().dateIndex;
+			tooltip.showReservoir(p.b.r, i, data.dates[i], p.x, p.y);
+		}
+		const KB_DIRS = { ArrowRight: [ 1, 0 ], ArrowLeft: [ -1, 0 ], ArrowDown: [ 0, 1 ], ArrowUp: [ 0, -1 ] };
+		canvas.addEventListener("keydown", (e) => {
+			if (ui.replaying) return;
+			const dir = KB_DIRS[e.key];
+			if (dir) {
+				e.preventDefault();
+				const pts = onScreen();
+				if (!pts.length) return;
+				const cur = pts.find((p) => p.b.r.id === kbId);
+				if (!cur) {
+					// Start from the selected lake, else the largest one in view.
+					kbShow(pts.find((p) => p.b.r.id === store.get().selected) ?? pts.reduce((a, p) => (p.b.r.capacity > a.b.r.capacity ? p : a)));
+					return;
+				}
+				let best = null;
+				for (const p of pts) {
+					if (p === cur) continue;
+					const along = (p.x - cur.x) * dir[0] + (p.y - cur.y) * dir[1];
+					if (along <= 0.5) continue;
+					const score = along + Math.abs((p.x - cur.x) * dir[1] - (p.y - cur.y) * dir[0]) * 2.5;
+					if (!best || score < best.score) best = { p, score };
+				}
+				if (best) kbShow(best.p);
+			} else if ((e.key === "Enter" || e.key === " ") && kbId) {
+				e.preventDefault();
+				tooltip.hide();
+				if (store.get().selected === kbId) focus(kbId);
+				else store.set({ selected: kbId });
+			} else if (e.key === "Escape" && !store.get().selected) {
+				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
+			}
+		});
+		canvas.addEventListener("blur", () => {
+			if (hovered === kbId) {
+				hovered = null;
+				lakes.setHighlight(store.get().selected ? basins.basins.findIndex((b) => b.r.id === store.get().selected) : -1);
+				tooltip.hide();
+			}
+			kbId = null;
+		});
+
 		// Zoom toward the point under the cursor: before the controls dolly, slide the
 		// target (and camera with it) a little toward the ground point under the pointer.
 		canvas.addEventListener("wheel", (e) => {
@@ -576,6 +638,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			pose: () => poseOf(THREE, sc.camera, sc.controls),
 			moving: () => Boolean(mover || replayFn),
 			northDeg: () => northDeg,
+			keyboardPick: () => kbId,
 			dispose() {
 				this.stop();
 				unsub();

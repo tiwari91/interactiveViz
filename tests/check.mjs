@@ -140,12 +140,15 @@ async function main() {
 		const names2d = await page.evaluate(() => [ ...document.querySelectorAll(".map-2d .label") ].filter((t) => t.getAttribute("display") !== "none").map((t) => t.textContent));
 		const kb = await page.evaluate(() => [ ...document.querySelectorAll(".map-2d .res") ].filter((e) => e.getAttribute("tabindex") === "0").length);
 		await page.locator(".map-2d .res[tabindex=\"0\"]").focus();
+		const kbMonth2d = (await stateOf(page)).dateIndex;
 		const kbFirst = await page.evaluate(() => document.activeElement.getAttribute("aria-label"));
 		await page.keyboard.press("ArrowDown");
-		const second = await page.evaluate(() => ({ label: document.activeElement.getAttribute("aria-label"), stops: [ ...document.querySelectorAll(".map-2d .res") ].filter((e) => e.getAttribute("tabindex") === "0").length }));
+		await page.keyboard.press("ArrowRight");
+		await page.keyboard.press("ArrowLeft");
+		const second = await page.evaluate(() => ({ label: document.activeElement.getAttribute("aria-label"), month: window.droughtViz.store.get().dateIndex, stops: [ ...document.querySelectorAll(".map-2d .res") ].filter((e) => e.getAttribute("tabindex") === "0").length }));
 		await page.keyboard.press("Tab");
 		const kbOut = await page.evaluate(() => document.activeElement.closest(".map-2d") ? "map" : "out");
-		check("2D map is one tab stop; arrow keys move between reservoirs", kb === 1 && /^Shasta/.test(kbFirst) && second.label !== kbFirst && second.stops === 1 && kbOut === "out", `${kb} tab stop, ${kbFirst} -> ${second.label}, Tab leaves the map: ${kbOut === "out"}`);
+		check("2D map is one tab stop; arrow keys move between reservoirs", kb === 1 && /^Shasta/.test(kbFirst) && second.label !== kbFirst && second.stops === 1 && kbOut === "out" && second.month === kbMonth2d, `${kb} tab stop, ${kbFirst} -> ${second.label}, Tab leaves the map: ${kbOut === "out"}`);
 		await page.evaluate(() => document.activeElement.blur());
 		check("2D map names southern reservoirs too", [ "Isabella", "Castaic", "Diamond Valley" ].every((n) => names2d.includes(n)) && names2d.length >= 10, names2d.join(", "));
 		check("2D renders stream links", counts.streams === F.links, `${counts.streams} of ${F.links}`);
@@ -628,6 +631,21 @@ async function main() {
 		await shot(page, "3d-compare.png", ".stage");
 		await page.locator(".js-compare").click();
 		await waitStill(page);
+		await page.locator("#view-3d canvas").focus();
+		const kbMonth = (await stateOf(page)).dateIndex;
+		await page.keyboard.press("ArrowRight");
+		const kb1 = await debug3d(page, "c.keyboardPick()");
+		await page.keyboard.press("ArrowDown");
+		const kb2 = await debug3d(page, "c.keyboardPick()");
+		const kbTip = await page.locator("#tooltip").innerText();
+		await page.keyboard.press("Enter");
+		await page.waitForTimeout(300);
+		const kbState = await stateOf(page);
+		const kbSel = kbState.selected;
+		check("3D keyboard: arrows move between lakes (announced in the live tooltip), Enter flies to one, the month stays put", kb1 && kb2 && kb1 !== kb2 && kbSel === kb2 && kbTip.length > 0 && kbState.dateIndex === kbMonth, `${kb1} -> ${kb2}, selected ${kbSel}, month ${kbMonth} -> ${kbState.dateIndex}`);
+		await page.keyboard.press("Escape");
+		await waitStill(page);
+		await page.evaluate(() => document.activeElement.blur());
 
 		// Per-dam sound: level follows storage + release; spillway layer above ~90% full.
 		await page.locator(".sound-toggle").click();

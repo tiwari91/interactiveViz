@@ -619,8 +619,8 @@ async function main() {
 				if (mode === "3d" && scheme === "light") {
 					check("iPhone 12 defaults to low quality", (await page.locator(".js-quality").inputValue()) === "low");
 					const ripLow = await debug3d(page, "c.riparian()");
-					check("Low quality keeps bank trees light", ripLow.pine + ripLow.broad <= 2200 && ripLow.rock <= 400, `${ripLow.pine + ripLow.broad} trees, ${ripLow.rock} boulders`);
-					check("Bank trees are skipped at the overview", !(await debug3d(page, "(() => { let v = null; c.sc.scene.traverse((o) => { if (o.isInstancedMesh && o.material.vertexColors && o.parent && o.parent.children.length === 4) v = o.parent.visible; }); return v; })()")));
+					check("Low quality keeps trees light", ripLow.bank <= 2200 && ripLow.forest <= 1600 && ripLow.shrub <= 1200 && ripLow.rock <= 400, `${ripLow.bank} bank + ${ripLow.forest} forest trees, ${ripLow.shrub} shrubs, ${ripLow.rock} boulders`);
+					check("Bank trees are skipped at the overview", !(await debug3d(page, "c.sc.scene.getObjectByName("riparian").visible")));
 					await page.locator("#view-3d").scrollIntoViewIfNeeded();
 					const b2 = await page.locator("#view-3d").boundingBox();
 					const [ x, y ] = await page.evaluate(() => window.droughtViz.views["3d"].screenPos("SHA"));

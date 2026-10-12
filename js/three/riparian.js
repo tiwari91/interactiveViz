@@ -96,6 +96,8 @@ function fadeByDistance(mat) {
 export function createRiparian(THREE, outflow, router, basins, world, quality) {
 	const high = quality === "high";
 	const maxTrees = high ? 8000 : 2200;
+	const maxForest = high ? 9000 : 1600;
+	const maxShrubs = high ? 5000 : 1200;
 	const maxRocks = high ? 1400 : 400;
 	let seed = 11;
 	const rnd = () => {
@@ -105,8 +107,11 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 
 	const treeMat = fadeByDistance(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true }));
 	const rockMat = fadeByDistance(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, flatShading: true }));
-	const pines = new THREE.InstancedMesh(conifer(THREE), treeMat, maxTrees);
-	const broads = new THREE.InstancedMesh(broadleaf(THREE), treeMat, maxTrees);
+	const broadGeom = broadleaf(THREE);
+	const pines = new THREE.InstancedMesh(conifer(THREE), treeMat, maxTrees + maxForest);
+	const broads = new THREE.InstancedMesh(broadGeom, treeMat, maxTrees + maxForest);
+	// Low shrubs: the broadleaf clump, squashed and small.
+	const shrubs = new THREE.InstancedMesh(broadGeom, treeMat, maxShrubs);
 	const rock = new THREE.DodecahedronGeometry(0.28, 0);
 	const rocks = new THREE.InstancedMesh(rock, rockMat, maxRocks);
 	// Soft contact shadow under every tree (also on Low quality, where there is no shadow map).
@@ -124,14 +129,14 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 	const blobGeom = new THREE.PlaneGeometry(1, 1);
 	blobGeom.rotateX(-Math.PI / 2);
 	const blobMat = fadeByDistance(new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-	const blobs = new THREE.InstancedMesh(blobGeom, blobMat, maxTrees * 2);
+	const blobs = new THREE.InstancedMesh(blobGeom, blobMat, (maxTrees + maxForest) * 2);
 	blobs.renderOrder = 1;
-	for (const m of [ pines, broads, rocks ]) {
+	for (const m of [ pines, broads, rocks, shrubs ]) {
 		m.castShadow = high;
 		m.receiveShadow = true;
 	}
 	// Instances spread over the whole state; the base geometry's bounds would cull them.
-	for (const m of [ pines, broads, rocks, blobs ]) m.frustumCulled = false;
+	for (const m of [ pines, broads, rocks, blobs, shrubs ]) m.frustumCulled = false;
 
 	const m4 = new THREE.Matrix4();
 	const q = new THREE.Quaternion();
@@ -139,7 +144,7 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 	const s = new THREE.Vector3();
 	const v = new THREE.Vector3();
 	const c = new THREE.Color();
-	const counts = { pine: 0, broad: 0, rock: 0, rejected: 0 };
+	const counts = { pine: 0, broad: 0, rock: 0, shrub: 0, bank: 0, forest: 0, rejected: 0 };
 	const damAt = basins.basins.map((b) => [ ...b.toWorld(b.dam.u - 0.6, 0), b.dam.halfWidth * 1.15 + 1 ]);
 	const onLake = (x, z) => {
 		if (damAt.some(([ dx, dz, r ]) => Math.hypot(x - dx, z - dz) < r) || outflow.nearChute(x, z)) return true;
@@ -158,13 +163,13 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 	};
 	const placed = [];
 	const blob = (x, y, z, r) => {
-		if (blobs.count >= maxTrees * 2) return;
+		if (blobs.count >= (maxTrees + maxForest) * 2) return;
 		m4.compose(v.set(x, y + 0.02, z), q.identity(), s.set(r, 1, r));
 		blobs.setMatrixAt(blobs.count++, m4);
 	};
 	blobs.count = 0;
-	const tree = (x, z, nearWater) => {
-		if (counts.pine + counts.broad >= maxTrees || onLake(x, z)) return;
+	const tree = (x, z, nearWater, forest = false) => {
+		if ((forest ? counts.forest >= maxForest : counts.bank >= maxTrees) || onLake(x, z)) return;
 		const { veg, m } = woody(x, z);
 		// Groves: a low-frequency noise gates where trees gather; right by the water they always may.
 		const grove = fbm(x * 0.35 + 3, z * 0.35, 3);
@@ -185,6 +190,7 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 		// Small brightness and hue variation per tree; the crown colour comes from the geometry.
 		mesh.setColorAt(counts[key], c.setHSL(0.25 + (rnd() - 0.5) * 0.08, 0.25, 0.42 + rnd() * 0.16).multiplyScalar(2));
 		counts[key]++;
+		counts[forest ? "forest" : "bank"]++;
 		blob(x, y, z, sc * (isConifer ? 1.1 : 1.3));
 		placed.push({ x, z, m, veg });
 	};
@@ -195,15 +201,40 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 
 	// Nearest the dams first, so every river gets its trees before the budget runs out.
 	const bank = outflow.bankPoints(high ? 0.7 : 1.2).sort((a, b) => a.along - b.along);
+	const shrub = (x, z) => {
+		if (counts.shrub >= maxShrubs || onLake(x, z)) return;
+		const { veg } = woody(x, z);
+		if (veg < 0.05) return;
+		const y = router.surface(x, z);
+		const sc = 0.22 + rnd() * 0.2;
+		e.set(0, rnd() * Math.PI * 2, 0);
+		q.setFromEuler(e);
+		m4.compose(v.set(x, y - 0.12 * sc, z), q, s.set(sc * (1.2 + rnd() * 0.6), sc * (0.55 + rnd() * 0.3), sc * (1.2 + rnd() * 0.6)));
+		shrubs.setMatrixAt(counts.shrub, m4);
+		shrubs.setColorAt(counts.shrub, c.setHSL(0.2 + rnd() * 0.08, 0.3, 0.32 + rnd() * 0.14).multiplyScalar(2));
+		counts.shrub++;
+	};
 	for (const p of bank) {
 		for (const side of [ -1, 1 ]) {
-			const n = high ? 5 : 2;
+			// Gaps: stretches of each bank (different on the two sides) carry no trees at all,
+			// others are thick; the count per step varies so nothing lines up in rows.
+			const cover = fbm(p.x * 0.09 + side * 13.7, p.z * 0.09 - side * 5.3, 3);
+			if (cover < 0.4) {
+				if (rnd() < 0.5) shrub(p.x + p.sx * p.half * (1.1 + rnd()) * side, p.z + p.sz * p.half * (1.1 + rnd()) * side);
+				continue;
+			}
+			const n = Math.round((high ? 7 : 3) * smoothstep(0.4, 0.75, cover) * (0.4 + rnd() * 0.9));
 			for (let k = 0; k < n; k++) {
 				// Squared distribution: most trees stand right at the water's edge.
 				const t = rnd();
-				const off = p.half * (1.02 + t * t * 2.6) + 0.15;
-				const along = (rnd() - 0.5) * 0.9;
+				const off = p.half * (1.02 + t * t * 3.2) + 0.15 + rnd() * 0.3;
+				const along = (rnd() - 0.5) * 2.4;
 				tree(p.x + p.sx * off * side + p.sz * along, p.z + p.sz * off * side - p.sx * along, t < 0.35);
+			}
+			for (let k = 0; k < (high ? 2 : 1); k++) {
+				const off = p.half * (1.0 + rnd() * 2.4) + 0.1;
+				const along = (rnd() - 0.5) * 2;
+				shrub(p.x + p.sx * off * side + p.sz * along, p.z + p.sz * off * side - p.sx * along);
 			}
 			if (rnd() < 0.4 && counts.rock < maxRocks) {
 				const off = p.half * (0.95 + rnd() * 0.25);
@@ -221,15 +252,36 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 			}
 		}
 	}
+	// Forest and woodland on the hills around each reservoir (where people fly in), in groves,
+	// as dense as the ground is wooded. Biggest reservoirs first.
+	const byCap = [ ...basins.basins ].sort((a, b) => b.r.capacity - a.r.capacity);
+	const perBasin = Math.ceil(maxForest / byCap.length);
+	for (const b of byCap) {
+		const R = b.Lu * 1.8 + 14;
+		let placedHere = 0;
+		for (let tries = 0; tries < perBasin * 6 && placedHere < perBasin; tries++) {
+			const a = rnd() * Math.PI * 2;
+			const d = Math.sqrt(rnd()) * R;
+			const [ cx, cz ] = b.toWorld(b.dam.u * 0.2, 0);
+			const x = cx + Math.cos(a) * d;
+			const z = cz + Math.sin(a) * d;
+			const before = counts.forest;
+			if (fbm(x * 0.12 + 40, z * 0.12, 3) < 0.47) continue;
+			tree(x, z, false, true);
+			if (counts.forest > before) placedHere++;
+		}
+	}
 	pines.count = counts.pine;
 	broads.count = counts.broad;
 	rocks.count = counts.rock;
-	for (const m of [ pines, broads, rocks, blobs ]) {
+	shrubs.count = counts.shrub;
+	for (const m of [ pines, broads, rocks, blobs, shrubs ]) {
 		m.instanceMatrix.needsUpdate = true;
 		if (m.instanceColor) m.instanceColor.needsUpdate = true;
 	}
 	const group = new THREE.Group();
-	group.add(blobs, pines, broads, rocks);
+	group.add(blobs, pines, broads, rocks, shrubs);
+	group.name = "riparian";
 	return {
 		group,
 		// Skip the whole set when the camera is too high for any tree to be drawn.

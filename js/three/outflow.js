@@ -3,7 +3,7 @@
 // water down spillway chutes when a lake is above ~90% full, mist at the base,
 // and small warm lights on the dam at night. Width, speed, foam and mist follow
 // the same release value that drives the dam's sound (release.js).
-import { createRouter, stripGeometry, placeStrip, KIND } from "./outflowPaths.js";
+import { createRouter, stripGeometry, placeStrip, KIND, ACROSS } from "./outflowPaths.js";
 
 const RIBBON_VERT = `
 	attribute float aSide;
@@ -41,6 +41,11 @@ const RIBBON_FRAG = `
 	uniform vec3 uFogColor;
 	uniform float uFogNear;
 	uniform float uFogFar;
+	uniform vec3 uSunDir;
+	uniform vec3 uSunColor;
+	uniform vec3 uSkyTop;
+	uniform vec3 uSkyHorizon;
+	uniform vec3 uBank;
 	varying float vSide;
 	varying float vAlong;
 	varying float vRel;
@@ -52,20 +57,46 @@ const RIBBON_FRAG = `
 		vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
 		return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 	}
+	// Ripples stretched along the flow and carried downstream.
+	float ripple(vec2 p) { return noise(p) * 0.5 + noise(p * 2.3 + 4.1) * 0.3 + noise(p * 5.1 - 2.7) * 0.2; }
 	void main() {
 		if (vRel < (vKind > 1.5 ? 0.02 : 0.001)) discard;
 		float chute = step(1.5, vKind);
-		float speed = mix(1.2 + 3.0 * vRel, 6.0, chute);
-		vec2 p = vec2(vAlong * 1.6 - uTime * speed, vSide * 1.4);
-		float n = noise(p) * 0.55 + noise(p * 2.7 + 3.1) * 0.3 + noise(p * 6.3 - 1.7) * 0.15;
-		// White water below the outlet settling into blue; chutes are all white water.
-		float churn = vKind < 0.5 ? exp(-vAlong / (1.5 + 3.5 * vRel)) : chute * 0.8;
-		float foam = smoothstep(0.62 - 0.35 * churn - 0.15 * vRel, 0.9, n) + churn * 0.55;
-		vec3 col = mix(uWater, uFoam, clamp(foam, 0.0, 1.0));
-		col += uNight * vec3(0.05, 0.09, 0.13) * (0.6 + foam);
-		float edge = 1.0 - smoothstep(0.55, 1.0, abs(vSide));
+		float speed = mix(0.9 + 2.6 * vRel, 7.0, chute);
+		float side = abs(vSide);
+		// The strip carries a gravel bank on each side; the edge of the water wanders.
+		float wob = noise(vec2(vAlong * 0.9, vSide > 0.0 ? 1.7 : 5.3)) - 0.5;
+		float waterEdge = mix(0.8, 1.0, chute) + wob * 0.12 * (1.0 - chute);
+		float wet = 1.0 - smoothstep(waterEdge - 0.06, waterEdge, side);
+		vec2 q = vec2(vAlong * 1.1 - uTime * speed, vSide * 3.2);
+		float h0 = ripple(q);
+		float hx = ripple(q + vec2(0.07, 0.0));
+		float hy = ripple(q + vec2(0.0, 0.07));
+		vec3 n = normalize(vec3((h0 - hx) * 2.4, 1.0, (h0 - hy) * 1.2));
+		vec3 V = normalize(cameraPosition - vWorld);
+		float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, V), 0.0), 5.0);
+		vec3 R = reflect(-V, n);
+		vec3 sky = mix(uSkyHorizon, uSkyTop, clamp(R.y * 1.4, 0.0, 1.0));
+		// Deeper and darker mid-channel, clearer toward the banks.
+		float depth = 1.0 - side / max(0.2, waterEdge);
+		vec3 body = mix(uWater * 1.25, uWater * 0.62, smoothstep(0.0, 0.9, depth));
+		vec3 col = mix(body, sky, fres * 0.7);
+		col += uSunColor * pow(max(dot(R, uSunDir), 0.0), 140.0) * 1.6;
+		// White water: churn below the outlet, riffles where the flow is strong, all of a chute.
+		float churn = vKind < 0.5 ? exp(-vAlong / (1.2 + 3.0 * vRel)) : 0.0;
+		float streak = noise(vec2(vAlong * 0.8 - uTime * speed * 0.7, vSide * 7.0));
+		float foam = smoothstep(0.84 - 0.18 * vRel - 0.45 * churn, 0.97, h0 * 0.55 + streak * 0.45) + churn * 0.5;
+		foam += smoothstep(waterEdge - 0.16, waterEdge - 0.03, side) * wet * 0.35 * (0.4 + vRel);
+		foam = mix(foam, 0.55 + 0.45 * smoothstep(0.35, 0.75, streak), chute);
+		col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.9);
+		col += uNight * vec3(0.04, 0.07, 0.1) * (0.6 + foam);
+		// Wet gravel bank outside the water.
+		vec3 bank = uBank * (0.75 + 0.35 * noise(vec2(vAlong * 6.0, vSide * 9.0)));
+		bank *= mix(0.7, 1.0, smoothstep(waterEdge, 1.0, side));
+		col = mix(bank, col, wet);
+		float edge = 1.0 - smoothstep(0.86, 1.0, side);
 		float ends = vKind < 0.5 ? smoothstep(0.0, 6.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : 1.0;
-		float a = edge * (0.9 + 0.1 * foam) * ends * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute);
+		float a = edge * ends * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.75, 0.97, wet);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
 		gl_FragColor = vec4(mix(col, uFogColor, fog), a);
 		#include <encodings_fragment>
@@ -124,6 +155,9 @@ const LIGHT_FRAG = `
 		gl_FragColor = vec4(vec3(1.0, 0.82, 0.55) * (0.6 + core), core * core * vA);
 		#include <encodings_fragment>
 	}`;
+
+// Strips are drawn this much wider than the water to hold a gravel bank on each side.
+const BANK = 1.12;
 
 export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	const list = basins.basins;
@@ -198,7 +232,12 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			uFogFar: shared.uFogFar,
 			uRelease: { value: release },
 			uSpill: { value: spill },
-			uWater: { value: new THREE.Color(0x3d8fbf) },
+			uSunDir: shared.uSunDir,
+			uSunColor: shared.uSunColor,
+			uSkyTop: shared.uSkyTop,
+			uSkyHorizon: shared.uSkyHorizon,
+			uBank: { value: new THREE.Color(0x8c7e66) },
+			uWater: { value: new THREE.Color(0x2f7186) },
 			uFoam: { value: new THREE.Color(0xf2fbff) },
 			uNight: night,
 		},
@@ -277,7 +316,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	function place(outlet) {
 		for (const st of strips) {
 			const k = widthFor(st.kind, outlet[st.dam]);
-			placeStrip(st, st.centre, (i, d) => st.shape(i, d) * k, st.sample, positions);
+			const bank = st.kind === KIND.CHUTE ? 1 : BANK;
+			placeStrip(st, st.centre, (i, d) => st.shape(i, d) * k * bank, st.sample, positions);
 		}
 		geom.attributes.position.needsUpdate = true;
 		geom.computeBoundingSphere();
@@ -301,7 +341,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		setNight(v) {
 			night.value = v;
 			lightOn.value = v;
-			ribbonMat.uniforms.uWater.value.set(v > 0.5 ? 0x4aa3d8 : 0x3d8fbf);
+			ribbonMat.uniforms.uWater.value.set(v > 0.5 ? 0x3f8fb8 : 0x2f7186);
+			ribbonMat.uniforms.uBank.value.set(v > 0.5 ? 0x3a3a40 : 0x8c7e66);
 		},
 		state: () => list.map((b, i) => ({
 			id: b.r.id,
@@ -317,7 +358,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			let maxClimb = 0;
 			let worst = null;
 			const P = positions;
-			const cols = 5;
+			const cols = ACROSS.length;
 			for (const st of strips) {
 				if (st.kind === KIND.CHUTE) continue;
 				for (let r = 0; r < st.rows; r++) {

@@ -9,7 +9,7 @@ const CLIMB_TOL = 0.45; // a path stops rather than climb more than this
 export const KIND = { OUTFLOW: 0, INFLOW: 1, CHUTE: 2 };
 export const CLIMB = CLIMB_TOL;
 // Cross-section columns: both edges, the centre and two in between all sit on the ground.
-export const ACROSS = [ -1, -0.5, 0, 0.5, 1 ];
+export const ACROSS = [ -1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1 ];
 
 // Corner cutting keeps curves smooth.
 function chaikin(p) {

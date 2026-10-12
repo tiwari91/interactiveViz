@@ -39,12 +39,16 @@ function builder(THREE) {
 export function createDams(THREE, data, basins) {
 	const B = builder(THREE);
 	const C = {
-		concrete: new THREE.Color(0xd2cdc2),
-		concreteLift: new THREE.Color(0xc2bcb0),
+		concrete: new THREE.Color(0xc9c4ba),
+		concreteLift: new THREE.Color(0xb5afa4),
+		stain: new THREE.Color(0x8d877d),
+		damp: new THREE.Color(0x7c776e),
+		parapet: new THREE.Color(0xe2ded6),
+		chute: new THREE.Color(0xa29d93),
 		road: new THREE.Color(0x5d5d5b),
 		riprap: new THREE.Color(0x8d8579),
 		riprapDark: new THREE.Color(0x6f685f),
-		grass: new THREE.Color(0x8a8161),
+		grass: new THREE.Color(0x76725f),
 		rock: new THREE.Color(0x8a857e),
 		roof: new THREE.Color(0x4a4d52),
 		house: new THREE.Color(0xbdb5a8),
@@ -89,19 +93,28 @@ export function createDams(THREE, data, basins) {
 			const k = type === "rockfill" ? 0.7 : 0.9;
 			return [ [ -k * h - tc, 0 ], [ -tc, 1 ], [ tc, 1 ], [ k * 0.9 * h + tc, 0 ] ];
 		};
-		const faceColor = (face, y, t) => {
+		const faceColor = (face, y, t, frac = 0.5) => {
 			const n = hash2(Math.round(t * 60) + seed, Math.round(y * 6));
 			if (face === 1) return B.c.copy(C.road);
 			if (concrete) {
 				const lift = Math.abs(Math.sin(y * 4.2)) > 0.93;
-				return B.c.copy(lift ? C.concreteLift : C.concrete).multiplyScalar(0.97 + n * 0.04);
+				B.c.copy(lift ? C.concreteLift : C.concrete).multiplyScalar(0.96 + n * 0.06);
+				if (face === 2) {
+					// Weathering: vertical seep stains from the crest and a damp band at the toe.
+					const col = Math.round(t * SEGMENTS);
+					const stain = hash2(col + seed, 7) > 0.62 ? (0.25 + 0.35 * hash2(col, 3)) * (0.3 + 0.7 * frac) : 0;
+					B.c.lerp(C.stain, stain).lerp(C.damp, (1 - Math.min(1, frac * 5)) * 0.55);
+				}
+				return B.c;
 			}
 			if (type === "rockfill" || face === 0) return B.c.copy(C.riprap).lerp(C.riprapDark, 0.2 + n * 0.25);
-			return B.c.copy(C.grass).lerp(C.rock, n * 0.3);
+			// Earthfill downstream face: grass with a few horizontal berms.
+			const berm = Math.abs(Math.sin(frac * Math.PI * 3)) < 0.12;
+			return B.c.copy(C.grass).lerp(C.rock, n * 0.3).multiplyScalar(berm ? 0.82 : 1);
 		};
 
 		// Wall surface, face by face, with a few rows so colour noise reads as texture.
-		const ROWS = 4;
+		const ROWS = concrete ? 8 : 5;
 		const pt = (i, sx, frac) => {
 			const t = i / SEGMENTS;
 			const [ u, v ] = axisAt(t);
@@ -123,7 +136,7 @@ export function createDams(THREE, data, basins) {
 					const p01 = pt(i, a1[0], a1[1]);
 					const p10 = pt(i + 1, b0[0], b0[1]);
 					const p11 = pt(i + 1, b1[0], b1[1]);
-					B.quad(p00, p10, p11, p01, faceColor(f, p00[1], i / SEGMENTS));
+					B.quad(p00, p10, p11, p01, faceColor(f, p00[1], i / SEGMENTS, (a0[1] + a1[1]) / 2));
 				}
 			}
 		}
@@ -132,6 +145,17 @@ export function createDams(THREE, data, basins) {
 			const s = section(crest - bottoms[i]);
 			const ps = s.map(([ sx, fr ]) => pt(i, sx, fr));
 			B.quad(ps[0], ps[1], ps[2], ps[3], C.concreteLift);
+		}
+
+		// Parapet walls along both edges of the crest road.
+		for (let i = 0; i < SEGMENTS; i++) {
+			for (const off of [ 0, tc ]) {
+				const p0 = pt(i, off, 1);
+				const p1 = pt(i + 1, off, 1);
+				const ph = 0.09 + 0.02 * hMax / 6;
+				const up = (p) => [ p[0], p[1] + ph, p[2] ];
+				B.quad(p0, p1, up(p1), up(p0), C.parapet);
+			}
 		}
 
 		const eu = bs.eu;
@@ -153,6 +177,7 @@ export function createDams(THREE, data, basins) {
 		let spillBottom;
 		let chute = null;
 		let chuteWidth = 0;
+		let chuteClear = null;
 		if (concrete) {
 			// Gated crest spillway: piers across the middle of the wall.
 			for (let p = 0; p < 6; p++) {
@@ -170,21 +195,34 @@ export function createDams(THREE, data, basins) {
 			const sv = hw * 1.08 + 0.3;
 			const pts = [];
 			const len = bs.Lu * 0.85;
+			const cw = 0.36 * scale;
+			// Highest ground under the chute's whole width, so its floor never dips into the slope.
+			const under = (u) => {
+				let h = -Infinity;
+				for (const dv of [ -cw * 1.1, -cw * 0.5, 0, cw * 0.5, cw * 1.1 ]) {
+					for (const du of [ -0.2, 0, 0.2 ]) {
+						const [ x, z ] = bs.toWorld(u + du, sv + dv);
+						const sfc = basins.surfaceAt(x, z);
+						h = Math.max(h, sfc ? sfc.h : groundAt(u, sv));
+					}
+				}
+				return h;
+			};
 			for (let k = 0; k <= 14; k++) {
 				const u = bs.dam.u - (len * k) / 14;
-				const g = groundAt(u, sv);
+				const g = under(u);
 				const y = k === 0 ? crest - 0.3 : Math.min(pts[k - 1][1] - 0.02, g + 0.12);
 				pts.push([ u, Math.max(y, g + 0.08) ]);
 			}
 			for (let k = 0; k < 14; k++) {
 				const [ ua, ya ] = pts[k];
 				const [ ub, yb ] = pts[k + 1];
-				const w = 0.28 * scale;
+				const w = cw;
 				const P = (u, v, y) => {
 					const [ x, z ] = bs.toWorld(u, v);
 					return [ x, y, z ];
 				};
-				B.quad(P(ua, sv - w, ya), P(ua, sv + w, ya), P(ub, sv + w, yb), P(ub, sv - w, yb), C.concrete);
+				B.quad(P(ua, sv - w, ya), P(ua, sv + w, ya), P(ub, sv + w, yb), P(ub, sv - w, yb), B.c.copy(C.chute).multiplyScalar(0.94 + 0.08 * hash2(k, seed)));
 				B.quad(P(ua, sv - w, ya + 0.18), P(ua, sv - w, ya), P(ub, sv - w, yb), P(ub, sv - w, yb + 0.18), C.concreteLift);
 				B.quad(P(ua, sv + w, ya), P(ua, sv + w, ya + 0.18), P(ub, sv + w, yb + 0.18), P(ub, sv + w, yb), C.concreteLift);
 			}
@@ -196,7 +234,18 @@ export function createDams(THREE, data, basins) {
 				const [ x, z ] = bs.toWorld(u, sv);
 				return [ x, y + 0.05, z ];
 			});
-			chuteWidth = 0.26 * scale;
+			chuteWidth = 0.34 * scale;
+			chuteClear = Math.min(...pts.map(([ u, y ]) => y - under(u)));
+			// Headworks: a gated control structure across the top of the chute.
+			const [ hx, hz ] = bs.toWorld(pts[0][0] + 0.15, sv);
+			B.box([ hx, pts[0][1] - 0.1, hz ], ev, down, 0.36 * scale * 2.4, 0.42, 0.35, C.concreteLift, C.road);
+			for (let g = -2; g <= 2; g++) {
+				const [ gx, gz ] = bs.toWorld(pts[0][0] + 0.15, sv + g * 0.17 * scale);
+				B.box([ gx, pts[0][1] + 0.3, gz ], ev, down, 0.07, 0.25, 0.4, C.concrete, C.parapet);
+			}
+			// Stilling basin at the foot.
+			const [ bx, bz ] = bs.toWorld(pts[14][0] - 0.3, sv);
+			B.box([ bx, pts[14][1] - 0.05, bz ], ev, down, 0.36 * scale * 3, 0.16, 0.9, C.concreteLift, C.chute);
 		}
 
 		// Foam: outlet below the dam, and the spillway when the lake is nearly full.
@@ -207,7 +256,7 @@ export function createDams(THREE, data, basins) {
 		void outletEnd;
 		info.set(bs.r.id, {
 			type, crest, toePoint, center: bs.toWorld(mu, mv), height: hMax, scale, concrete,
-			toeU: mu - toe - 0.4, spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth,
+			toeU: mu - toe - 0.4, spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth, chuteClear,
 			lights: [ axisAt(0.02), axisAt(0.98) ].map(([ u, v ]) => {
 				const [ x, z ] = bs.toWorld(u - tc * 0.5, v);
 				return [ x, crest + 0.25, z ];

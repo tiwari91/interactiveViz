@@ -395,6 +395,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// For tests: what each dam is visibly releasing right now.
 			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
 			verifyWater: () => outflow.verify(),
+			// For tests: lowest height of each spillway chute floor above the ground under its full width.
+			chuteClearance: () => [ ...dams.info.values() ].filter((d) => d.chute).map((d) => d.chuteClear),
 			linksVisible: () => links.visibleCount(),
 			setLinks: (v) => links.setShowAll(v),
 			pose: () => poseOf(THREE, sc.camera, sc.controls),

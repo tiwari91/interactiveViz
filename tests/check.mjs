@@ -410,6 +410,19 @@ async function main() {
 			check(`${month}: spillway cascade only above 90% full`, wrong.length === 0, `${out.filter((o) => o.spill > 0.05).map((o) => o.id).join(",") || "none spilling"}${wrong.length ? `; wrong: ${wrong.map((o) => `${o.id}@${(o.pct * 100).toFixed(0)}%`).join(",")}` : ""}`);
 		}
 
+		// Rivers follow the month: narrower below the big dams in the drought than in the wet spring of 2017.
+		const widthsAt = async (m) => {
+			await setState(page, { dateIndex: await monthIndex(page, m) });
+			await page.waitForTimeout(1500);
+			return debug3d(page, "Object.fromEntries(c.outflow().map((o) => [ o.id, o.width ]))");
+		};
+		const wDry = await widthsAt("2014-09");
+		const wWet = await widthsAt("2017-04");
+		const bigDams = [ "SHA", "ORO", "CLE", "NML", "DNP", "FOL" ];
+		check("Rivers below the big dams run narrower in the drought", bigDams.every((id) => wDry[id] < wWet[id]), bigDams.map((id) => `${id} ${wDry[id].toFixed(2)}→${wWet[id].toFixed(2)}`).join(", "));
+		const clear = await debug3d(page, "c.chuteClearance()");
+		check("Spillway chutes sit above the ground across their width", clear.length > 10 && Math.min(...clear) > 0, `${clear.length} chutes, min clearance ${Math.min(...clear).toFixed(2)}`);
+
 		// Water on the ground: strips sit on the terrain and never run uphill.
 		const water = await debug3d(page, "c.verifyWater()");
 		check("Rivers and outflows lie on the terrain", water.maxGap < 0.35, `max gap ${water.maxGap} (${water.worst}), ${water.strips} strips`);

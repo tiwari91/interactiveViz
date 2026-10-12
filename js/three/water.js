@@ -68,8 +68,10 @@ const FRAG = `
 		}
 		gDist = length(cameraPosition - vWorld);
 		vec2 p = vWorld.xz * uScale;
-		vec3 g = wave(p, normalize(vec2(0.8, 0.6)), 1.9, 1.3, 0.05)
+		vec3 g = wave(p, normalize(vec2(0.8, 0.6)), 1.9, 1.3, 0.032)
+			+ wave(p, normalize(vec2(0.35, -0.94)), 2.4, 1.1, 0.026)
 			+ wave(p, normalize(vec2(-0.5, 0.9)), 3.1, 1.9, 0.03)
+			+ wave(p, normalize(vec2(0.97, -0.25)), 4.3, 2.2, 0.018)
 			+ wave(p, normalize(vec2(0.2, -1.0)), 5.7, 2.6, 0.016)
 			+ wave(p, normalize(vec2(-0.9, -0.3)), 9.3, 3.4, 0.009);
 		vec3 n = normalize(vec3(-g.x, 1.0, -g.y));

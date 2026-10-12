@@ -109,6 +109,9 @@ async function main() {
 		let { ctx, page, errors } = await openPage(browser, base);
 		check("Default view is 3D", (await stateOf(page)).mode === "3d" && (await page.locator("#view-3d canvas").count()) === 1);
 		check("Loading overlay clears after 3D builds", await page.locator("#loading.done").count() === 1);
+		await page.waitForTimeout(700);
+		const staleStatus = /Loading data/.test(await page.locator("body").ariaSnapshot());
+		check("Screen readers no longer find the loading status once the view is ready", !staleStatus);
 		await page.waitForTimeout(2500);
 		const named = await page.evaluate(() => [ ...document.querySelectorAll(".labels-3d .lbl") ].filter((e) => e.style.display !== "none" && !e.querySelector(".lbl-text").classList.contains("far")).length);
 		check("Overview names at least 6 reservoirs", named >= 6, `${named} named`);

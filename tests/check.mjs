@@ -109,6 +109,8 @@ async function main() {
 	try {
 		// ---------- Default mode and WebGL fallback ----------
 		let { ctx, page, errors } = await openPage(browser, base);
+		const elevMeta = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "elevation.json"), "utf8")).grids;
+		check("Elevation grids ship in the compact encoding", Object.values(elevMeta).every((g) => g.encoding === "grad-planes-v1" && fs.statSync(path.join(ROOT, "data", g.file)).size === g.rows * g.cols * 2), Object.values(elevMeta).map((g) => `${g.file} ${g.encoding}`).join(", "));
 		const walk = (d) => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : e.name.endsWith(".js") ? [ `${d}/${e.name}` ] : []));
 		const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
 		const preloaded = new Set([ ...html.matchAll(/rel="modulepreload" href="([^"]+)"/g) ].map((m) => m[1]));

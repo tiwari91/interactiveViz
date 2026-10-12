@@ -8,7 +8,9 @@
    "north": 42.1,
    "south": 32.4,
    "west": -124.6,
-   "east": -114.0
+   "east": -114.0,
+   "encoding": "grad-planes-v1",
+   "floor": -300
   },
   "2m": {
    "file": "elevation-2m.bin",
@@ -17,7 +19,9 @@
    "north": 42.08333,
    "south": 32.4,
    "west": -124.6,
-   "east": -114.0
+   "east": -114.0,
+   "encoding": "grad-planes-v1",
+   "floor": -300
   },
   "surround": {
    "file": "elevation-surround.bin",
@@ -26,7 +30,9 @@
    "north": 46.5,
    "south": 28.0,
    "west": -131.0,
-   "east": -107.5
+   "east": -107.5,
+   "encoding": "grad-planes-v1",
+   "floor": -300
   }
  }
 }

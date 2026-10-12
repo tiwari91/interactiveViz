@@ -12,7 +12,24 @@ export async function loadElevation(quality, base = "data/") {
 	const grid = meta.grids[quality === "high" ? "1m" : "2m"];
 	const sur = meta.grids.surround;
 	const [ buf, sbuf ] = await Promise.all([ d3.buffer(`${base}${grid.file}`), d3.buffer(`${base}${sur.file}`) ]);
-	return { ...grid, data: new Int16Array(buf), surround: { ...sur, data: new Int16Array(sbuf) } };
+	return { ...grid, data: decodeGrid(buf, grid), surround: { ...sur, data: decodeGrid(sbuf, sur) } };
+}
+
+// Grids are stored "grad-planes-v1" (see scripts/fetch_elevation.py): residuals from a
+// left + up - upleft predictor, low bytes then high bytes. Raw int16 grids still load.
+export function decodeGrid(buf, { rows, cols, encoding }) {
+	if (encoding !== "grad-planes-v1") return new Int16Array(buf);
+	const b = new Uint8Array(buf);
+	const n = rows * cols;
+	const out = new Int16Array(n);
+	for (let r = 0; r < rows; r++) {
+		for (let c = 0; c < cols; c++) {
+			const i = r * cols + c;
+			const pred = r && c ? out[i - 1] + out[i - cols] - out[i - cols - 1] : c ? out[i - 1] : r ? out[i - cols] : 0;
+			out[i] = pred + (b[i] | (b[n + i] << 8)); // Int16Array wraps like the encoder's & 0xFFFF
+		}
+	}
+	return out;
 }
 
 export function createWorld(data, elev) {

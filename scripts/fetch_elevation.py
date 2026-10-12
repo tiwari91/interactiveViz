@@ -5,8 +5,15 @@ dataset etopo180, public domain) and write compact binaries for the 3D view.
 Writes:
   data/elevation-1m.bin, data/elevation-2m.bin   1 and 2 arc-minute grids over the state
   data/elevation-surround.bin                    5 arc-minute grid of the wider region
-  (int16 little-endian metres, rows north->south, cols west->east)
   data/elevation.json                            grid metadata
+
+Each grid is int16 metres, rows north->south, cols west->east, stored compressed-friendly
+("grad-planes-v1"): sea floor deeper than FLOOR metres is clamped (the ocean surface hides
+it), each value is replaced by its residual from a left + up - upleft predictor, and the
+residuals' low bytes are written before their high bytes. Smooth relief then gzips to about
+half the raw size. js/three/world.js decodes it.
+
+Re-encode existing raw grids without fetching: python3 scripts/fetch_elevation.py --encode-raw
 
 Usage: python3 scripts/fetch_elevation.py
 """
@@ -25,6 +32,30 @@ LAT = (32.4, 42.1)
 LON = (-124.6, -114.0)
 # Wider, coarser grid drawn around the detailed one so the edges sit in the haze.
 SURROUND = {"lat": (28.0, 46.5), "lon": (-131.0, -107.5), "stride": 5}
+FLOOR = -300
+ENCODING = "grad-planes-v1"
+
+
+def encode(grid, rows, cols):
+    """grad-planes-v1: clamp the deep sea floor, predictor residuals, low then high bytes."""
+    a = [max(FLOOR, v) for v in grid]
+    lo = bytearray(len(a))
+    hi = bytearray(len(a))
+    for r in range(rows):
+        for c in range(cols):
+            i = r * cols + c
+            if r and c:
+                pred = a[i - 1] + a[i - cols] - a[i - cols - 1]
+            elif c:
+                pred = a[i - 1]
+            elif r:
+                pred = a[i - cols]
+            else:
+                pred = 0
+            res = (a[i] - pred) & 0xFFFF
+            lo[i] = res & 0xFF
+            hi[i] = res >> 8
+    return bytes(lo + hi)
 
 
 def get(url, tries=4):
@@ -69,9 +100,11 @@ def main():
     for stride, lat_range, lon_range, key in jobs:
         lats, lons, grid = fetch(stride, lat_range, lon_range)
         name = f"elevation-{key}.bin"
-        (ROOT / "data" / name).write_bytes(grid.tobytes())
+        (ROOT / "data" / name).write_bytes(encode(grid, len(lats), len(lons)))
         meta["grids"][key] = {
             "file": name,
+            "encoding": ENCODING,
+            "floor": FLOOR,
             "rows": len(lats),
             "cols": len(lons),
             "north": lats[0],
@@ -83,5 +116,23 @@ def main():
     (ROOT / "data/elevation.json").write_text(json.dumps(meta, indent=1))
 
 
+def encode_raw():
+    """Convert raw int16 grids already in data/ to the encoded format, in place."""
+    path = ROOT / "data/elevation.json"
+    meta = json.loads(path.read_text())
+    for g in meta["grids"].values():
+        if g.get("encoding"):
+            continue
+        grid = array.array("h")
+        grid.frombytes((ROOT / "data" / g["file"]).read_bytes())
+        if sys.byteorder != "little":
+            grid.byteswap()
+        (ROOT / "data" / g["file"]).write_bytes(encode(grid, g["rows"], g["cols"]))
+        g["encoding"] = ENCODING
+        g["floor"] = FLOOR
+        print(f"{g['file']}: encoded")
+    path.write_text(json.dumps(meta, indent=1))
+
+
 if __name__ == "__main__":
-    main()
+    encode_raw() if "--encode-raw" in sys.argv else main()

@@ -486,6 +486,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			verifyWater: () => outflow.verify(),
 			anisotropy: () => terrain.detail.anisotropy,
 			mainRivers: () => mainRivers.names,
+			project: (ll) => world.project(ll),
 			moonDir: () => shared.uMoonDir.value.clone(),
 			gold: () => terrain.gold,
 			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),

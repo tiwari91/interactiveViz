@@ -227,8 +227,37 @@ vec4 gD1;`)
 export function createTerrain(THREE, data, world, basins, quality) {
 	const P = palette(THREE);
 	const { rows, cols, north, west } = world.elev;
-	const { mask, soft } = californiaMask(data, world.elev);
+	const { mask: caMask, soft } = californiaMask(data, world.elev);
 	const n = rows * cols;
+	// San Francisco, San Pablo and Suisun bays sit inside the county outlines, so the state mask
+	// counts them as land. Flood-fill from the open ocean through cells at or below sea level,
+	// west of the Delta (whose islands are also below sea level but are farmland), and treat
+	// what it reaches as sea.
+	const mask = Float32Array.from(caMask);
+	{
+		const z = world.elev.data;
+		const lonAt = (c) => west + c * world.dlon;
+		const queue = [];
+		for (let i = 0; i < n; i++) if (z[i] <= 0 && mask[i] < 0.5) queue.push(i);
+		const seen = new Uint8Array(n);
+		queue.forEach((i) => { seen[i] = 1; });
+		while (queue.length) {
+			const i = queue.pop();
+			const r = Math.floor(i / cols);
+			const c = i % cols;
+			for (const [ dr, dc ] of [ [ 1, 0 ], [ -1, 0 ], [ 0, 1 ], [ 0, -1 ] ]) {
+				const rr = r + dr;
+				const cc = c + dc;
+				if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
+				const j = rr * cols + cc;
+				if (seen[j] || z[j] > 0 || lonAt(cc) > -121.86) continue;
+				seen[j] = 1;
+				mask[j] = 0;
+				queue.push(j);
+			}
+		}
+	}
+	world.bayMask = mask;
 	const pos = new Float32Array(n * 3);
 	const meta = new Float32Array(n * 3); // metres, lon, lat
 	for (let r = 0; r < rows; r++) {

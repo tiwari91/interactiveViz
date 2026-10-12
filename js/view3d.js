@@ -108,6 +108,16 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const sky = createSky(THREE);
 		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
 		const labels = createLabels(THREE, container, basins, maxCap);
+		let labelsLeft = null;
+		let leftIndex = -1;
+		// A small north arrow: views like the compare framing turn the state on its side.
+		const compass = document.createElement("div");
+		compass.className = "compass";
+		compass.setAttribute("aria-hidden", "true");
+		compass.innerHTML = "<svg viewBox=\"-14 -14 28 28\" width=\"28\" height=\"28\"><path d=\"M0 -10 L4 1 L0 -1.5 L-4 1 Z\"/><text y=\"10\" text-anchor=\"middle\">N</text></svg>";
+		container.appendChild(compass);
+		const north = [ new THREE.Vector3(), new THREE.Vector3() ];
+		let northDeg = null;
 		const snapshot = createSnapshots(data, basins, dams.foam.spots);
 		dams.foam.uniforms.uTime = shared.uTime;
 		dams.foam.mesh.material.uniforms.uTime = shared.uTime;
@@ -393,7 +403,28 @@ export function createView3D(container, data, store, tooltip, audio) {
 				applyState(cur, target);
 				sc.renderer.render(sc.scene, sc.camera);
 			}
-			labels.update(sc.camera, w, h, store.get().selected ?? hovered, ui.comparing, sc.controls.target, groundAt, home().dist / homePose(1.6).dist);
+			north[0].copy(sc.controls.target).project(sc.camera);
+			north[1].copy(sc.controls.target).add(v3.set(0, 0, -100)).project(sc.camera);
+			const deg = Math.round(Math.atan2((north[1].x - north[0].x) * w, (north[1].y - north[0].y) * h) * 180 / Math.PI);
+			if (deg !== northDeg) {
+				northDeg = deg;
+				compass.firstChild.style.transform = `rotate(${deg}deg)`;
+			}
+			// Compare: each half carries its own month's dots and names, clipped to that half.
+			const reachScale = home().dist / homePose(1.6).dist;
+			if (ui.comparing) {
+				const split = Math.round(w * controls.divider);
+				if (!labelsLeft) labelsLeft = createLabels(THREE, container, basins, maxCap);
+				if (leftIndex !== ui.compareIndex) {
+					leftIndex = ui.compareIndex;
+					labelsLeft.setValues(leftIndex);
+				}
+				labelsLeft.update(sc.camera, w, h, null, false, sc.controls.target, groundAt, reachScale, [ 0, split ]);
+				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale, [ split, w ]);
+			} else {
+				if (labelsLeft) labelsLeft.update(sc.camera, w, h, null, true);
+				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale);
+			}
 
 			if (now - lastAudio > 150) {
 				lastAudio = now;
@@ -544,6 +575,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			setLinks: (v) => links.setShowAll(v),
 			pose: () => poseOf(THREE, sc.camera, sc.controls),
 			moving: () => Boolean(mover || replayFn),
+			northDeg: () => northDeg,
 			dispose() {
 				this.stop();
 				unsub();

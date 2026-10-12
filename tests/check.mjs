@@ -617,6 +617,14 @@ async function main() {
 		const cmp = await debug3d(page, "({ az: c.pose().az, ribbons: c.ribbonCompare() })");
 		check("Compare from the overview turns the state across the screen, so both halves hold reservoirs", Math.abs(cmp.az + 1.02) < 0.05, `azimuth ${cmp.az.toFixed(2)}`);
 		check("Compare: the left half draws its own month's river widths, then the main widths come back", cmp.ribbons.placed && cmp.ribbons.mainBound, JSON.stringify(cmp.ribbons));
+		const halves = await page.evaluate(() => {
+			const layers = [ ...document.querySelectorAll(".labels-3d") ];
+			const dots = (l) => [ ...l.querySelectorAll(".lbl") ].filter((e) => e.style.display !== "none").map((e) => e.querySelector(".lbl-dot").style.background);
+			return { layers: layers.length, left: dots(layers[1] ?? layers[0]), right: dots(layers[0]), stats: [ ...document.querySelectorAll(".compare-stat") ].map((p) => p.textContent) };
+		});
+		check("Compare: each half shows its own month's reservoir dots and a statewide summary", halves.layers === 2 && halves.left.length >= 6 && halves.right.length >= 4 && halves.stats.length === 2 && halves.stats[0] !== halves.stats[1] && halves.stats.every((t) => /full statewide/.test(t) && /Shasta/.test(t)), `${halves.left.length} dots left, ${halves.right.length} right; ${halves.stats.map((t) => t.split(" full")[0]).join(" vs ")}`);
+		const nd = await debug3d(page, "c.northDeg()");
+		check("A north arrow turns with the camera (north points left in the compare framing)", nd < -60 && nd > -120, `${nd} deg`);
 		await shot(page, "3d-compare.png", ".stage");
 		await page.locator(".js-compare").click();
 		await waitStill(page);

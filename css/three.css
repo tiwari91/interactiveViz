@@ -100,11 +100,29 @@
 	box-shadow: 0 1px 6px rgb(0 0 0 / 35%);
 }
 
-.compare-tag { position: absolute; top: 56px; pointer-events: auto; }
+.compare-tag { position: absolute; top: 56px; display: flex; flex-direction: column; gap: 4px; max-width: calc(50% - 24px); pointer-events: auto; }
 
-.compare-left { right: calc(100% - var(--split) + 14px); }
+.compare-left { right: calc(100% - var(--split) + 14px); align-items: flex-end; text-align: right; }
 
-.compare-right { left: calc(var(--split) + 14px); }
+.compare-right { left: calc(var(--split) + 14px); align-items: flex-start; }
+
+/* Per-half summary under the month: statewide % full and the four largest lakes. */
+.compare-stat {
+	margin: 0;
+	padding: 3px 8px;
+	border-radius: 6px;
+	background: rgb(16 22 30 / 70%);
+	color: #e8edf2;
+	font: 500 0.72rem/1.35 var(--font-body);
+}
+
+.compare-stat strong { color: #fff; font-family: var(--font-mono); }
+
+.compare-tag .compare-stat span { display: inline; padding: 0; background: none; font: inherit; color: inherit; }
+
+.compare-tag .compare-stat .compare-keys { display: block; color: #cfd8e3; font-size: 0.68rem; }
+
+.compare-keys span { white-space: nowrap; }
 
 .compare-tag select, .compare-tag span {
 	display: inline-block;
@@ -231,6 +249,7 @@
 	.detail-grid dd { font-size: 0.72rem; }
 	.detail-spark, .detail-note { display: none; }
 	.compare-tag { top: 84px; }
+	.compare-tag .compare-stat .compare-keys { display: none; }
 }
 
 /* In 2D the north of the state sits top-left, so the card goes over the ocean instead. */
@@ -264,3 +283,24 @@ body:has(.detail-card:not([hidden])) .stage-hint { display: none; }
 @media (max-width: 560px) {
 	.detail-sound { margin-top: 4px; }
 }
+
+/* North arrow, bottom right above Reset view; turns with the camera. */
+.compass {
+	position: absolute;
+	right: 14px;
+	bottom: 54px;
+	z-index: 3;
+	width: 32px;
+	height: 32px;
+	display: grid;
+	place-items: center;
+	border-radius: 50%;
+	background: rgb(16 22 30 / 55%);
+	pointer-events: none;
+}
+
+.compass svg { overflow: visible; }
+
+.compass path { fill: #f4f1ea; }
+
+.compass text { fill: #f4f1ea; font: 700 8px var(--font-body); }

@@ -1,6 +1,10 @@
 // Overlay controls for the 3D view: drought replay, compare, sky and quality.
 import { PRESETS } from "./sky.js";
-import { fmtMonth } from "../scales.js";
+import { fmtMonth, fmtPct } from "../scales.js";
+
+// The largest reservoirs, quoted in each compare half so the same lakes can be read side by side.
+const KEY = [ "SHA", "ORO", "FOL", "NML" ];
+const short = (name) => name.replace(/ \(.*\)$/, "").replace(/ (Dam|Reservoir|Lake)$/, "");
 
 export function createControls3D(stage, data, handlers) {
 	const bar = document.createElement("div");
@@ -37,8 +41,9 @@ export function createControls3D(stage, data, handlers) {
 			<select class="js-compare-month" aria-label="Month on the left">
 				${data.months.map((m, i) => `<option value="${i}">${fmtMonth(data.dates[i])}</option>`).join("")}
 			</select>
+			<p class="compare-stat js-stat-left" aria-live="polite"></p>
 		</div>
-		<div class="compare-tag compare-right"><span class="js-compare-now"></span></div>
+		<div class="compare-tag compare-right"><span class="js-compare-now"></span><p class="compare-stat js-stat-right" aria-live="polite"></p></div>
 		<div class="compare-handle" role="slider" tabindex="0" aria-label="Compare divider" aria-valuemin="5" aria-valuemax="95" aria-valuenow="50"><span></span></div>`;
 	stage.appendChild(split);
 
@@ -93,6 +98,13 @@ export function createControls3D(stage, data, handlers) {
 			split.hidden = !comparing;
 			split.querySelector(".js-compare-month").value = String(compareIndex);
 			split.querySelector(".js-compare-now").textContent = fmtMonth(data.dates[dateIndex]);
+			const stat = (i) => {
+				const keys = KEY.map((id) => data.reservoirs.find((r) => r.id === id)).filter(Boolean)
+					.map((r) => `${short(r.name)} ${fmtPct(r.series[i] === null ? null : r.series[i] / r.capacity)}`);
+				return `<strong>${fmtPct(data.totals[i].pct)}</strong> full statewide<span class="compare-keys">${keys.map((k) => `<span>${k}</span>`).join(" · ")}</span>`;
+			};
+			split.querySelector(".js-stat-left").innerHTML = stat(compareIndex);
+			split.querySelector(".js-stat-right").innerHTML = stat(dateIndex);
 		},
 		get divider() {
 			return frac;

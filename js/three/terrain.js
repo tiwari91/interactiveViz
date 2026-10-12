@@ -26,11 +26,22 @@ function palette(THREE) {
 	};
 }
 
+// Desert share at a place: the Mojave and the Great Basin edge. The edges are wide and
+// wobble with noise so they never draw a straight seam across the state; the southern
+// coast (chaparral, not desert) keeps only a little of it.
+function desertAt(lon, lat, nz = 0.5) {
+	const w = (nz - 0.5) * 0.9;
+	const mojave = smoothstep(-119.8, -117.6, lon + w) * (1 - smoothstep(35.9, 37.6, lat + w * 0.6));
+	const coast = smoothstep(35.0, 34.2, lat + w * 0.4) * (1 - smoothstep(-117.4, -116.6, lon + w));
+	const basin = smoothstep(-121.2, -120.4, lon) * smoothstep(40.2, 40.9, lat) * 0.6;
+	return Math.min(1, mojave * (1 - 0.6 * coast) + basin);
+}
+
 // How wooded the ground is (0..1) at an elevation, slope and place: the same belts the
 // terrain colours use, so trees only grow where the ground reads as vegetated.
 export function vegetation(m, slopeY, lon, lat) {
 	if (m < 5) return 0;
-	const desert = Math.min(1, smoothstep(-118.9, -118.1, lon) * (1 - smoothstep(36.4, 37.4, lat)) + smoothstep(-121.2, -120.4, lon) * smoothstep(40.2, 40.9, lat) * 0.6);
+	const desert = desertAt(lon, lat);
 	const belt = Math.max(0.55 * smoothstep(60, 300, m), smoothstep(500, 1000, m)) * (1 - smoothstep(2500, 2900, m));
 	return belt * (1 - desert) * smoothstep(0.72, 0.86, slopeY);
 }
@@ -53,8 +64,7 @@ function shadeTerrain(P, m, slopeY, lon, lat, nz, inCA, out, outDry) {
 		const forest = smoothstep(800, 1300, m + nz * 260) * (1 - smoothstep(2600, 3000, m));
 		tmp.lerp(P.forestWet, forest);
 		dry.lerp(P.forestDry, forest);
-		const desert = smoothstep(-118.9, -118.1, lon) * (1 - smoothstep(36.4, 37.4, lat)) + smoothstep(-121.2, -120.4, lon) * smoothstep(40.2, 40.9, lat) * 0.6;
-		const d = Math.min(1, desert) * (1 - forest * 0.6);
+		const d = desertAt(lon, lat, nz) * (1 - forest * 0.6);
 		tmp.lerp(lat > 39.5 ? P.sage : P.desert, d);
 		dry.lerp(lat > 39.5 ? P.sage : P.desertDry, d);
 		const rocky = Math.max(smoothstep(0.93, 0.7, slopeY), smoothstep(2300, 2800, m));

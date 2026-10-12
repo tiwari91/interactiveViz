@@ -31,6 +31,7 @@ export function createWorld(data, elev) {
 	const vscale = (unitsPerKm / 1000) * EXAGGERATION;
 
 	const { rows, cols, north, south, west, east, data: z } = elev;
+	despike(z, rows, cols);
 	const dlat = (north - south) / (rows - 1);
 	const dlon = (east - west) / (cols - 1);
 
@@ -67,6 +68,32 @@ export function createWorld(data, elev) {
 			return toY(metresAt(lon, lat));
 		},
 	};
+}
+
+// At 7x vertical exaggeration a lone DEM cell that stands far above or below its four
+// neighbours renders as a needle or shard. Pull such cells back toward the local mean
+// (land only, once per grid; already-clamped grids are left as they are).
+export const SPIKE_M = 220;
+function despike(z, rows, cols) {
+	if (z.despiked) return;
+	// Clamping a cell moves its neighbours' means, so repeat until nothing moves.
+	for (let pass = 0; pass < 12; pass++) {
+		const src = Int16Array.from(z);
+		let moved = 0;
+		for (let r = 1; r < rows - 1; r++) {
+			for (let c = 1; c < cols - 1; c++) {
+				const i = r * cols + c;
+				if (src[i] <= 0) continue;
+				const m = (src[i - 1] + src[i + 1] + src[i - cols] + src[i + cols]) / 4;
+				const d = src[i] - m;
+				if (d > SPIKE_M) z[i] = Math.floor(m + SPIKE_M);
+				else if (d < -SPIKE_M) z[i] = Math.ceil(m - SPIKE_M);
+				if (z[i] !== src[i]) moved++;
+			}
+		}
+		if (!moved) break;
+	}
+	z.despiked = true;
 }
 
 // Rasterise the state outline onto the elevation grid: 1 inside California, 0 outside,

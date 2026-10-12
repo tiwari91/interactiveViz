@@ -131,7 +131,8 @@ export function stripGeometry(seq, out, meta) {
 		for (const s of ACROSS) {
 			out.side.push(s);
 			out.along.push(dist);
-			out.meta.push(meta.dam, meta.kind, total, 0);
+			// A river that joins another never fades out at its end.
+			out.meta.push(meta.dam, meta.kind, meta.joins ? total + 1000 : total, 0);
 		}
 		if (i > 0) {
 			for (let k = 0; k < cols - 1; k++) {

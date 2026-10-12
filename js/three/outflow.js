@@ -175,16 +175,57 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	};
 	const ground = (x, z) => router.surface(x, z) + router.OFFSET;
 
-	list.forEach((b, di) => {
+	// Outflow paths first, biggest rivers first: a smaller river that reaches one already
+	// laid down ends at the confluence instead of crossing it.
+	const outSeq = new Array(n).fill(null);
+	const joins = new Array(n).fill(null);
+	const JOIN = 1.1;
+	const cell = (x, z) => `${Math.floor(x / JOIN)},${Math.floor(z / JOIN)}`;
+	const trunk = new Map();
+	const order = list.map((_, i) => i).sort((a, b) => list[b].r.capacity - list[a].r.capacity);
+	for (const di of order) {
+		const b = list[di];
 		const info = dams.info.get(b.r.id);
-		const sc = scales[di];
-		// Outflow: from the downstream toe, along the canyon floor, then downhill.
+		// From the downstream toe, along the canyon floor, then downhill.
 		// Arch dams bulge upstream, so start below the dam line, never in the lake.
 		const toe = b.toWorld(Math.min(info.toeU, b.dam.u - 0.6), 0);
 		const pts = router.downhill(toe, [ -b.eu[0], -b.eu[1] ], 24 + b.Lu * 2.4, { avoid: b });
-		const seq = router.drape(pts);
+		let seq = router.drape(pts);
+		for (let k = 6; k < seq.length; k++) {
+			const [ x, , z ] = seq[k];
+			let hit = null;
+			for (let i = -1; i <= 1 && !hit; i++) {
+				for (let j = -1; j <= 1 && !hit; j++) {
+					for (const t of trunk.get(`${Math.floor(x / JOIN) + i},${Math.floor(z / JOIN) + j}`) ?? []) {
+						if (t.di !== di && Math.hypot(t.p[0] - x, t.p[2] - z) < JOIN) {
+							hit = t;
+							break;
+						}
+					}
+				}
+			}
+			if (hit) {
+				seq = seq.slice(0, k);
+				const last = seq[seq.length - 1];
+				seq.push([ hit.p[0], Math.min(last[1], hit.p[1]), hit.p[2] ]);
+				joins[di] = list[hit.di].r.id;
+				break;
+			}
+		}
+		outSeq[di] = seq;
+		for (const p of seq) {
+			const key = cell(p[0], p[2]);
+			if (!trunk.has(key)) trunk.set(key, []);
+			trunk.get(key).push({ p, di });
+		}
+	}
+
+	list.forEach((b, di) => {
+		const info = dams.info.get(b.r.id);
+		const sc = scales[di];
+		const seq = outSeq[di];
 		if (seq.length > 2) {
-			const st = stripGeometry(seq, out, { dam: di, kind: KIND.OUTFLOW });
+			const st = stripGeometry(seq, out, { dam: di, kind: KIND.OUTFLOW, joins: joins[di] });
 			// Narrow at the outlet, wide tailrace, then a natural river width.
 			const shape = (i, d) => sc * (0.55 + 0.45 * smooth(0, 3, d)) * (1 - 0.5 * smooth(5, 16, d));
 			strips.push({ ...st, kind: KIND.OUTFLOW, dam: di, centre: seq, shape, sample: ground });
@@ -324,9 +365,28 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	}
 	place(new Array(n).fill(0.5));
 
+	// Points along both banks of every river, for riparian trees and boulders.
+	function bankPoints(step = 1.1) {
+		const pts = [];
+		for (const st of strips) {
+			if (st.kind === KIND.CHUTE) continue;
+			const full = widthFor(st.kind, 1) * BANK;
+			for (let i = 0; i < st.centre.length; i++) {
+				const d = st.alongs[i];
+				if (Math.floor(d / step) === Math.floor((st.alongs[i - 1] ?? -1) / step)) continue;
+				const half = st.shape(i, d) * full;
+				const [ sx, sz ] = st.frames[i];
+				pts.push({ x: st.centre[i][0], z: st.centre[i][2], sx, sz, half, kind: st.kind, along: d });
+			}
+		}
+		return pts;
+	}
+
 	return {
 		group,
 		lengths,
+		bankPoints,
+		router,
 		// Rebuild the strips on the ground for a month's release (called on month change).
 		setWidths(outlet) {
 			place(outlet);
@@ -349,6 +409,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			width: release[i] > 0.001 && lengths[i] > 0 ? widthFor(KIND.OUTFLOW, release[i]) * scales[i] : 0,
 			length: lengths[i],
 			into: into[i],
+			joins: joins[i],
 			mist: mist[i],
 			chuteSpill: strips.some((s) => s.dam === i && s.kind === KIND.CHUTE) ? spill[i] : null,
 		})),

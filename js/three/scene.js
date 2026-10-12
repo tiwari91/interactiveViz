@@ -26,7 +26,7 @@ export function createScene(THREE, container, quality) {
 	controls.dampingFactor = 0.08;
 	controls.minDistance = 22;
 	controls.maxDistance = 2600;
-	controls.maxPolarAngle = Math.PI * 0.44;
+	controls.maxPolarAngle = Math.PI * 0.42;
 	controls.screenSpacePanning = false;
 	controls.zoomSpeed = 0.9;
 

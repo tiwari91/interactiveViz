@@ -268,7 +268,38 @@ export function createDams(THREE, data, basins) {
 	geom.setAttribute("position", new THREE.Float32BufferAttribute(B.pos, 3));
 	geom.setAttribute("color", new THREE.Float32BufferAttribute(B.col, 3));
 	geom.computeVertexNormals();
-	const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide }));
+	const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.02, side: THREE.DoubleSide });
+	// Concrete texture in world space: formwork lifts and joints, mottling, speckle and
+	// rain streaks. Applied only to the light, unsaturated (concrete) surfaces.
+	mat.onBeforeCompile = (sh) => {
+		sh.vertexShader = sh.vertexShader
+			.replace("#include <common>", "#include <common>\nvarying vec3 vDamW;")
+			.replace("#include <begin_vertex>", "#include <begin_vertex>\nvDamW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+		sh.fragmentShader = sh.fragmentShader
+			.replace("#include <common>", `#include <common>
+varying vec3 vDamW;
+float dh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float dn(vec2 p) {
+	vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(dh(i), dh(i + vec2(1, 0)), f.x), mix(dh(i + vec2(0, 1)), dh(i + vec2(1, 1)), f.x), f.y);
+}`)
+			.replace("#include <color_fragment>", `#include <color_fragment>
+{
+	vec3 c = diffuseColor.rgb;
+	float lum = dot(c, vec3(0.3, 0.59, 0.11));
+	float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+	float concrete = step(0.22, lum) * step(sat, 0.08);
+	float along = vDamW.x + vDamW.z;
+	float lift = smoothstep(0.46, 0.5, abs(fract(vDamW.y * 2.2) - 0.5));
+	float joint = smoothstep(0.485, 0.5, abs(fract(along * 0.55) - 0.5));
+	float blotch = dn(vec2(along * 1.1, vDamW.y * 0.9)) * 0.6 + dn(vec2(along * 3.3, vDamW.y * 2.7)) * 0.4;
+	float speck = dh(floor(vec2(along * 40.0, vDamW.y * 40.0)));
+	float streak = smoothstep(0.55, 0.92, dn(vec2(along * 7.0, vDamW.y * 0.35)));
+	float k = (0.9 + 0.16 * blotch) * (0.97 + 0.05 * speck) * (1.0 - 0.16 * lift - 0.12 * joint) * (1.0 - 0.14 * streak);
+	diffuseColor.rgb = c * mix(1.0, k, concrete);
+}`);
+	};
+	const mesh = new THREE.Mesh(geom, mat);
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 

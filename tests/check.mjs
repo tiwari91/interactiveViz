@@ -404,7 +404,7 @@ async function main() {
 			const out = await debug3d(page, "c.outflow()");
 			const wet = out.filter((o) => o.pct !== null && o.pct > 0.003);
 			// Long enough to see, unless it runs straight into the next lake downstream.
-			const bad = wet.filter((o) => !(o.width > 0.3 && (o.length > 3 || o.into)));
+			const bad = wet.filter((o) => !(o.width > 0.3 && (o.length > 3 || o.into || o.joins)));
 			check(`${month}: every dam with water has a visible outflow`, wet.length > 30 && bad.length === 0, `${wet.length} dams, min width ${Math.min(...wet.map((o) => o.width)).toFixed(2)}${bad.length ? `, missing: ${bad.map((o) => o.id).join(",")}` : ""}`);
 			const wrong = out.filter((o) => (o.spill > 0.05) !== (o.pct !== null && o.pct > 0.9));
 			check(`${month}: spillway cascade only above 90% full`, wrong.length === 0, `${out.filter((o) => o.spill > 0.05).map((o) => o.id).join(",") || "none spilling"}${wrong.length ? `; wrong: ${wrong.map((o) => `${o.id}@${(o.pct * 100).toFixed(0)}%`).join(",")}` : ""}`);
@@ -423,13 +423,35 @@ async function main() {
 		const clear = await debug3d(page, "c.chuteClearance()");
 		check("Spillway chutes sit above the ground across their width", clear.length > 10 && Math.min(...clear) > 0, `${clear.length} chutes, min clearance ${Math.min(...clear).toFixed(2)}`);
 
+		// Fly-to: the camera stays above the ground with the dam in view, for the big lakes.
+		const flyIds = [ "SHA", "ORO", "CLE", "NML", "DNP", "BER", "ALM", "FOL", "PNF", "ISB", "MIL" ];
+		const flyBad = [];
+		for (const id of flyIds) {
+			await debug3d(page, `c.focus("${id}")`);
+			await page.waitForFunction(() => !window.droughtViz.views["3d"].debug().moving(), null, { timeout: 30000, polling: 200 }).catch(() => {});
+			await page.waitForTimeout(400);
+			const r = await debug3d(page, `({ clear: c.clearance(), dam: c.damInView("${id}"), dist: c.pose().dist })`);
+			if (!(r.clear > 1 && r.dam && r.dist < 60)) flyBad.push(`${id} clear ${r.clear.toFixed(1)} dam ${r.dam} dist ${r.dist.toFixed(0)}`);
+		}
+		check("Fly-to keeps the camera above ground, close, with the dam in view", flyBad.length === 0, flyBad.join("; ") || `${flyIds.length} lakes`);
+		// Orbiting right down and zooming in cannot put the camera into the hills.
+		await page.evaluate(() => { const c = window.droughtViz.views["3d"].debug(); const t = c.sc.controls.target; const p = c.sc.camera.position; p.set(t.x + 15, t.y - 3, t.z + 15); });
+		await page.waitForTimeout(800);
+		check("Camera stays above the terrain when pushed into it", (await debug3d(page, "c.clearance()")) > 1, `${(await debug3d(page, "c.clearance()")).toFixed(2)} units`);
+		const spike = await debug3d(page, "c.maxSpike()");
+		check("No terrain spikes: every land cell within 220 m of its neighbours' mean", spike <= 221, `${spike.toFixed(0)} m`);
+		const rip = await debug3d(page, "c.riparian()");
+		check("Rivers have trees and boulders along their banks", rip.pine + rip.broad > 1000 && rip.rock > 200, JSON.stringify(rip));
+		await debug3d(page, "c.home()");
+		await waitStill(page, 500);
+
 		// Water on the ground: strips sit on the terrain and never run uphill.
 		const water = await debug3d(page, "c.verifyWater()");
 		check("Rivers and outflows lie on the terrain", water.maxGap < 0.35, `max gap ${water.maxGap} (${water.worst}), ${water.strips} strips`);
 		check("Rivers and outflows only run downhill", water.maxClimb <= 0.46, `max climb ${water.maxClimb}`);
-		const longOut = await debug3d(page, "c.outflow().filter((o) => o.length >= 8).length");
+		const longOut = await debug3d(page, "c.outflow().filter((o) => o.length >= 8 || o.joins).length");
 		const nOut = await debug3d(page, "c.outflow().length");
-		check("Most outflows run well downstream", longOut >= 28, `${longOut} of ${nOut} longer than 8 units`);
+		check("Most outflows run well downstream", longOut >= 28, `${longOut} of ${nOut} longer than 8 units or joining a bigger river`);
 
 		// 3D labels: text stays fully opaque; only the plate fades.
 		const lbl = await page.evaluate(() => [ ...document.querySelectorAll(".labels-3d .lbl-text") ]

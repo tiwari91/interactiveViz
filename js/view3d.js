@@ -9,6 +9,7 @@ import { createLakes, createOcean, waterUniforms } from "./three/water.js";
 import { createDams } from "./three/dams.js";
 import { createGaugeLinks } from "./three/gaugeLinks.js";
 import { createOutflow } from "./three/outflow.js";
+import { createRiparian } from "./three/riparian.js";
 import { createSky, applyPreset } from "./three/sky.js";
 import { createLabels } from "./three/labels.js";
 import { createSnapshots } from "./three/snapshot.js";
@@ -99,6 +100,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const dams = createDams(THREE, data, basins);
 		const links = createGaugeLinks(THREE, data, world, basins);
 		const outflow = createOutflow(THREE, basins, dams, world, shared, ui.quality);
+		const riparian = createRiparian(THREE, outflow, outflow.router, basins, ui.quality);
 		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
 		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
@@ -106,7 +108,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const snapshot = createSnapshots(data, basins, dams.foam.spots);
 		dams.foam.uniforms.uTime = shared.uTime;
 		dams.foam.mesh.material.uniforms.uTime = shared.uTime;
-		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group);
+		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, riparian.group);
 
 		// Invisible pick volumes over each lake and dam.
 		const pickGeom = new THREE.CylinderGeometry(1, 1, 1, 18);
@@ -164,6 +166,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		let dragging = false;
 		let down = null;
 		let lastAudio = 0;
+		let viewShift = 0;
 		let last = performance.now();
 
 		function pickAt(x, y) {
@@ -222,17 +225,48 @@ export function createView3D(container, data, store, tooltip, audio) {
 			dragging = false;
 		});
 
-		function focus(id) {
+		// Fly in to frame the dam with its lake behind it, from the downstream side.
+		function focusPose(id) {
 			const b = basins.byId.get(id);
-			if (!b) return;
-			const dir = [ -b.eu[0] * 0.8 + b.ev[0] * 0.6, -b.eu[1] * 0.8 + b.ev[1] * 0.6 ];
-			mover = flyTo(THREE, sc.camera, sc.controls, {
-				target: [ b.cx - b.eu[0] * b.Lu * 0.5, b.P - b.D * 0.4, b.cz - b.eu[1] * b.Lu * 0.5 ],
-				dist: 16 + b.Lu * 3.4,
-				polar: 1.02,
+			const info = dams.info.get(id);
+			const dir = [ -b.eu[0] * 0.85 + b.ev[0] * 0.5, -b.eu[1] * 0.85 + b.ev[1] * 0.5 ];
+			const [ dx, dz ] = info.center;
+			return {
+				target: [ dx + (b.cx - dx) * 0.3, info.crest - info.height * 0.35, dz + (b.cz - dz) * 0.3 ],
+				dist: 8 + info.halfWidth * 2.2 + b.Lu * 0.55,
+				polar: 0.98,
 				az: Math.atan2(dir[0], dir[1]),
-			}, motionMs(1500));
+			};
+		}
+		function focus(id) {
+			if (!basins.byId.get(id)) return;
+			mover = flyTo(THREE, sc.camera, sc.controls, focusPose(id), motionMs(1500));
 			audio.whoosh();
+		}
+
+		// Ground under a point: carved basin surface if any, else the DEM; never below the sea plane.
+		const groundAt = (x, z) => {
+			const s = basins.surfaceAt(x, z);
+			return Math.max(0.3, s ? s.h : world.groundY(x, z));
+		};
+		// Keep the camera above the terrain and its view of the target clear: sample the
+		// ground along the sight line and lift the camera until every sample is above it.
+		const CLEAR_F = [ 1, 0.9, 0.78, 0.64, 0.5, 0.36 ];
+		function keepAbove() {
+			const t = sc.controls.target;
+			const p = sc.camera.position;
+			const dist = p.distanceTo(t);
+			const margin = 1.5 + dist * 0.05;
+			let need = -Infinity;
+			for (const f of CLEAR_F) {
+				const x = t.x + (p.x - t.x) * f;
+				const z = t.z + (p.z - t.z) * f;
+				let g = groundAt(x, z);
+				if (f === 1) for (const [ ox, oz ] of [ [ 2, 0 ], [ -2, 0 ], [ 0, 2 ], [ 0, -2 ] ]) g = Math.max(g, groundAt(x + ox, z + oz));
+				need = Math.max(need, t.y + (g + margin * f - t.y) / f);
+			}
+			if (need > p.y) p.y = need;
+			return need;
 		}
 
 		function frame(now) {
@@ -255,6 +289,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				}
 			} else if (mover && mover(now)) mover = null;
 			sc.controls.update();
+			keepAbove();
 			sc.updateSun();
 
 			// Ease toward the target month.
@@ -286,6 +321,15 @@ export function createView3D(container, data, store, tooltip, audio) {
 
 			const w = container.clientWidth;
 			const h = container.clientHeight;
+			// With the detail card open on a wide stage, shift the picture right so the
+			// flown-to dam is centred in the space beside the card, not under it.
+			const card = stage.querySelector(".detail-card");
+			const shift = card && !card.hidden && w > 760 && !ui.comparing ? Math.round((card.offsetWidth + 12) / 2) : 0;
+			if (shift !== viewShift || (shift && (w !== sc.camera.view?.fullWidth || h !== sc.camera.view?.fullHeight))) {
+				viewShift = shift;
+				if (shift) sc.camera.setViewOffset(w, h, -shift, 0, w, h);
+				else sc.camera.clearViewOffset();
+			}
 			if (ui.comparing) {
 				const split = Math.round(w * controls.divider);
 				sc.renderer.setScissorTest(true);
@@ -300,7 +344,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				applyState(cur, target);
 				sc.renderer.render(sc.scene, sc.camera);
 			}
-			labels.update(sc.camera, w, h, store.get().selected ?? hovered, ui.comparing);
+			labels.update(sc.camera, w, h, store.get().selected ?? hovered, ui.comparing, sc.controls.target, groundAt);
 
 			if (now - lastAudio > 150) {
 				lastAudio = now;
@@ -395,6 +439,28 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// For tests: what each dam is visibly releasing right now.
 			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
 			verifyWater: () => outflow.verify(),
+			riparian: () => ({ ...riparian.counts }),
+			// For tests: the largest step (metres) between a land DEM cell and the mean of its neighbours.
+			maxSpike() {
+				const { rows, cols, data: z } = world.elev;
+				let worst = 0;
+				for (let r = 1; r < rows - 1; r++) {
+					for (let c = 1; c < cols - 1; c++) {
+						const i = r * cols + c;
+						if (z[i] <= 0) continue;
+						worst = Math.max(worst, Math.abs(z[i] - (z[i - 1] + z[i + 1] + z[i - cols] + z[i + cols]) / 4));
+					}
+				}
+				return worst;
+			},
+			// For tests: camera height above the ground beneath it, and the fly-to pose for a lake.
+			clearance: () => sc.camera.position.y - groundAt(sc.camera.position.x, sc.camera.position.z),
+			focusPose,
+			damInView(id) {
+				const info = dams.info.get(id);
+				v3.set(info.center[0], info.crest, info.center[1]).project(sc.camera);
+				return v3.z < 1 && Math.abs(v3.x) < 0.9 && Math.abs(v3.y) < 0.9;
+			},
 			// For tests: lowest height of each spillway chute floor above the ground under its full width.
 			chuteClearance: () => [ ...dams.info.values() ].filter((d) => d.chute).map((d) => d.chuteClear),
 			linksVisible: () => links.visibleCount(),

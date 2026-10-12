@@ -39,15 +39,32 @@ export function createLabels(THREE, container, basins, maxCap) {
 				it.pct.textContent = p === null ? "no data" : r.floodControl ? `${fmtPct(p)} · flood control` : fmtPct(p);
 			}
 		},
-		update(camera, width, height, active, hidden) {
+		update(camera, width, height, active, hidden, target = null, groundAt = null) {
 			layer.style.display = hidden ? "none" : "";
 			if (hidden) return;
 			const placed = [];
+			const cam = camera.position;
+			// Flown in close: lakes far beyond the one in view would float along the horizon.
+			const near = target ? cam.distanceTo(target) : Infinity;
+			const reach = near < 400 ? near * 4 + 80 : Infinity;
 			for (const it of items) {
 				v.set(it.b.cx, it.b.P + 2.2, it.b.cz);
-				const dist = v.distanceTo(camera.position);
+				const dist = v.distanceTo(cam);
+				const isActive0 = it.b.r.id === active;
+				let hide = !isActive0 && dist > reach;
+				// Hidden behind a ridge: the ground rises above the sight line somewhere along it.
+				if (!hide && !isActive0 && groundAt) {
+					for (const f of [ 0.2, 0.4, 0.6, 0.8 ]) {
+						const x = cam.x + (v.x - cam.x) * f;
+						const z = cam.z + (v.z - cam.z) * f;
+						if (groundAt(x, z) > cam.y + (v.y - cam.y) * f + 0.5) {
+							hide = true;
+							break;
+						}
+					}
+				}
 				v.project(camera);
-				if (v.z > 1 || v.x < -1.1 || v.x > 1.1 || v.y < -1.1 || v.y > 1.1) {
+				if (hide || v.z > 1 || v.x < -1.1 || v.x > 1.1 || v.y < -1.1 || v.y > 1.1) {
 					it.el.style.display = "none";
 					continue;
 				}

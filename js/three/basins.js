@@ -139,7 +139,21 @@ function makeBasin(r, maxCap, world) {
 	const extent = { u: [ -1.95 * Lu - 7, 2.15 * Lu ], v: [ -2.3 * Lv, 2.3 * Lv ] };
 	let damHalf = Lv * 0.4; // refined below once the bowl is known
 
-	const bowlShape = (u, v, s, g) => P - D * (1 - Math.pow(s, 1.5)) * g;
+	// Lakes in low, open country (e.g. Diamond Valley, Perris) sit in a shallow saucer that
+	// eases into the ground around it; canyon lakes keep their steep-sided bowl.
+	const around = [];
+	for (let i = 0; i < 24; i++) {
+		const th = (i / 24) * Math.PI * 2;
+		const u = Math.cos(th) * Lu * 2.2;
+		if (u < -DAM_U * Lu) continue;
+		const [ x, z ] = toWorld(u, Math.sin(th) * Lv * 2.2);
+		around.push(world.groundY(x, z) - P);
+	}
+	around.sort((a, b) => a - b);
+	const relief = around.length ? around[Math.floor(around.length / 2)] / Dmax : 1;
+	const gentle = 1 - smooth((relief - 0.45) / 0.4);
+	const bowlShape = (u, v, s, g) => P - D * ((1 - Math.pow(s, 1.5)) * (1 - gentle) + Math.pow(Math.max(0, 1 - s * s), 1.5) * gentle) * g;
+	const shoreW = 0.28 + 0.32 * gentle;
 	// Lake bed right behind the dam; the canyon below starts a little lower.
 	const damFloor = bowlShape(u0 + 0.05, 0, Math.min(0.99, sOf(u0 + 0.05, 0)), 1);
 
@@ -156,8 +170,8 @@ function makeBasin(r, maxCap, world) {
 				const shape = bowlShape(u, v, s, g) + lumps * (1 - s) * (1 - s);
 				h = Math.min(orig, Math.min(shape, P - 0.02));
 				zone = "bowl";
-			} else if (s < 1.28) {
-				const t = smooth((s - 1) / 0.28);
+			} else if (s < 1 + shoreW) {
+				const t = smooth((s - 1) / shoreW);
 				h = Math.min(orig, P + (Math.max(orig, P) - P) * t);
 				zone = t < 0.6 ? "shore" : "outside";
 			} else {
@@ -209,6 +223,7 @@ function makeBasin(r, maxCap, world) {
 		Lv,
 		D,
 		P,
+		gentle,
 		rim,
 		u0,
 		extent,

@@ -459,6 +459,8 @@ async function main() {
 		const ww = await debug3d(page, "(() => { const w = c.waterways(); const near = (name, id) => { const b = c.basins.byId.get(id); const e = w.ends[name][1]; return Math.hypot(e[0] - b.cx, e[1] - b.cz); }; return { ...w, cas: near('West Branch', 'CAS'), prr: near('East Branch', 'PRR'), ids: window.droughtViz.data.reservoirs.map((r) => r.id) }; })()");
 		check("Delta channels, California Aqueduct and Delta-Mendota Canal drawn; branches end at Castaic and Perris", ww.delta.includes("Old River") && [ "California Aqueduct", "West Branch", "East Branch", "Delta-Mendota Canal" ].every((n) => ww.canals.includes(n)) && ww.cas < 0.5 && ww.prr < 0.5, `${ww.delta.length} Delta channels, ${ww.canals.join(", ")}`);
 		check("San Luis Reservoir is not added (line only)", !ww.ids.some((id) => /^(SNL|SLF|LUS)$/.test(id)) && !(await page.evaluate(() => window.droughtViz.data.reservoirs.some((r) => /san luis/i.test(r.name)))));
+		const gentle = await debug3d(page, "Object.fromEntries([ 'DMV', 'PRR', 'ORO', 'PNF' ].map((id) => [ id, c.basins.byId.get(id).gentle ]))");
+		check("Open-country lakes sit in a gentle saucer; canyon lakes keep steep sides", gentle.DMV > 0.5 && gentle.PRR > 0.5 && gentle.ORO < 0.2 && gentle.PNF < 0.2, JSON.stringify(Object.fromEntries(Object.entries(gentle).map(([ k, v ]) => [ k, +v.toFixed(2) ]))));
 		const gold = [];
 		for (const m of [ "2017-04", "2014-09" ]) {
 			await setState(page, { dateIndex: await monthIndex(page, m) });

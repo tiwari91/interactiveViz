@@ -168,7 +168,8 @@ vec4 gD1;`)
 		vec3 c = diffuseColor.rgb;
 		float lum = dot(c, vec3(0.3, 0.59, 0.11));
 		float green = clamp((c.g - max(c.r, c.b)) * 10.0, 0.0, 1.0);
-		gRock = smoothstep(0.14, 0.34, slope + (d2.g - 0.5) * 0.18) * (1.0 - step(0.8, lum));
+		// Exposed lake bed is mostly silt and sand, with only a little rock on its steepest banks.
+		gRock = smoothstep(0.14, 0.34, slope + (d2.g - 0.5) * 0.18) * (1.0 - step(0.8, lum)) * (1.0 - 0.6 * vBare);
 		// Large-scale mottling everywhere, so close ground is never a flat wash.
 		vec4 d3 = texture2D(uDetail, vWPos.xz * 0.011 + 0.71);
 		float mott = mix(0.74, 1.22, d2.g) * mix(0.82, 1.12, gD1.r) * mix(0.8, 1.15, smoothstep(0.25, 0.75, d3.g));
@@ -441,7 +442,8 @@ function buildPatches(THREE, P, world, basins, quality) {
 						a.copy(P.mineral).lerp(P.mineralBand, band * 0.6).lerp(P.mineralWet, smoothstep(0.45, 1, depth) * 0.7);
 						b.copy(a);
 					} else {
-						const cliff = smoothstep(0.85, 0.55, slopeY) * s.w;
+						// Open-country lakes ease into their surroundings: little bare cliff at the shore.
+						const cliff = smoothstep(0.85, 0.55, slopeY) * s.w * (1 - 0.7 * (own.gentle ?? 0));
 						a.lerp(P.cliff, cliff);
 						b.lerp(P.cliff, cliff);
 					}

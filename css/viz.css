@@ -371,7 +371,7 @@
 @media (min-width: 901px) {
 	.viz-body { --stage-h: clamp(420px, calc(100vh - 426px), 700px); }
 	/* The 3D legend needs a second row; take that height from the stage so the timeline stays on screen. */
-	body[data-mode="3d"] .viz-body { --stage-h: clamp(380px, calc(100vh - 480px), 700px); }
+	body[data-mode="3d"] .viz-body, body[data-mode="diorama"] .viz-body { --stage-h: clamp(380px, calc(100vh - 480px), 700px); }
 	.stage { min-height: 0; }
 	/* Scrollable summary: a soft fade at the bottom says there is more below. */
 	.summary { max-height: var(--stage-h); overflow-y: auto; scrollbar-width: thin; -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent); padding-bottom: 24px; }

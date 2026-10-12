@@ -74,9 +74,13 @@ function shadeTerrain(P, m, slopeY, lon, lat, nz, inCA, out, outDry) {
 		dry.lerp(P.snow, smoothstep(3300, 3500, m + nz * 200) * smoothstep(0.6, 0.85, slopeY));
 	}
 	if (inCA < 1) {
-		const k = (1 - inCA) * 0.78;
-		tmp.lerp(P.neighbour, k);
-		dry.lerp(P.neighbour, k);
+		const k = (1 - inCA) * 0.94;
+		// Neighbouring land is a quiet, darker grey so California reads as the figure.
+		for (const col of [ tmp, dry ]) {
+			const lum = col.r * 0.3 + col.g * 0.59 + col.b * 0.11;
+			const g = 0.05 + lum * 0.55;
+			col.lerp(P.neighbour.clone().setRGB(g * 0.97, g * 0.98, g * 1.02), k);
+		}
 	}
 }
 

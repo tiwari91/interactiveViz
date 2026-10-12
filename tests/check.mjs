@@ -109,6 +109,9 @@ async function main() {
 		let { ctx, page, errors } = await openPage(browser, base);
 		check("Default view is 3D", (await stateOf(page)).mode === "3d" && (await page.locator("#view-3d canvas").count()) === 1);
 		check("Loading overlay clears after 3D builds", await page.locator("#loading.done").count() === 1);
+		await page.waitForTimeout(2500);
+		const named = await page.evaluate(() => [ ...document.querySelectorAll(".labels-3d .lbl") ].filter((e) => e.style.display !== "none" && !e.querySelector(".lbl-text").classList.contains("far")).length);
+		check("Overview names at least 6 reservoirs", named >= 6, `${named} named`);
 		await page.locator(".mode-switch button[data-mode=\"2d\"]").click();
 		await page.reload();
 		await page.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 120000, polling: 500 });
@@ -441,6 +444,8 @@ async function main() {
 		const spike = await debug3d(page, "c.maxSpike()");
 		check("No terrain spikes: every land cell within 220 m of its neighbours' mean", spike <= 221, `${spike.toFixed(0)} m`);
 		const rip = await debug3d(page, "c.riparian()");
+		const bays = await debug3d(page, "[ c.isSea(-122.3, 37.7), c.isSea(-122.35, 38.05), c.isSea(-121.6, 38.05) ]");
+		check("San Francisco and San Pablo bays are water; the Delta islands stay land", bays[0] && bays[1] && !bays[2], JSON.stringify(bays));
 		const rivers = await debug3d(page, "c.mainRivers()");
 		check("Overview shows the main-stem rivers", [ "Sacramento", "Feather", "American", "San Joaquin" ].every((n) => rivers.includes(n)), rivers.join(", "));
 		const gold = [];

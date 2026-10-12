@@ -487,6 +487,14 @@ export function createView3D(container, data, store, tooltip, audio) {
 			anisotropy: () => terrain.detail.anisotropy,
 			mainRivers: () => mainRivers.names,
 			project: (ll) => world.project(ll),
+			// For tests: is the terrain cell at a lon/lat drawn as sea?
+			isSea(lon, lat) {
+				const e = world.elev;
+				const r = Math.round((e.north - lat) / world.dlat);
+				const c = Math.round((lon - e.west) / world.dlon);
+				const i = r * e.cols + c;
+				return e.data[i] <= 0 && world.bayMask[i] < 0.5;
+			},
 			moonDir: () => shared.uMoonDir.value.clone(),
 			gold: () => terrain.gold,
 			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),

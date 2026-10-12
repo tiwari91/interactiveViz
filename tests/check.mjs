@@ -135,6 +135,15 @@ async function main() {
 		check("2D map renders 58 counties", counts.counties === 58, `${counts.counties}`);
 		check("2D renders all reservoirs", counts.reservoirs === F.reservoirs, `${counts.reservoirs} of ${F.reservoirs}`);
 		const names2d = await page.evaluate(() => [ ...document.querySelectorAll(".map-2d .label") ].filter((t) => t.getAttribute("display") !== "none").map((t) => t.textContent));
+		const kb = await page.evaluate(() => [ ...document.querySelectorAll(".map-2d .res") ].filter((e) => e.getAttribute("tabindex") === "0").length);
+		await page.locator(".map-2d .res[tabindex=\"0\"]").focus();
+		const kbFirst = await page.evaluate(() => document.activeElement.getAttribute("aria-label"));
+		await page.keyboard.press("ArrowDown");
+		const second = await page.evaluate(() => ({ label: document.activeElement.getAttribute("aria-label"), stops: [ ...document.querySelectorAll(".map-2d .res") ].filter((e) => e.getAttribute("tabindex") === "0").length }));
+		await page.keyboard.press("Tab");
+		const kbOut = await page.evaluate(() => document.activeElement.closest(".map-2d") ? "map" : "out");
+		check("2D map is one tab stop; arrow keys move between reservoirs", kb === 1 && /^Shasta/.test(kbFirst) && second.label !== kbFirst && second.stops === 1 && kbOut === "out", `${kb} tab stop, ${kbFirst} -> ${second.label}, Tab leaves the map: ${kbOut === "out"}`);
+		await page.evaluate(() => document.activeElement.blur());
 		check("2D map names southern reservoirs too", [ "Isabella", "Castaic", "Diamond Valley" ].every((n) => names2d.includes(n)) && names2d.length >= 10, names2d.join(", "));
 		check("2D renders stream links", counts.streams === F.links, `${counts.streams} of ${F.links}`);
 		check("2D reservoirs show storage", counts.filled === F.reporting, `${counts.filled} filled, ${F.reporting} with data`);

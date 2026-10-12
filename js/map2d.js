@@ -10,13 +10,15 @@ export function createMap2D(container, data, store, tooltip, audio) {
 	const stage = container.parentElement;
 	ensurePatterns();
 	const svg = d3.select(container).append("svg").attr("class", "map-2d")
-		.attr("role", "img").attr("aria-label", "Map of California reservoirs coloured by percent full");
+		.attr("role", "group").attr("aria-label", "Map of California reservoirs coloured by percent full");
 	const world = svg.append("g");
 	const gCounties = world.append("g");
 	const outline = world.append("path").attr("class", "outline");
 	const gStreams = world.append("g");
 	const gGauges = svg.append("g");
-	const gRes = svg.append("g").attr("role", "list");
+	// One tab stop for all reservoirs (roving tabindex); arrow keys move to the nearest one
+	// in that direction, Home/End to the largest/smallest, Enter or Space opens it.
+	const gRes = svg.append("g").attr("role", "list").attr("aria-label", "Reservoirs, largest first. Arrow keys move between them on the map; Enter opens one.");
 	const gLabels = svg.append("g").attr("aria-hidden", "true");
 
 	const reservoirs = [ ...data.reservoirs ].sort((a, b) => b.capacity - a.capacity);
@@ -47,7 +49,28 @@ export function createMap2D(container, data, store, tooltip, audio) {
 	const res = gRes.selectAll("g").data(reservoirs, (d) => d.id).join("g")
 		.attr("class", (d) => `res${d.hasData ? "" : " no-data"}${d.floodControl ? " flood" : ""}`)
 		.attr("role", "listitem")
-		.attr("tabindex", 0);
+		.attr("tabindex", (d, i) => (i === 0 ? 0 : -1));
+	let rover = reservoirs[0]?.id;
+	function setRover(id) {
+		rover = id;
+		res.attr("tabindex", (d) => (d.id === id ? 0 : -1));
+	}
+	const DIRS = { ArrowRight: [ 1, 0 ], ArrowLeft: [ -1, 0 ], ArrowDown: [ 0, 1 ], ArrowUp: [ 0, -1 ] };
+	// Nearest reservoir on screen in a direction, favouring ones straight ahead.
+	function neighbour(r, [ dx, dy ]) {
+		const [ x0, y0 ] = screenPos(r.id);
+		let best = null;
+		for (const o of reservoirs) {
+			if (o === r) continue;
+			const [ x, y ] = screenPos(o.id);
+			const along = (x - x0) * dx + (y - y0) * dy;
+			if (along <= 0.5) continue;
+			const across = Math.abs((x - x0) * dy - (y - y0) * dx);
+			const score = along + across * 2.5;
+			if (!best || score < best.score) best = { o, score };
+		}
+		return best?.o;
+	}
 	// Hit area first (invisible, never overlapping a neighbour), then basin and water.
 	res.append("circle").attr("class", "res-hit");
 	res.append("circle").attr("class", "res-cap");
@@ -82,6 +105,7 @@ export function createMap2D(container, data, store, tooltip, audio) {
 			store.set({ selected: r.id });
 		})
 		.on("focus", (event, r) => {
+			if (rover !== r.id) setRover(r.id);
 			const p = screenPos(r.id);
 			showFor(r, p[0], p[1]);
 		})
@@ -90,6 +114,13 @@ export function createMap2D(container, data, store, tooltip, audio) {
 			if (event.key === "Enter" || event.key === " ") {
 				event.preventDefault();
 				store.set({ selected: r.id });
+				return;
+			}
+			const next = DIRS[event.key] ? neighbour(r, DIRS[event.key]) : event.key === "Home" ? reservoirs[0] : event.key === "End" ? reservoirs[reservoirs.length - 1] : null;
+			if (DIRS[event.key] || event.key === "Home" || event.key === "End") event.preventDefault();
+			if (next) {
+				setRover(next.id);
+				res.filter((d) => d.id === next.id).node().focus();
 			}
 		});
 
@@ -180,6 +211,8 @@ export function createMap2D(container, data, store, tooltip, audio) {
 	}
 
 	function update({ dateIndex, selected }) {
+		// The tab stop follows the selected reservoir (e.g. one picked from the summary list).
+		if (selected && selected !== rover && reservoirs.some((r) => r.id === selected)) setRover(selected);
 		const grow = Math.sqrt(transform.k);
 		res.classed("active", (r) => r.id === selected)
 			.classed("missing", (r) => r.hasData && pctAt(r, dateIndex) === null)

@@ -124,6 +124,7 @@ function material(THREE, uniforms) {
 	mat.onBeforeCompile = (shader) => {
 		shader.uniforms.uDry = uniforms.uDry;
 		shader.uniforms.uDetail = uniforms.uDetail;
+		shader.uniforms.uNight = uniforms.uNight;
 		shader.vertexShader = shader.vertexShader
 			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nuniform float uDry;\nvarying vec3 vWPos;\nvarying vec3 vWN;")
 			.replace("#include <color_vertex>", "#include <color_vertex>\n\tvColor.rgb = mix(color.rgb, colorDry, uDry);")
@@ -136,6 +137,7 @@ function material(THREE, uniforms) {
 varying vec3 vWPos;
 varying vec3 vWN;
 uniform sampler2D uDetail;
+uniform float uNight;
 float gNear;
 float gRock;
 vec4 gD1;`)
@@ -162,6 +164,16 @@ vec4 gD1;`)
 		rockC *= 1.0 - gD1.b * 0.45;
 		ground = mix(ground, rockC, gRock * 0.75);
 		diffuseColor.rgb = mix(c, ground, gNear);
+	}`)
+			.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+	if (uNight > 0.0) {
+		// Moonlit rims: slopes facing away from the viewer catch a cool edge light, so ridges
+		// read against the valleys behind them; valley floors sink a little darker.
+		vec3 V = normalize(cameraPosition - vWPos);
+		vec3 N = normalize(vWN);
+		float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+		float hiGround = smoothstep(0.0, 40.0, vWPos.y);
+		totalEmissiveRadiance += uNight * vec3(0.07, 0.09, 0.14) * (rim * 0.9 + hiGround * 0.25) * diffuseColor.rgb * 3.0;
 	}`)
 			.replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>
 	if (gNear > 0.0) {
@@ -238,7 +250,7 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	geom.setAttribute("colorDry", new THREE.BufferAttribute(colDry, 3));
 
 	const detail = detailTexture(THREE);
-	const uniforms = { uDry: { value: 0.4 }, uDetail: { value: detail } };
+	const uniforms = { uDry: { value: 0.4 }, uDetail: { value: detail }, uNight: { value: 0 } };
 	const mat = material(THREE, uniforms);
 	const mesh = new THREE.Mesh(geom, mat);
 	mesh.receiveShadow = true;
@@ -260,6 +272,9 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	return {
 		group,
 		detail,
+		setNight(v) {
+			uniforms.uNight.value = v;
+		},
 		setDryness(v) {
 			uniforms.uDry.value = v;
 		},

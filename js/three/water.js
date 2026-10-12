@@ -104,9 +104,9 @@ const FRAG = `
 		vec3 R = reflect(-V, n);
 		vec3 sky = mix(uSkyHorizon, uSkyTop, clamp(R.y * 1.4, 0.0, 1.0));
 		// Shallows show the bed through clearer, lighter water; deep water is dark.
-		float deepness = vRow >= 0.0 ? smoothstep(0.15, 3.5, depth) : 0.6;
-		vec3 shallowCol = mix(uShallow * 1.45, uSand, 0.3 * (1.0 - smoothstep(0.0, 0.8, depth)));
-		vec3 body = mix(shallowCol, uDeep * 0.85, deepness) * (0.92 + 0.16 * g.z / 0.1);
+		float deepness = vRow >= 0.0 ? smoothstep(0.08, 1.3, depth) : 0.6;
+		vec3 shallowCol = mix(uShallow * 1.25, uSand * (1.0 - 0.75 * uLift), 0.3 * (1.0 - smoothstep(0.0, 0.8, depth)));
+		vec3 body = mix(shallowCol, uDeep * mix(0.85, 0.6, uLift), deepness) * (0.92 + 0.16 * g.z / 0.1);
 		body = mix(body, vTint, uTintMix);
 		vec3 col = mix(body, sky, fres * 0.6);
 		// A thin lapping line right at the water's edge.
@@ -116,7 +116,9 @@ const FRAG = `
 		col += uSunColor * spec * 2.4;
 		col += vec3(0.9, 0.95, 1.0) * vHi * 0.07;
 		// Night: moonlit sheen so water still reads against dark land.
-		col += uLift * (vec3(0.02, 0.035, 0.055) + uSunColor * spec * 1.5);
+		col += uLift * (vec3(0.003, 0.006, 0.012) + uSunColor * spec * 1.5);
+		// Moonlight: a broad soft sheen on the water as well as the sharp glint.
+		col += uLift * uSunColor * pow(max(dot(R, uSunDir), 0.0), 140.0) * 0.35;
 		float fog = smoothstep(uFogNear, uFogFar, gDist);
 		float edgeA = vRow >= 0.0 ? smoothstep(0.0, 0.12, depth) : 1.0;
 		gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha * edgeA);

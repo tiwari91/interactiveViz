@@ -137,6 +137,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			links.setTheme(nightV > 0);
 			dams.foam.uniforms.uNight.value = nightV;
 			shared.uLift.value = nightV;
+			terrain.setNight(nightV);
 			return p;
 		};
 		let preset = usePreset(skyName());

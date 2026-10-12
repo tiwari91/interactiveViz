@@ -20,7 +20,9 @@ export function createMap2D(container, data, store, tooltip, audio) {
 	const gLabels = svg.append("g").attr("aria-hidden", "true");
 
 	const reservoirs = [ ...data.reservoirs ].sort((a, b) => b.capacity - a.capacity);
-	const majors = reservoirs.filter((r) => r.capacity >= MAJOR_CAPACITY);
+	// Names: every storage reservoir of 300,000 AF or more, largest first. The crowded north
+	// keeps only what fits; the south (Isabella, Castaic, Diamond Valley) gets named too.
+	const named = reservoirs.filter((r) => !r.floodControl && r.capacity >= MAJOR_CAPACITY * 0.3);
 	let projection;
 	let transform = d3.zoomIdentity;
 	let rCap = d3.scaleSqrt().domain([ 0, d3.max(reservoirs, (r) => r.capacity) ]);
@@ -52,7 +54,7 @@ export function createMap2D(container, data, store, tooltip, audio) {
 	res.append("circle").attr("class", "res-fill");
 	res.append("circle").attr("class", "res-shore");
 
-	const labels = gLabels.selectAll("text").data(majors, (d) => d.id).join("text").attr("class", "label")
+	const labels = gLabels.selectAll("text").data(named, (d) => d.id).join("text").attr("class", "label")
 		.attr("text-anchor", (d) => (LABEL_LEFT.has(d.id) ? "end" : "start"))
 		.attr("dy", "0.35em")
 		.text((d) => d.name.replace(/ \(.*\)$/, "").replace(/ (Dam|Reservoir)$/, ""));

@@ -134,6 +134,8 @@ async function main() {
 		}));
 		check("2D map renders 58 counties", counts.counties === 58, `${counts.counties}`);
 		check("2D renders all reservoirs", counts.reservoirs === F.reservoirs, `${counts.reservoirs} of ${F.reservoirs}`);
+		const names2d = await page.evaluate(() => [ ...document.querySelectorAll(".map-2d .label") ].filter((t) => t.getAttribute("display") !== "none").map((t) => t.textContent));
+		check("2D map names southern reservoirs too", [ "Isabella", "Castaic", "Diamond Valley" ].every((n) => names2d.includes(n)) && names2d.length >= 10, names2d.join(", "));
 		check("2D renders stream links", counts.streams === F.links, `${counts.streams} of ${F.links}`);
 		check("2D reservoirs show storage", counts.filled === F.reporting, `${counts.filled} filled, ${F.reporting} with data`);
 

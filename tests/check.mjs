@@ -160,6 +160,17 @@ async function main() {
 		check("Data starts in October 2011", first === "2011-10", first);
 		check("Data runs to a recent complete month", ym(last) >= prevMonth - 3 && ym(last) <= prevMonth, `${last} (previous month ${Math.floor(prevMonth / 12)}-${String(prevMonth % 12 + 1).padStart(2, "0")})`);
 		check("Months are contiguous", F.months.every((m, i) => i === 0 || ym(m) === ym(F.months[i - 1]) + 1), `${F.months.length} months`);
+		const clash = [];
+		const startIndex = (await stateOf(page)).dateIndex;
+		for (const m of [ "2014-09", "2014-03", "2021-06" ]) {
+			await setState(page, { dateIndex: await monthIndex(page, m) });
+			clash.push(await page.evaluate(() => {
+				const line = document.querySelector(".track .playhead line").getBoundingClientRect();
+				return [ ...document.querySelectorAll(".track .band-label") ].filter((t) => t.style.display !== "none").some((t) => { const b = t.getBoundingClientRect(); return line.left > b.left - 1 && line.left < b.right + 1; });
+			}));
+		}
+		await setState(page, { dateIndex: startIndex });
+		check("The playhead never cuts through a drought-band label", !clash.some(Boolean), JSON.stringify(clash));
 		const lede = await page.locator(".lede").innerText();
 		check("Intro states the derived count and range", lede.includes(`${F.reporting} reservoirs`) && /October 2011/.test(lede) && lede.includes(last.slice(0, 4)), lede.slice(0, 90));
 		check("Intro explains 35 vs tracked count", lede.includes(`Statewide totals use ${F.tracked.length} of them`), `tracked ${F.tracked.length}`);

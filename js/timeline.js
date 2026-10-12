@@ -45,7 +45,10 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 			svg.append("rect").attr("class", "drought-band").attr("x", x0).attr("width", bw).attr("y", 0).attr("height", h);
 			svg.append("rect").attr("class", "drought-cap").attr("x", x0).attr("width", bw).attr("y", 0).attr("height", 2.5);
 			const label = bw >= 118 ? "Drought emergency" : bw >= 50 ? "Drought" : "";
-			if (label) svg.append("text").attr("class", "band-label").attr("x", x0 + 5).attr("y", 13).text(label);
+			if (label) {
+				const t = svg.append("text").attr("class", "band-label").attr("x", x0 + 5).attr("y", 13).text(label).node();
+				t.__band = [ x0, x0 + bw ];
+			}
 		}
 		// Provisional months (not yet revised by the operators): a light hatch.
 		if (provFrom >= 0) {
@@ -84,7 +87,23 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 
 	function placeHead(i) {
 		if (!head || !xOf) return;
-		head.attr("transform", `translate(${xOf(dates[i])},0)`);
+		const px = xOf(dates[i]);
+		head.attr("transform", `translate(${px},0)`);
+		// Keep a drought-band label clear of the playhead: slide it to whichever side of the
+		// line has room inside its band, or hide it while the line passes through.
+		svg.selectAll(".band-label").each(function () {
+			const [ b0, b1 ] = this.__band;
+			const w = this.__w || (this.__w = this.getComputedTextLength());
+			let lx = b0 + 5;
+			let show = true;
+			if (px > lx - 5 && px < lx + w + 5) {
+				if (px + 6 + w <= b1 - 3) lx = px + 6;
+				else if (px - 6 - w >= b0 + 2) lx = px - 6 - w;
+				else show = false;
+			}
+			this.setAttribute("x", lx);
+			this.style.display = show ? "" : "none";
+		});
 		head.select("circle").attr("cy", 36 - totals[i].pct * 32);
 	}
 

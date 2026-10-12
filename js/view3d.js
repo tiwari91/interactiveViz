@@ -321,6 +321,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			} else if (mover && mover(now)) mover = null;
 			sc.controls.update();
 			keepAbove();
+			riparian.update(sc.camera, groundAt(sc.camera.position.x, sc.camera.position.z));
 			sc.updateSun();
 
 			// Ease toward the target month.

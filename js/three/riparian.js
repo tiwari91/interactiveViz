@@ -70,8 +70,9 @@ function broadleaf(THREE) {
 	trunk.translate(0, 0.21, 0);
 	parts.push({ geom: trunk, color: 0x4f3a28, shade: 0.3 });
 	// A clump of overlapping lobes of different sizes.
-	[ [ 0, 0.68, 0, 0.36 ], [ 0.22, 0.58, 0.08, 0.27 ], [ -0.18, 0.6, -0.12, 0.29 ], [ 0.05, 0.86, -0.08, 0.25 ], [ -0.08, 0.55, 0.2, 0.24 ] ].forEach(([ x, y, z, r ], k) => {
-		const g = jitter(new THREE.IcosahedronGeometry(r, 1), 0.35, k * 31 + 5);
+	[ [ 0, 0.68, 0, 0.36 ], [ 0.22, 0.58, 0.08, 0.27 ], [ -0.18, 0.6, -0.12, 0.29 ], [ 0.05, 0.86, -0.08, 0.25 ], [ -0.08, 0.55, 0.2, 0.24 ], [ 0.16, 0.78, -0.16, 0.22 ], [ -0.2, 0.8, 0.1, 0.21 ] ].forEach(([ x, y, z, r ], k) => {
+		// Low-poly lobes (20 faces each): the clump shape carries the look, not the facets.
+		const g = jitter(new THREE.IcosahedronGeometry(r, 0), 0.3, k * 31 + 5);
 		g.scale(1, 0.85, 1);
 		g.translate(x, y, z);
 		parts.push({ geom: g, color: 0x4d6a34, shade: 0.6 });
@@ -231,6 +232,10 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 	group.add(blobs, pines, broads, rocks);
 	return {
 		group,
+		// Skip the whole set when the camera is too high for any tree to be drawn.
+		update(camera, groundBelow) {
+			group.visible = camera.position.y - groundBelow < FADE_FAR;
+		},
 		counts,
 		fade: [ FADE_NEAR, FADE_FAR ],
 		// For tests: lowest vegetation value under any placed tree.

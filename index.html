@@ -20,6 +20,78 @@
 			if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
 		} catch (e) { /* storage unavailable */ }
 	</script>
+	<!-- Start every module and data file at once: otherwise each level of imports, then the
+	     data, then three.js and the elevation grids, waits for the one before it. -->
+	<link rel="modulepreload" href="js/main.js">
+	<link rel="modulepreload" href="js/audio/controls.js">
+	<link rel="modulepreload" href="js/audio/damVoices.js">
+	<link rel="modulepreload" href="js/audio/engine.js">
+	<link rel="modulepreload" href="js/damScene.js">
+	<link rel="modulepreload" href="js/data.js">
+	<link rel="modulepreload" href="js/detailCard.js">
+	<link rel="modulepreload" href="js/legend.js">
+	<link rel="modulepreload" href="js/map2d.js">
+	<link rel="modulepreload" href="js/release.js">
+	<link rel="modulepreload" href="js/scales.js">
+	<link rel="modulepreload" href="js/state.js">
+	<link rel="modulepreload" href="js/summary.js">
+	<link rel="modulepreload" href="js/theme.js">
+	<link rel="modulepreload" href="js/three/basins.js">
+	<link rel="modulepreload" href="js/three/camera.js">
+	<link rel="modulepreload" href="js/three/controls3d.js">
+	<link rel="modulepreload" href="js/three/damTypes.js">
+	<link rel="modulepreload" href="js/three/dams.js">
+	<link rel="modulepreload" href="js/three/gaugeLinks.js">
+	<link rel="modulepreload" href="js/three/labels.js">
+	<link rel="modulepreload" href="js/three/loader.js">
+	<link rel="modulepreload" href="js/three/mainRivers.js">
+	<link rel="modulepreload" href="js/three/outflow.js">
+	<link rel="modulepreload" href="js/three/outflowPaths.js">
+	<link rel="modulepreload" href="js/three/quality.js">
+	<link rel="modulepreload" href="js/three/riparian.js">
+	<link rel="modulepreload" href="js/three/scene.js">
+	<link rel="modulepreload" href="js/three/sky.js">
+	<link rel="modulepreload" href="js/three/snapshot.js">
+	<link rel="modulepreload" href="js/three/terrain.js">
+	<link rel="modulepreload" href="js/three/water.js">
+	<link rel="modulepreload" href="js/three/world.js">
+	<link rel="modulepreload" href="js/timeline.js">
+	<link rel="modulepreload" href="js/tooltip.js">
+	<link rel="modulepreload" href="js/view3d.js">
+	<link rel="preload" href="data/ca.json" as="fetch" crossorigin>
+	<link rel="preload" href="data/reservoir_filtered_data.csv" as="fetch" crossorigin>
+	<link rel="preload" href="data/reservoir_meta.csv" as="fetch" crossorigin>
+	<link rel="preload" href="data/reservoir_dis_link.csv" as="fetch" crossorigin>
+	<link rel="preload" href="data/reservoir_storage_monthly.csv" as="fetch" crossorigin>
+	<link rel="preload" href="data/river_flow_monthly.csv" as="fetch" crossorigin>
+	<link rel="preload" href="data/drought_periods.csv" as="fetch" crossorigin>
+	<script>
+		// In 3D (the default), also start three.js and the elevation grids for this quality.
+		(() => {
+			const q = new URLSearchParams(location.search);
+			let mode = q.get("mode");
+			let quality = q.get("quality");
+			try {
+				mode = mode || localStorage.getItem("cdi-mode");
+				quality = quality === "low" || quality === "high" ? quality : localStorage.getItem("cdi-quality");
+			} catch (e) { /* storage unavailable */ }
+			if (mode === "2d") return;
+			if (quality !== "low" && quality !== "high") quality = matchMedia("(pointer: coarse)").matches || innerWidth < 760 ? "low" : "high";
+			const add = (href, as) => {
+				const l = document.createElement("link");
+				l.rel = "preload";
+				l.href = href;
+				l.as = as;
+				l.crossOrigin = "anonymous";
+				document.head.appendChild(l);
+			};
+			add("https://cdnjs.cloudflare.com/ajax/libs/three.js/0.147.0/three.min.js", "script");
+			add("https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js", "script");
+			add("data/elevation.json", "fetch");
+			add(`data/elevation-${quality === "high" ? "1m" : "2m"}.bin`, "fetch");
+			add("data/elevation-surround.bin", "fetch");
+		})();
+	</script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 	<script src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
 	<script type="module" src="js/main.js"></script>

@@ -31,6 +31,7 @@ function serve() {
 }
 
 const results = [];
+const preloadWarnings = [];
 function check(name, ok, detail = "") {
 	results.push({ name, ok: Boolean(ok), detail });
 	console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
@@ -50,6 +51,7 @@ async function openPage(browser, base, { phone = false, scheme = "light", query 
 	const errors = [];
 	page.on("console", (m) => m.type() === "error" && errors.push(`${m.text()} @ ${query || "/"} ${m.location().url?.replace(base, "")}:${m.location().lineNumber}`));
 	page.on("pageerror", (e) => errors.push(e.message));
+	page.on("console", (m) => m.type() === "warning" && /preload/i.test(m.text()) && preloadWarnings.push(`${m.text().slice(0, 160)} @ ${query || "/"}`));
 	await page.goto(`${base}/${query}`);
 	await page.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 120000, polling: 500 });
 	return { ctx, page, errors };
@@ -107,6 +109,11 @@ async function main() {
 	try {
 		// ---------- Default mode and WebGL fallback ----------
 		let { ctx, page, errors } = await openPage(browser, base);
+		const walk = (d) => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : e.name.endsWith(".js") ? [ `${d}/${e.name}` ] : []));
+		const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+		const preloaded = new Set([ ...html.matchAll(/rel="modulepreload" href="([^"]+)"/g) ].map((m) => m[1]));
+		const mods = walk("js");
+		check("Every module is preloaded from the page head (no import waterfall), and nothing stale", mods.every((m) => preloaded.has(m)) && preloaded.size === mods.length, `${preloaded.size} preloads, ${mods.length} modules; missing ${mods.filter((m) => !preloaded.has(m)).join(", ") || "none"}`);
 		check("Default view is 3D", (await stateOf(page)).mode === "3d" && (await page.locator("#view-3d canvas").count()) === 1);
 		check("Loading overlay clears after 3D builds", await page.locator("#loading.done").count() === 1);
 		await page.waitForTimeout(700);
@@ -756,6 +763,7 @@ async function main() {
 			}
 		}
 
+		check("No preload warnings (each preload is used, with matching credentials)", preloadWarnings.length === 0, preloadWarnings.slice(0, 2).join(" | "));
 		check("Zero console errors", allErrors.length === 0, allErrors.slice(0, 3).join(" | "));
 	} finally {
 		await browser.close();

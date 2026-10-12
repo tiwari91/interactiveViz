@@ -8,7 +8,9 @@ import { createRouter, stripGeometry, placeStrip, KIND, ACROSS } from "./outflow
 const RIBBON_VERT = `
 	attribute float aSide;
 	attribute float aAlong;
-	attribute vec4 aMeta; // dam, kind, total length, max half width
+	attribute vec4 aMeta; // dam, kind, total length, overview weight (big rivers 1)
+	attribute vec2 aDir; // horizontal side vector of the strip
+	varying float vFar;
 	uniform float uRelease[DAMS];
 	uniform float uSpill[DAMS];
 	varying float vSide;
@@ -23,6 +25,12 @@ const RIBBON_VERT = `
 		float rel = kind > 1.5 ? uSpill[k] : uRelease[k];
 		// Geometry is rebuilt on the ground for each month's width (see placeStrip).
 		vec3 p = position + vec3(0.0, 0.03, 0.0);
+		// Seen from far away the big rivers widen to stay a few pixels wide, and lift a little
+		// so the wider ribbon is not swallowed by the valley sides.
+		float camD = distance(cameraPosition, (modelMatrix * vec4(position, 1.0)).xyz);
+		vFar = smoothstep(140.0, 700.0, camD) * aMeta.w * step(kind, 1.5);
+		p.xz += aDir * aSide * camD * 0.0011 * vFar;
+		p.y += camD * 0.004 * vFar;
 		vSide = aSide;
 		vAlong = aAlong;
 		vRel = rel;
@@ -52,6 +60,7 @@ const RIBBON_FRAG = `
 	varying float vKind;
 	varying float vEnd;
 	varying vec3 vWorld;
+	varying float vFar;
 	float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
 	float noise(vec2 p) {
 		vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -68,6 +77,7 @@ const RIBBON_FRAG = `
 		float wob = noise(vec2(vAlong * 0.9, vSide > 0.0 ? 1.7 : 5.3)) - 0.5;
 		float waterEdge = mix(0.8, 1.0, chute) + wob * 0.12 * (1.0 - chute);
 		float wet = 1.0 - smoothstep(waterEdge - 0.06, waterEdge, side);
+		wet = mix(wet, 1.0, vFar);
 		vec2 q = vec2(vAlong * 1.1 - uTime * speed, vSide * 3.2);
 		float h0 = ripple(q);
 		float hx = ripple(q + vec2(0.07, 0.0));
@@ -94,6 +104,8 @@ const RIBBON_FRAG = `
 		vec3 bank = uBank * (0.75 + 0.35 * noise(vec2(vAlong * 6.0, vSide * 9.0)));
 		bank *= mix(0.7, 1.0, smoothstep(waterEdge, 1.0, side));
 		col = mix(bank, col, wet);
+		// From afar: a clean, slightly luminous blue line.
+		col = mix(col, uWater * 1.9 + vec3(0.04, 0.1, 0.16) * (1.0 + uNight), vFar * 0.75);
 		float edge = 1.0 - smoothstep(0.86, 1.0, side);
 		float ends = vKind < 0.5 ? smoothstep(0.0, 6.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : 1.0;
 		float a = edge * ends * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.75, 0.97, wet);
@@ -163,7 +175,9 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	const list = basins.basins;
 	const n = list.length;
 	const router = createRouter(basins, world);
-	const out = { count: 0, side: [], along: [], meta: [], index: [] };
+	const out = { count: 0, side: [], along: [], meta: [], index: [], dir: [] };
+	// Overview weight: the big reservoirs' rivers stay visible from far away.
+	const weightOf = (b) => smooth(0.4e6, 1.2e6, b.r.capacity);
 	const strips = [];
 	const lengths = new Array(n).fill(0);
 	// The downstream lake an outflow runs into, if any (e.g. Courtright -> Wishon).
@@ -225,7 +239,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		const sc = scales[di];
 		const seq = outSeq[di];
 		if (seq.length > 2) {
-			const st = stripGeometry(seq, out, { dam: di, kind: KIND.OUTFLOW, joins: joins[di] });
+			const st = stripGeometry(seq, out, { dam: di, kind: KIND.OUTFLOW, joins: joins[di], weight: weightOf(b) });
 			// Narrow at the outlet, wide tailrace, then a natural river width.
 			const shape = (i, d) => sc * (0.55 + 0.45 * smooth(0, 3, d)) * (1 - 0.5 * smooth(5, 16, d));
 			strips.push({ ...st, kind: KIND.OUTFLOW, dam: di, centre: seq, shape, sample: ground });
@@ -241,7 +255,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		const inPts = router.downhill(start, [ -b.eu[0], -b.eu[1] ], b.Lu * 3 + 20, { into: b });
 		const inSeq = router.drape(inPts);
 		if (inSeq.length > 6) {
-			const st = stripGeometry(inSeq, out, { dam: di, kind: KIND.INFLOW });
+			const st = stripGeometry(inSeq, out, { dam: di, kind: KIND.INFLOW, weight: weightOf(b) });
 			const shape = (i) => sc * (0.6 + 0.4 * (i / inSeq.length));
 			strips.push({ ...st, kind: KIND.INFLOW, dam: di, centre: inSeq, shape, sample: ground });
 		}
@@ -259,6 +273,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	geom.setAttribute("aSide", new THREE.Float32BufferAttribute(out.side, 1));
 	geom.setAttribute("aAlong", new THREE.Float32BufferAttribute(out.along, 1));
 	geom.setAttribute("aMeta", new THREE.Float32BufferAttribute(out.meta, 4));
+	geom.setAttribute("aDir", new THREE.Float32BufferAttribute(out.dir, 2));
 	geom.setIndex(out.index);
 	const release = new Array(n).fill(0);
 	const spill = new Array(n).fill(0);

@@ -132,7 +132,8 @@ export function stripGeometry(seq, out, meta) {
 			out.side.push(s);
 			out.along.push(dist);
 			// A river that joins another never fades out at its end.
-			out.meta.push(meta.dam, meta.kind, meta.joins ? total + 1000 : total, 0);
+			out.meta.push(meta.dam, meta.kind, meta.joins ? total + 1000 : total, meta.weight ?? 0);
+			if (out.dir) out.dir.push(-tz / tl, tx / tl);
 		}
 		if (i > 0) {
 			for (let k = 0; k < cols - 1; k++) {

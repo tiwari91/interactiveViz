@@ -10,6 +10,7 @@ import { createDams } from "./three/dams.js";
 import { createGaugeLinks } from "./three/gaugeLinks.js";
 import { createOutflow } from "./three/outflow.js";
 import { createRiparian } from "./three/riparian.js";
+import { createMainRivers } from "./three/mainRivers.js";
 import { createSky, applyPreset } from "./three/sky.js";
 import { createLabels } from "./three/labels.js";
 import { createSnapshots } from "./three/snapshot.js";
@@ -101,6 +102,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const dams = createDams(THREE, data, basins);
 		const links = createGaugeLinks(THREE, data, world, basins);
 		const outflow = createOutflow(THREE, basins, dams, world, shared, ui.quality);
+		const mainRivers = createMainRivers(THREE, world, outflow.router, shared);
 		const riparian = createRiparian(THREE, outflow, outflow.router, basins, world, ui.quality);
 		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
@@ -109,7 +111,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const snapshot = createSnapshots(data, basins, dams.foam.spots);
 		dams.foam.uniforms.uTime = shared.uTime;
 		dams.foam.mesh.material.uniforms.uTime = shared.uTime;
-		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, riparian.group);
+		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, riparian.group, mainRivers.mesh);
 
 		// Invisible pick volumes over each lake and dam.
 		const pickGeom = new THREE.CylinderGeometry(1, 1, 1, 18);
@@ -138,6 +140,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			dams.foam.uniforms.uNight.value = nightV;
 			shared.uLift.value = nightV;
 			terrain.setNight(nightV);
+			mainRivers.setNight(nightV);
 			return p;
 		};
 		let preset = usePreset(skyName());
@@ -403,6 +406,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		function setMonth(i) {
 			target = snapshot(i);
 			terrain.setSeason(data.calMonth[i], target.dryness);
+			mainRivers.setFlow(1 - target.dryness);
 			outflow.setWidths(target.outlet);
 			labels.setValues(i);
 		}
@@ -473,6 +477,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
 			verifyWater: () => outflow.verify(),
 			anisotropy: () => terrain.detail.anisotropy,
+			mainRivers: () => mainRivers.names,
 			gold: () => terrain.gold,
 			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),
 			riparian: () => ({ ...riparian.counts, minVeg: riparian.minVegetation(), fade: riparian.fade }),

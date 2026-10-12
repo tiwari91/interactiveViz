@@ -7,8 +7,11 @@ export function homePose(aspect) {
 
 // Compare split on a wide stage: California's long axis runs across the screen (seen from
 // the Pacific, Sierra behind), so both halves hold reservoirs instead of the right half
-// being mostly Nevada and desert. Portrait stages keep the home view.
+// being mostly Nevada and desert.
 export function comparePose(aspect) {
+	// Portrait: the split runs across the screen, so north goes straight up and the line falls
+	// near the middle of the state (Sierra reservoirs above, the south below).
+	if (aspect < 1) return { target: [ -40, 0, 10 ], dist: 1500 * Math.min(1.3, Math.max(1, 0.6 / aspect)), polar: 0.5, az: 0 };
 	if (aspect < 1.2) return null;
 	return { target: [ -60, 0, -20 ], dist: 950 * Math.min(1.5, Math.max(1, 2 / aspect)), polar: 0.7, az: -1.02 };
 }

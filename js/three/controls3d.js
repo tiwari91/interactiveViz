@@ -57,6 +57,7 @@ export function createControls3D(stage, data, handlers) {
 
 	const handle = split.querySelector(".compare-handle");
 	let frac = 0.5;
+	let stacked = false;
 	const setFrac = (f) => {
 		frac = Math.min(0.95, Math.max(0.05, f));
 		split.style.setProperty("--split", `${frac * 100}%`);
@@ -68,7 +69,7 @@ export function createControls3D(stage, data, handlers) {
 		e.stopPropagation();
 		const move = (ev) => {
 			const r = stage.getBoundingClientRect();
-			setFrac((ev.clientX - r.left) / r.width);
+			setFrac(stacked ? (ev.clientY - r.top) / r.height : (ev.clientX - r.left) / r.width);
 		};
 		const up = () => {
 			handle.removeEventListener("pointermove", move);
@@ -78,8 +79,9 @@ export function createControls3D(stage, data, handlers) {
 		handle.addEventListener("pointerup", up);
 	});
 	handle.addEventListener("keydown", (e) => {
-		if (e.key === "ArrowLeft") setFrac(frac - 0.05);
-		if (e.key === "ArrowRight") setFrac(frac + 0.05);
+		if (e.key === "ArrowLeft" || e.key === "ArrowUp") setFrac(frac - 0.05);
+		if (e.key === "ArrowRight" || e.key === "ArrowDown") setFrac(frac + 0.05);
+		if (e.key.startsWith("Arrow")) e.preventDefault();
 	});
 	setFrac(0.5);
 
@@ -109,5 +111,16 @@ export function createControls3D(stage, data, handlers) {
 		get divider() {
 			return frac;
 		},
+		// Portrait stages split top (picked month) / bottom (current month).
+		get stacked() {
+			return stacked;
+		},
+		setStacked(on) {
+			stacked = on;
+			split.classList.toggle("stacked", on);
+			handle.setAttribute("aria-orientation", on ? "vertical" : "horizontal");
+			split.querySelector(".js-compare-month").setAttribute("aria-label", on ? "Month on top" : "Month on the left");
+		},
+		tagRects: () => (split.hidden ? [] : [ ...split.querySelectorAll(".compare-tag") ].map((t) => t.getBoundingClientRect())),
 	};
 }

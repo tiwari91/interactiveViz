@@ -448,17 +448,25 @@ export function createView3D(container, data, store, tooltip, audio) {
 				if (shift) sc.camera.setViewOffset(w, h, -shift, 0, w, h);
 				else sc.camera.clearViewOffset();
 			}
+			// Portrait stages split top/bottom (top = the picked month), wide ones left/right.
+			const stacked = h > w;
+			if (stacked !== controls.stacked) controls.setStacked(stacked);
+			// Screen boxes [x0, x1, y0, y1] of the compare month's half and the current month's half.
+			let halves = null;
 			if (ui.comparing) {
-				const split = Math.round(w * controls.divider);
+				const split = Math.round((stacked ? h : w) * controls.divider);
+				halves = stacked ? [ [ 0, w, 0, split ], [ 0, w, split, h ] ] : [ [ 0, split, 0, h ], [ split, w, 0, h ] ];
+				// WebGL scissor boxes count y up from the bottom.
+				const scissor = ([ x0, x1, y0, y1 ]) => sc.renderer.setScissor(x0, h - y1, x1 - x0, y1 - y0);
 				sc.renderer.setScissorTest(true);
 				const left = snapshot(ui.compareIndex);
 				applyState(left, left);
 				outflow.useCompare(left.outlet);
-				sc.renderer.setScissor(0, 0, split, h);
+				scissor(halves[0]);
 				sc.renderer.render(sc.scene, sc.camera);
 				outflow.useCompare(null);
 				applyState(cur, target);
-				sc.renderer.setScissor(split, 0, w - split, h);
+				scissor(halves[1]);
 				sc.renderer.render(sc.scene, sc.camera);
 				sc.renderer.setScissorTest(false);
 			} else {
@@ -475,14 +483,16 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// Compare: each half carries its own month's dots and names, clipped to that half.
 			const reachScale = home().dist / homePose(1.6).dist;
 			if (ui.comparing) {
-				const split = Math.round(w * controls.divider);
 				if (!labelsLeft) labelsLeft = createLabels(THREE, container, basins, maxCap);
 				if (leftIndex !== ui.compareIndex) {
 					leftIndex = ui.compareIndex;
 					labelsLeft.setValues(leftIndex);
 				}
-				labelsLeft.update(sc.camera, w, h, null, false, sc.controls.target, groundAt, reachScale, [ 0, split ]);
-				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale, [ split, w ]);
+				// Names keep clear of the month pickers and their summary chips.
+				const cr = container.getBoundingClientRect();
+				const avoid = controls.tagRects().map((r) => [ r.left - cr.left - 4, r.top - cr.top - 4, r.right - cr.left + 4, r.bottom - cr.top + 4 ]);
+				labelsLeft.update(sc.camera, w, h, null, false, sc.controls.target, groundAt, reachScale, halves[0], avoid);
+				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale, halves[1], avoid);
 			} else {
 				if (labelsLeft) labelsLeft.update(sc.camera, w, h, null, true);
 				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale);

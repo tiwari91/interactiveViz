@@ -724,6 +724,21 @@ async function main() {
 					await page.waitForTimeout(300);
 					overlap = overlap || await overlaps();
 					check("iPhone 12 overview names at least 6 reservoirs, southern ones too, none overlapping", phoneNamed.length >= 6 && phoneNamed.some((r) => r.lat < 35) && !overlap, `${phoneNamed.map((r) => r.id).join(", ")}${overlap ? "; names overlap" : ""}`);
+					await page.locator(".js-compare").click();
+					await waitStill(page);
+					const pc = await page.evaluate(() => {
+						const split = document.querySelector(".compare-split");
+						const chips = [ ...split.querySelectorAll(".compare-tag") ].map((t) => t.getBoundingClientRect());
+						const layers = [ ...document.querySelectorAll(".labels-3d") ];
+						const vis = (l) => [ ...l.querySelectorAll(".lbl") ].filter((e) => e.style.display !== "none");
+						const names = layers.flatMap((l) => vis(l).map((e) => e.querySelector(".lbl-text")).filter((t) => !t.classList.contains("far")).map((t) => t.getBoundingClientRect()));
+						const under = names.some((b) => chips.some((c) => b.left < c.right && b.right > c.left && b.top < c.bottom && b.bottom > c.top));
+						return { stacked: split.classList.contains("stacked"), top: vis(layers[1] ?? layers[0]).length, bottom: vis(layers[0]).length, under, az: window.droughtViz.views["3d"].debug().pose().az };
+					});
+					check("iPhone 12 compare splits top/bottom with north up, lakes in both halves, no name under a chip", pc.stacked && Math.abs(pc.az) < 0.05 && pc.top >= 6 && pc.bottom >= 4 && !pc.under, JSON.stringify(pc));
+					await shot(page, "iphone12-3d-compare.png", ".viz-card");
+					await page.locator(".js-compare").click();
+					await waitStill(page);
 					await page.locator("#view-3d").scrollIntoViewIfNeeded();
 					const b2 = await page.locator("#view-3d").boundingBox();
 					const [ x, y ] = await page.evaluate(() => window.droughtViz.views["3d"].screenPos("SHA"));

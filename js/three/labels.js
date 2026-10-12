@@ -42,12 +42,13 @@ export function createLabels(THREE, container, basins, maxCap) {
 		},
 		// reach: how much further than the wide desktop view the home view sits (a portrait
 		// phone frames the state from further out), so names show over the same part of it.
-		// clip: [x0, x1] screen span this layer covers (one half of the compare split), or null.
-		update(camera, width, height, active, hidden, target = null, groundAt = null, reachScale = 1, clip = null) {
+		// clip: [x0, x1, y0, y1] screen box this layer covers (one half of the compare split), or
+		// null; avoid: [x0, y0, x1, y1] boxes names must keep clear of (e.g. the compare chips).
+		update(camera, width, height, active, hidden, target = null, groundAt = null, reachScale = 1, clip = null, avoid = []) {
 			layer.style.display = hidden ? "none" : "";
 			if (hidden) return;
-			layer.style.clipPath = clip ? `inset(0 ${Math.max(0, width - clip[1])}px 0 ${Math.max(0, clip[0])}px)` : "";
-			const placed = [];
+			layer.style.clipPath = clip ? `inset(${clip[2]}px ${Math.max(0, width - clip[1])}px ${Math.max(0, height - clip[3])}px ${clip[0]}px)` : "";
+			const placed = [ ...avoid ];
 			const cam = camera.position;
 			// Flown in close: lakes far beyond the one in view would float along the horizon.
 			const near = target ? cam.distanceTo(target) : Infinity;
@@ -75,7 +76,7 @@ export function createLabels(THREE, container, basins, maxCap) {
 				}
 				const x = (v.x + 1) / 2 * width;
 				const y = (1 - v.y) / 2 * height;
-				if (clip && (x < clip[0] || x > clip[1])) {
+				if (clip && (x < clip[0] || x > clip[1] || y < clip[2] || y > clip[3])) {
 					it.el.style.display = "none";
 					continue;
 				}
@@ -90,7 +91,7 @@ export function createLabels(THREE, container, basins, maxCap) {
 				// The name goes right of its dot, or left of it when that side is taken or off screen.
 				const right = [ x - 6, y - 10, x + it.w, y + 10 ];
 				const left = [ x - it.w, y - 10, x + 6, y + 10 ];
-				const free = (b) => b[0] >= (clip ? clip[0] : 0) && b[2] <= (clip ? clip[1] : width) && !placed.some((p) => b[0] < p[2] && b[2] > p[0] && b[1] < p[3] && b[3] > p[1]);
+				const free = (b) => b[0] >= (clip ? clip[0] : 0) && b[2] <= (clip ? clip[1] : width) && (!clip || (b[1] >= clip[2] && b[3] <= clip[3])) && !placed.some((p) => b[0] < p[2] && b[2] > p[0] && b[1] < p[3] && b[3] > p[1]);
 				// Flood-control basins (empty by design) are named only well within range, so the
 				// state view spends its room on storage reservoirs; they keep their striped dot.
 				let show = fade >= (it.b.r.floodControl ? 1 : SHOW_AT);

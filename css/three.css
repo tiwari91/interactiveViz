@@ -307,3 +307,17 @@ body:has(.detail-card:not([hidden])) .stage-hint { display: none; }
 
 /* Keyboard focus on the 3D view: an inset ring, since the stage clips anything outside it. */
 .view-3d canvas:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+
+/* Portrait: the split runs across the screen; the picked month is on top. */
+.compare-split.stacked .compare-handle { top: var(--split); bottom: auto; left: 0; right: 0; width: auto; height: 28px; margin: -14px 0 0; cursor: ns-resize; }
+
+.compare-split.stacked .compare-handle::before { top: 13px; bottom: auto; left: 0; right: 0; width: auto; height: 2px; }
+
+.compare-split.stacked .compare-handle span { top: 2px; left: 50%; margin: 0 0 0 -12px; }
+
+.compare-split.stacked .compare-tag { max-width: calc(100% - 24px); left: 10px; right: auto; align-items: flex-start; text-align: left; }
+
+/* Top tag over Nevada (right), bottom tag over the ocean (left): neither hides the lakes. */
+.compare-split.stacked .compare-left { top: 84px; left: auto; right: 10px; align-items: flex-end; text-align: right; }
+
+.compare-split.stacked .compare-right { top: calc(var(--split) + 14px); }

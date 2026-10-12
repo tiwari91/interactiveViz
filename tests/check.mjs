@@ -265,7 +265,7 @@ async function main() {
 		// Detail card scene: waterline follows % full, low lakes show a bathtub ring, full ones barely any.
 		const scene = async (id, m) => {
 			await setState(page, { selected: id, dateIndex: await monthIndex(page, m) });
-			await page.waitForTimeout(700);
+			await page.waitForTimeout(1500);
 			return page.evaluate(() => {
 				const s = document.querySelector(".detail-dam");
 				return { pct: +s.dataset.pct, water: +s.querySelector(".dam-water").getAttribute("y"), ring: +s.querySelector("clipPath rect").getAttribute("height"), low: s.classList.contains("low"), label: s.getAttribute("aria-label") };
@@ -399,6 +399,8 @@ async function main() {
 		for (const month of [ "2014-09", "2017-04" ]) {
 			await setState(page, { dateIndex: await monthIndex(page, month) });
 			await page.waitForTimeout(3500);
+			// SwiftShader can run at ~2 fps; let the eased spill values settle before judging them.
+			await page.waitForFunction(() => window.droughtViz.views["3d"].debug().outflow().every((o) => (o.spill > 0.05) === (o.pct !== null && o.pct > 0.9)), null, { timeout: 15000, polling: 500 }).catch(() => {});
 			const out = await debug3d(page, "c.outflow()");
 			const wet = out.filter((o) => o.pct !== null && o.pct > 0.003);
 			// Long enough to see, unless it runs straight into the next lake downstream.

@@ -390,7 +390,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				applyState(cur, target);
 				sc.renderer.render(sc.scene, sc.camera);
 			}
-			labels.update(sc.camera, w, h, store.get().selected ?? hovered, ui.comparing, sc.controls.target, groundAt);
+			labels.update(sc.camera, w, h, store.get().selected ?? hovered, ui.comparing, sc.controls.target, groundAt, home().dist / homePose(1.6).dist);
 
 			if (now - lastAudio > 150) {
 				lastAudio = now;

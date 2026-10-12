@@ -647,6 +647,13 @@ async function main() {
 					const ripLow = await debug3d(page, "c.riparian()");
 					check("Low quality keeps trees light", ripLow.bank <= 2200 && ripLow.forest <= 1600 && ripLow.shrub <= 1200 && ripLow.rock <= 400, `${ripLow.bank} bank + ${ripLow.forest} forest trees, ${ripLow.shrub} shrubs, ${ripLow.rock} boulders`);
 					check("Bank trees are skipped at the overview", !(await debug3d(page, "c.sc.scene.getObjectByName('riparian').visible")));
+					const phoneNamed = await page.evaluate(() => {
+						const byName = new Map(window.droughtViz.data.reservoirs.map((r) => [ r.name.replace(/ \(.*\)$/, "").replace(/ (Dam|Reservoir)$/, ""), r ]));
+						return [ ...document.querySelectorAll(".labels-3d .lbl") ].filter((e) => e.style.display !== "none" && !e.querySelector(".lbl-text").classList.contains("far")).map((e) => byName.get(e.querySelector(".lbl-name").textContent)).filter(Boolean).map((r) => ({ id: r.id, lat: r.lat }));
+					});
+					const boxes = await page.evaluate(() => [ ...document.querySelectorAll(".labels-3d .lbl-text:not(.far)") ].filter((t) => t.closest(".lbl").style.display !== "none").map((t) => t.getBoundingClientRect()).map((b) => [ b.left, b.top, b.right, b.bottom ]));
+					const overlap = boxes.some((a, i) => boxes.some((b, j) => j > i && a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1]));
+					check("iPhone 12 overview names at least 6 reservoirs, southern ones too, none overlapping", phoneNamed.length >= 6 && phoneNamed.some((r) => r.lat < 35) && !overlap, `${phoneNamed.map((r) => r.id).join(", ")}${overlap ? "; names overlap" : ""}`);
 					await page.locator("#view-3d").scrollIntoViewIfNeeded();
 					const b2 = await page.locator("#view-3d").boundingBox();
 					const [ x, y ] = await page.evaluate(() => window.droughtViz.views["3d"].screenPos("SHA"));

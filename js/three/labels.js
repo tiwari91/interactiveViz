@@ -39,7 +39,9 @@ export function createLabels(THREE, container, basins, maxCap) {
 				it.pct.textContent = p === null ? "no data" : r.floodControl ? `${fmtPct(p)} · flood control` : fmtPct(p);
 			}
 		},
-		update(camera, width, height, active, hidden, target = null, groundAt = null) {
+		// reach: how much further than the wide desktop view the home view sits (a portrait
+		// phone frames the state from further out), so names show over the same part of it.
+		update(camera, width, height, active, hidden, target = null, groundAt = null, reachScale = 1) {
 			layer.style.display = hidden ? "none" : "";
 			if (hidden) return;
 			const placed = [];
@@ -71,20 +73,32 @@ export function createLabels(THREE, container, basins, maxCap) {
 				const x = (v.x + 1) / 2 * width;
 				const y = (1 - v.y) / 2 * height;
 				const isActive = it.b.r.id === active;
-				const fade = isActive ? 1 : 1 - Math.min(1, Math.max(0, (dist - it.far * 0.75) / (it.far * 0.35)));
+				const far = it.far * reachScale;
+				const fade = isActive ? 1 : 1 - Math.min(1, Math.max(0, (dist - far * 0.75) / (far * 0.35)));
 				if (!it.w) it.w = it.text.offsetWidth + 16;
-				const box = [ x - 6, y - 10, x + it.w, y + 10 ];
-				let show = fade >= SHOW_AT;
-				if (show && !isActive && placed.some((p) => box[0] < p[2] && box[2] > p[0] && box[1] < p[3] && box[3] > p[1])) show = false;
-				if (show) placed.push(box);
+				// The name goes right of its dot, or left of it when that side is taken or off screen.
+				const right = [ x - 6, y - 10, x + it.w, y + 10 ];
+				const left = [ x - it.w, y - 10, x + 6, y + 10 ];
+				const free = (b) => b[0] >= 0 && b[2] <= width && !placed.some((p) => b[0] < p[2] && b[2] > p[0] && b[1] < p[3] && b[3] > p[1]);
+				// Flood-control basins (empty by design) are named only well within range, so the
+				// state view spends its room on storage reservoirs; they keep their striped dot.
+				let show = fade >= (it.b.r.floodControl ? 1 : SHOW_AT);
+				let onLeft = false;
+				if (show && !isActive && !free(right)) {
+					if (free(left)) onLeft = true;
+					else show = false;
+				}
+				if (show) placed.push(onLeft ? left : right);
 				it.el.style.display = "";
 				it.el.classList.toggle("active", isActive);
+				it.el.classList.toggle("left", onLeft);
 				// Named labels sit above bare dots, so a neighbour's dot never cuts through a name.
 				it.el.style.zIndex = isActive ? 3 : show ? 2 : 1;
 				it.text.classList.toggle("far", !show);
 				const t = (fade - SHOW_AT) / (1 - SHOW_AT);
 				it.text.style.setProperty("--plate", (PLATE_FAR + (PLATE_NEAR - PLATE_FAR) * Math.max(0, t)).toFixed(2));
-				it.el.style.transform = `translate(${Math.round(x - 5)}px, ${Math.round(y - 9)}px)`;
+				const ox = onLeft ? it.w - 6 : 5;
+				it.el.style.transform = `translate(${Math.round(x - ox)}px, ${Math.round(y - 9)}px)`;
 			}
 		},
 	};

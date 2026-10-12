@@ -5,6 +5,14 @@ export function homePose(aspect) {
 		: { target: [ 30, 0, 40 ], dist: 1180, polar: 0.86, az: -0.08 };
 }
 
+// Compare split on a wide stage: California's long axis runs across the screen (seen from
+// the Pacific, Sierra behind), so both halves hold reservoirs instead of the right half
+// being mostly Nevada and desert. Portrait stages keep the home view.
+export function comparePose(aspect) {
+	if (aspect < 1.2) return null;
+	return { target: [ -60, 0, -20 ], dist: 950 * Math.min(1.5, Math.max(1, 2 / aspect)), polar: 0.7, az: -1.02 };
+}
+
 export function createScene(THREE, container, quality) {
 	THREE.ColorManagement.legacyMode = false;
 	const high = quality === "high";

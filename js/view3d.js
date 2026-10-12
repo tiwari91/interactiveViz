@@ -1,7 +1,7 @@
 // 3D view: real terrain with carved reservoirs, dams and rivers. Handles the
 // month animation, picking, fly-to, drought replay, compare split and sound cues.
 import { loadThree, webglAvailable } from "./three/loader.js";
-import { createScene, homePose } from "./three/scene.js";
+import { createScene, homePose, comparePose } from "./three/scene.js";
 import { createWorld, loadElevation } from "./three/world.js";
 import { createBasins } from "./three/basins.js";
 import { createTerrain } from "./three/terrain.js";
@@ -379,9 +379,12 @@ export function createView3D(container, data, store, tooltip, audio) {
 			if (ui.comparing) {
 				const split = Math.round(w * controls.divider);
 				sc.renderer.setScissorTest(true);
-				applyState(snapshot(ui.compareIndex), snapshot(ui.compareIndex));
+				const left = snapshot(ui.compareIndex);
+				applyState(left, left);
+				outflow.useCompare(left.outlet);
 				sc.renderer.setScissor(0, 0, split, h);
 				sc.renderer.render(sc.scene, sc.camera);
+				outflow.useCompare(null);
 				applyState(cur, target);
 				sc.renderer.setScissor(split, 0, w - split, h);
 				sc.renderer.render(sc.scene, sc.camera);
@@ -451,6 +454,15 @@ export function createView3D(container, data, store, tooltip, audio) {
 				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
 				audio.whoosh();
 			},
+			// Frame the state for the compare split (wide stages only).
+			// Only from the state view: a close look at one lake stays where it is.
+			compareView(on) {
+				const now = poseOf(THREE, sc.camera, sc.controls);
+				const cp = comparePose(sc.camera.aspect);
+				if (!cp || now.dist < home().dist * 0.6) return;
+				if (!on && Math.abs(now.az - cp.az) > 0.05) return;
+				mover = flyTo(THREE, sc.camera, sc.controls, on ? cp : home(), motionMs(1200));
+			},
 			preset(name) {
 				preset = usePreset(name);
 			},
@@ -501,6 +513,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			gold: () => target.gold,
 			goldNow: () => terrain.gold,
 			groundSamples: () => outflow.groundSamples(),
+			ribbonCompare: () => outflow.compareState(),
 			riverLevelsReady: () => outflow.levelsReady(),
 			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),
 			riparian: () => ({ ...riparian.counts, minVeg: riparian.minVegetation(), fade: riparian.fade }),
@@ -571,6 +584,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 		if (ui.comparing && store.get().dateIndex === ui.compareIndex) {
 			store.set({ dateIndex: Math.max(0, data.months.indexOf("2017-04")) });
 		}
+		// From the overview (nothing selected), reframe for the split and back again.
+		if (ctx && !store.get().selected && !ui.replaying) ctx.compareView(ui.comparing);
 		tooltip.hide();
 		syncControls();
 	}

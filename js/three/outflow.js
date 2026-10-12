@@ -405,13 +405,13 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		if (pending.length) idle(work);
 	};
 	idle(work);
-	function place(outlet) {
+	function place(outlet, pos = positions) {
 		for (const st of strips) {
 			const rel = Math.min(1, Math.max(0, outlet[st.dam]));
 			const k = widthFor(st.kind, rel);
 			const bank = st.kind === KIND.CHUTE ? 1 : BANK;
 			if (!st.ys) {
-				placeStrip(st, st.centre, (i, d) => st.shape(i, d) * k * bank, st.sample, positions);
+				placeStrip(st, st.centre, (i, d) => st.shape(i, d) * k * bank, st.sample, pos);
 				continue;
 			}
 			const seg = Math.min(LEVELS.length - 2, Math.floor(rel * (LEVELS.length - 1)));
@@ -423,12 +423,16 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				const y = lo[local] + (hi[local] - lo[local]) * t;
 				local++;
 				return y;
-			}, positions);
+			}, pos);
 		}
-		geom.attributes.position.needsUpdate = true;
 	}
 	place(new Array(n).fill(0.5));
+	geom.attributes.position.needsUpdate = true;
 	geom.computeBoundingSphere();
+	// Second set of positions for the left half of the compare split, placed for that month.
+	const mainAttr = geom.attributes.position;
+	let compareAttr = null;
+	let compareOutlet = null;
 
 	// Points along both banks of every river, for riparian trees and boulders.
 	function bankPoints(step = 1.1) {
@@ -469,6 +473,22 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		// Rebuild the strips on the ground for a month's release (called on month change).
 		setWidths(outlet) {
 			place(outlet);
+			geom.attributes.position.needsUpdate = true;
+		},
+		compareState: () => ({ placed: compareOutlet !== null, mainBound: geom.attributes.position === mainAttr }),
+		// Compare: draw with the left month's river widths (outlet array), or back to the main ones (null).
+		useCompare(outlet) {
+			if (!outlet) {
+				geom.setAttribute("position", mainAttr);
+				return;
+			}
+			if (!compareAttr) compareAttr = new THREE.BufferAttribute(new Float32Array(positions.length), 3);
+			if (outlet !== compareOutlet) {
+				compareOutlet = outlet;
+				place(outlet, compareAttr.array);
+				compareAttr.needsUpdate = true;
+			}
+			geom.setAttribute("position", compareAttr);
 		},
 		apply(outlet, spillNow) {
 			for (let i = 0; i < n; i++) {

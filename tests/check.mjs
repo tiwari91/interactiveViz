@@ -588,8 +588,13 @@ async function main() {
 		await page.locator(".js-compare").click();
 		await page.waitForTimeout(1500);
 		check("Compare mode shows the split", await page.locator(".compare-split").isVisible());
+		await waitStill(page);
+		const cmp = await debug3d(page, "({ az: c.pose().az, ribbons: c.ribbonCompare() })");
+		check("Compare from the overview turns the state across the screen, so both halves hold reservoirs", Math.abs(cmp.az + 1.02) < 0.05, `azimuth ${cmp.az.toFixed(2)}`);
+		check("Compare: the left half draws its own month's river widths, then the main widths come back", cmp.ribbons.placed && cmp.ribbons.mainBound, JSON.stringify(cmp.ribbons));
 		await shot(page, "3d-compare.png", ".stage");
 		await page.locator(".js-compare").click();
+		await waitStill(page);
 
 		// Per-dam sound: level follows storage + release; spillway layer above ~90% full.
 		await page.locator(".sound-toggle").click();

@@ -54,6 +54,7 @@ const FRAG = `
 	uniform float uFogFar;
 	uniform float uClip;
 	uniform float uLift;
+	uniform vec3 uMoonDir;
 	uniform sampler2D uBed;
 	uniform float uRows;
 	uniform float uBedScale;
@@ -118,7 +119,17 @@ const FRAG = `
 		// Night: moonlit sheen so water still reads against dark land.
 		col += uLift * (vec3(0.003, 0.006, 0.012) + uSunColor * spec * 1.5);
 		// Moonlight: a broad soft sheen on the water as well as the sharp glint.
-		col += uLift * uSunColor * pow(max(dot(R, uSunDir), 0.0), 140.0) * 0.35;
+		// Moon path: the moon sits low ahead of the viewer, so its reflection runs as a broken,
+		// vertically stretched band of glints across the water toward the camera.
+		if (uLift > 0.0) {
+			vec3 Rn = normalize(R);
+			float az = dot(normalize(Rn.xz + vec2(1e-5)), normalize(uMoonDir.xz));
+			float del = Rn.y - uMoonDir.y;
+			// The ripples tilt R, which breaks the path into glints on its own.
+			float path = smoothstep(0.9975, 0.99985, az) * exp(-del * del * 70.0);
+			float disc = pow(max(dot(Rn, uMoonDir), 0.0), 600.0);
+			col += uLift * uSunColor * (path * 0.55 + disc * 1.5);
+		}
 		float fog = smoothstep(uFogNear, uFogFar, gDist);
 		float edgeA = vRow >= 0.0 ? smoothstep(0.0, 0.12, depth) : 1.0;
 		gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha * edgeA);
@@ -136,6 +147,7 @@ export function waterUniforms(THREE) {
 		uFogNear: { value: 900 },
 		uFogFar: { value: 2600 },
 		uLift: { value: 0 },
+		uMoonDir: { value: new THREE.Vector3(0, 0.3, -1).normalize() },
 	};
 }
 

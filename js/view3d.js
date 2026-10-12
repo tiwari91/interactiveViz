@@ -324,6 +324,14 @@ export function createView3D(container, data, store, tooltip, audio) {
 			} else if (mover && mover(now)) mover = null;
 			sc.controls.update();
 			keepAbove();
+			if (shared.uLift.value > 0) {
+				// Keep the moon low in front of the camera so lakes show its reflection path.
+				// Its elevation matches the view's pitch, so the path runs through the middle of the view.
+				const f = sc.controls.target.clone().sub(sc.camera.position);
+				const h = Math.hypot(f.x, f.z) || 1;
+				const el = Math.min(0.9, Math.max(0.15, Math.atan2(-f.y, h)));
+				shared.uMoonDir.value.set(f.x / h * Math.cos(el), Math.sin(el), f.z / h * Math.cos(el));
+			}
 			riparian.update(sc.camera, groundAt(sc.camera.position.x, sc.camera.position.z));
 			sc.updateSun();
 
@@ -478,6 +486,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			verifyWater: () => outflow.verify(),
 			anisotropy: () => terrain.detail.anisotropy,
 			mainRivers: () => mainRivers.names,
+			moonDir: () => shared.uMoonDir.value.clone(),
 			gold: () => terrain.gold,
 			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),
 			riparian: () => ({ ...riparian.counts, minVeg: riparian.minVegetation(), fade: riparian.fade }),

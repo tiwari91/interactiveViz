@@ -121,7 +121,7 @@ const FRAG = `
 		// Moonlight: a broad soft sheen on the water as well as the sharp glint.
 		// Moon path: the moon sits low ahead of the viewer, so its reflection runs as a broken,
 		// vertically stretched band of glints across the water toward the camera.
-		if (uLift > 0.0) {
+		if (uLift > 0.0 && vRow >= 0.0) {
 			vec3 Rn = normalize(R);
 			float az = dot(normalize(Rn.xz + vec2(1e-5)), normalize(uMoonDir.xz));
 			float del = Rn.y - uMoonDir.y;

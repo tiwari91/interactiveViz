@@ -456,6 +456,9 @@ async function main() {
 		check("A month change re-places the rivers without re-sampling the terrain, still on the ground", samples1 === samples0 && gap1 < 0.35, `${samples1 - samples0} ground samples over 3 month changes, max gap ${gap1} in Sep 2021`);
 		const bare = await debug3d(page, "(() => { let n = 0; c.sc.scene.traverse((o) => { const a = o.geometry?.attributes?.bare; if (a) for (let i = 0; i < a.count; i++) n += a.getX(i) > 0.5; }); return n; })()");
 		check("Exposed lake beds are marked bare, so the grass and fields shader skips them", bare > 1000, `${bare} lake-bed vertices`);
+		const ww = await debug3d(page, "(() => { const w = c.waterways(); const near = (name, id) => { const b = c.basins.byId.get(id); const e = w.ends[name][1]; return Math.hypot(e[0] - b.cx, e[1] - b.cz); }; return { ...w, cas: near('West Branch', 'CAS'), prr: near('East Branch', 'PRR'), ids: window.droughtViz.data.reservoirs.map((r) => r.id) }; })()");
+		check("Delta channels, California Aqueduct and Delta-Mendota Canal drawn; branches end at Castaic and Perris", ww.delta.includes("Old River") && [ "California Aqueduct", "West Branch", "East Branch", "Delta-Mendota Canal" ].every((n) => ww.canals.includes(n)) && ww.cas < 0.5 && ww.prr < 0.5, `${ww.delta.length} Delta channels, ${ww.canals.join(", ")}`);
+		check("San Luis Reservoir is not added (line only)", !ww.ids.some((id) => /^(SNL|SLF|LUS)$/.test(id)) && !(await page.evaluate(() => window.droughtViz.data.reservoirs.some((r) => /san luis/i.test(r.name)))));
 		const gold = [];
 		for (const m of [ "2017-04", "2014-09" ]) {
 			await setState(page, { dateIndex: await monthIndex(page, m) });

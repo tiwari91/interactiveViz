@@ -102,7 +102,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const dams = createDams(THREE, data, basins);
 		const links = createGaugeLinks(THREE, data, world, basins);
 		const outflow = createOutflow(THREE, basins, dams, world, shared, ui.quality);
-		const mainRivers = createMainRivers(THREE, world, outflow.router, shared);
+		const mainRivers = createMainRivers(THREE, world, outflow.router, shared, basins);
 		const riparian = createRiparian(THREE, outflow, outflow.router, basins, world, ui.quality);
 		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
@@ -487,6 +487,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			verifyWater: () => outflow.verify(),
 			anisotropy: () => terrain.detail.anisotropy,
 			mainRivers: () => mainRivers.names,
+			waterways: () => ({ delta: mainRivers.delta, canals: mainRivers.canals, ends: mainRivers.ends }),
 			project: (ll) => world.project(ll),
 			// For tests: is the terrain cell at a lon/lat drawn as sea?
 			isSea(lon, lat) {

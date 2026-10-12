@@ -1,7 +1,10 @@
 // Main-stem rivers of the Central Valley (Sacramento, Feather, American, San Joaquin and its
-// big tributaries) from approximate waypoints along their real courses. They are an overview
-// layer: a luminous line whose width grows with camera distance so the river system reads
-// from the state view, fading out close up where the detailed outflow ribbons take over.
+// big tributaries) from approximate waypoints along their real courses, plus the Delta's main
+// channels and the big water-project canals (California Aqueduct and its West and East
+// branches, Delta-Mendota Canal) that carry Delta water south to the valley and to the southern
+// reservoirs. They are an overview layer: a luminous line whose width grows with camera
+// distance so the water system reads from the state view, fading out close up where the
+// detailed outflow ribbons take over. Canals are a cooler, thinner, straighter line.
 
 // [lon, lat] waypoints, upstream to downstream.
 const RIVERS = {
@@ -14,6 +17,29 @@ const RIVERS = {
 	Stanislaus: [ [ -120.53, 37.94 ], [ -120.57, 37.82 ], [ -120.93, 37.73 ], [ -121.25, 37.67 ] ],
 	Merced: [ [ -120.33, 37.52 ], [ -120.60, 37.40 ], [ -120.95, 37.35 ] ],
 };
+
+// Sacramento-San Joaquin Delta channels (approximate courses).
+const DELTA = {
+	"Old River": [ [ -121.327, 37.808 ], [ -121.45, 37.80 ], [ -121.56, 37.84 ], [ -121.59, 37.92 ], [ -121.57, 38.02 ], [ -121.57, 38.073 ] ],
+	"Middle River": [ [ -121.40, 37.83 ], [ -121.47, 37.86 ], [ -121.50, 37.92 ], [ -121.53, 37.98 ], [ -121.56, 38.04 ] ],
+	Mokelumne: [ [ -121.43, 38.23 ], [ -121.47, 38.21 ], [ -121.50, 38.17 ], [ -121.53, 38.13 ], [ -121.57, 38.10 ], [ -121.58, 38.06 ] ],
+	"Georgiana Slough": [ [ -121.515, 38.236 ], [ -121.53, 38.20 ], [ -121.55, 38.15 ], [ -121.57, 38.12 ] ],
+	"Steamboat Slough": [ [ -121.58, 38.29 ], [ -121.60, 38.25 ], [ -121.64, 38.22 ], [ -121.68, 38.18 ] ],
+	"Ship Channel": [ [ -121.54, 38.57 ], [ -121.58, 38.45 ], [ -121.60, 38.35 ], [ -121.64, 38.27 ], [ -121.69, 38.17 ] ],
+};
+
+// Water-project canals. Facilities from Wikipedia (Clifton Court, Banks, Las Perillas,
+// Edmonston, Quail Lake, Silverwood, Perris); the stretches between are approximate.
+// "@ID" ends a canal at that reservoir's lake. The aqueduct passes San Luis Reservoir,
+// which is not one of the tracked reservoirs, so only the line is drawn there.
+const CANALS = {
+	"California Aqueduct": [ [ -121.557, 37.83 ], [ -121.621, 37.801 ], [ -121.63, 37.77 ], [ -121.45, 37.55 ], [ -121.25, 37.30 ], [ -121.08, 37.06 ], [ -120.77, 36.90 ], [ -120.45, 36.55 ], [ -119.98, 36.00 ], [ -119.909, 35.843 ], [ -119.70, 35.62 ], [ -119.30, 35.20 ], [ -118.95, 35.00 ], [ -118.825, 34.942 ], [ -118.72, 34.80 ] ],
+	"West Branch": [ [ -118.72, 34.80 ], [ -118.746, 34.772 ], [ -118.76, 34.70 ], "@PYM", [ -118.70, 34.58 ], "@CAS" ],
+	"East Branch": [ [ -118.72, 34.80 ], [ -118.55, 34.79 ], [ -118.30, 34.70 ], [ -118.04, 34.58 ], [ -117.93, 34.50 ], [ -117.60, 34.40 ], [ -117.33, 34.31 ], [ -117.31, 34.19 ], [ -117.27, 34.05 ], [ -117.22, 33.95 ], "@PRR" ],
+	"Delta-Mendota Canal": [ [ -121.585, 37.79 ], [ -121.50, 37.68 ], [ -121.30, 37.50 ], [ -121.10, 37.28 ], [ -121.02, 37.10 ], [ -120.90, 37.00 ], [ -120.55, 36.85 ], [ -120.38, 36.79 ] ],
+};
+
+const KIND = { river: 0, delta: 1, canal: 2 };
 
 function chaikin(p) {
 	const out = [ p[0] ];
@@ -30,7 +56,11 @@ const VERT = `
 	attribute float aSide;
 	attribute vec2 aDir;
 	attribute float aAlong;
+	attribute float aKind;
+	attribute float aVis;
+	varying float vVis;
 	varying float vSide;
+	varying float vKind;
 	varying float vAlong;
 	varying float vNear;
 	varying vec3 vWorld;
@@ -38,9 +68,13 @@ const VERT = `
 		vec3 p = position;
 		float camD = distance(cameraPosition, (modelMatrix * vec4(p, 1.0)).xyz);
 		// Half-width: about 1.5 px on screen at any distance, never thinner than the real channel.
-		p.xz += aDir * aSide * max(0.35, camD * 0.0016);
+		// Delta channels and canals are drawn thinner than the main rivers.
+		float wk = aKind < 0.5 ? 1.0 : aKind < 1.5 ? 0.7 : 0.85;
+		p.xz += aDir * aSide * max(0.35 * wk, camD * 0.0016 * wk);
 		p.y += 0.15 + camD * 0.004;
 		vSide = aSide;
+		vKind = aKind;
+		vVis = aVis;
 		vAlong = aAlong;
 		vNear = smoothstep(70.0, 220.0, camD);
 		vec4 wp = modelMatrix * vec4(p, 1.0);
@@ -51,6 +85,7 @@ const VERT = `
 const FRAG = `
 	uniform vec3 uColor;
 	uniform vec3 uGlow;
+	uniform vec3 uCanal;
 	uniform float uTime;
 	uniform float uFlow;
 	uniform vec3 uFogColor;
@@ -59,28 +94,58 @@ const FRAG = `
 	varying float vSide;
 	varying float vAlong;
 	varying float vNear;
+	varying float vKind;
+	varying float vVis;
 	varying vec3 vWorld;
 	void main() {
 		float s = abs(vSide);
+		float canal = step(1.5, vKind);
 		float core = 1.0 - smoothstep(0.35, 1.0, s);
 		// A faint shimmer travelling downstream.
 		float shimmer = 0.5 + 0.5 * sin(vAlong * 0.35 - uTime * 1.6);
-		vec3 col = mix(uColor, uGlow, (1.0 - s) * (0.35 + 0.25 * shimmer));
+		// Canals: an even, cooler line with a faint glow, no shimmer.
+		vec3 col = mix(mix(uColor, uGlow, (1.0 - s) * (0.35 + 0.25 * shimmer)), mix(uCanal, uGlow, (1.0 - s) * 0.3), canal);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
-		gl_FragColor = vec4(mix(col, uFogColor, fog * 0.7), core * vNear * (0.55 + 0.4 * uFlow));
+		gl_FragColor = vec4(mix(col, uFogColor, fog * 0.7), core * vNear * vVis * mix(0.55 + 0.4 * uFlow, 0.85, canal));
 		#include <encodings_fragment>
 	}`;
 
-export function createMainRivers(THREE, world, router, shared) {
+export function createMainRivers(THREE, world, router, shared, basins) {
 	const pos = [];
 	const side = [];
 	const dir = [];
 	const along = [];
+	const kinds = [];
+	const vis = [];
+	// Canals fade out over the lakes they run through, so the line reaches the water and stops.
+	const lakeFade = (x, z) => {
+		let f = 1;
+		for (const b of basins.basins) {
+			if (Math.abs(x - b.cx) > b.reach || Math.abs(z - b.cz) > b.reach) continue;
+			const [ u, v ] = b.toLocal(x, z);
+			const t = Math.min(1, Math.max(0, (b.sOf(u, v) - 0.75) / 0.35));
+			f = Math.min(f, t);
+		}
+		return f;
+	};
 	const index = [];
 	const names = [];
 	let base = 0;
-	for (const [ name, ll ] of Object.entries(RIVERS)) {
-		const pts = chaikin(chaikin(chaikin(ll.map((p) => world.project(p)))));
+	const ends = {};
+	const courses = [
+		...Object.entries(RIVERS).map(([ name, ll ]) => [ name, ll, KIND.river ]),
+		...Object.entries(DELTA).map(([ name, ll ]) => [ name, ll, KIND.delta ]),
+		...Object.entries(CANALS).map(([ name, ll ]) => [ name, ll, KIND.canal ]),
+	];
+	for (const [ name, ll, kind ] of courses) {
+		const xz = ll.map((p) => {
+			if (typeof p !== "string") return world.project(p);
+			const b = basins.byId.get(p.slice(1));
+			return [ b.cx, b.cz ];
+		});
+		// Canals keep their engineered, straighter line: one smoothing pass instead of three.
+		const pts = kind === KIND.canal ? chaikin(xz) : chaikin(chaikin(chaikin(xz)));
+		ends[name] = [ pts[0], pts[pts.length - 1] ];
 		// Resample about every unit so the ribbon follows the ground.
 		const seq = [];
 		for (let i = 0; i < pts.length - 1; i++) {
@@ -99,11 +164,14 @@ export function createMainRivers(THREE, world, router, shared) {
 			const sz = (c[0] - a[0]) / tl;
 			if (i) d += Math.hypot(x - seq[i - 1][0], z - seq[i - 1][1]);
 			const y = router.surface(x, z);
+			const fade = kind === KIND.canal ? lakeFade(x, z) : 1;
 			for (const sd of [ -1, 1 ]) {
 				pos.push(x, y, z);
 				side.push(sd);
 				dir.push(sx, sz);
 				along.push(d);
+				kinds.push(kind);
+				vis.push(kind === KIND.canal ? fade : 1);
 			}
 			if (i) {
 				const o = base + (i - 1) * 2;
@@ -111,13 +179,15 @@ export function createMainRivers(THREE, world, router, shared) {
 			}
 		});
 		base += seq.length * 2;
-		names.push(name);
+		names.push({ name, kind });
 	}
 	const geom = new THREE.BufferGeometry();
 	geom.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
 	geom.setAttribute("aSide", new THREE.Float32BufferAttribute(side, 1));
 	geom.setAttribute("aDir", new THREE.Float32BufferAttribute(dir, 2));
 	geom.setAttribute("aAlong", new THREE.Float32BufferAttribute(along, 1));
+	geom.setAttribute("aKind", new THREE.Float32BufferAttribute(kinds, 1));
+	geom.setAttribute("aVis", new THREE.Float32BufferAttribute(vis, 1));
 	geom.setIndex(index);
 	const flow = { value: 0.6 };
 	const mat = new THREE.ShaderMaterial({
@@ -126,6 +196,7 @@ export function createMainRivers(THREE, world, router, shared) {
 		uniforms: {
 			uColor: { value: new THREE.Color(0x2f86c4) },
 			uGlow: { value: new THREE.Color(0x9fdcff) },
+			uCanal: { value: new THREE.Color(0x1fa5b5) },
 			uTime: shared.uTime,
 			uFlow: flow,
 			uFogColor: shared.uFogColor,
@@ -144,7 +215,11 @@ export function createMainRivers(THREE, world, router, shared) {
 	mesh.renderOrder = 3;
 	return {
 		mesh,
-		names,
+		names: names.filter((n) => n.kind === KIND.river).map((n) => n.name),
+		delta: names.filter((n) => n.kind === KIND.delta).map((n) => n.name),
+		canals: names.filter((n) => n.kind === KIND.canal).map((n) => n.name),
+		// For tests: first and last world [x, z] of each course.
+		ends,
 		// 0..1 statewide wetness: the lines brighten in wet months.
 		setFlow(v) {
 			flow.value = v;

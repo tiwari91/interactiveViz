@@ -30,7 +30,7 @@ The original 2016 page is kept, unchanged apart from data paths, in [`legacy/`](
   river, with mist at the base, its width, speed and foam set by the same release value as the dam's sound.
   A dam sits at each outlet (concrete arch, gravity or gravity-arch walls with gated
   spillways, or earth/rockfill embankments with abutment chutes, plus a powerhouse), with white water when it
-  releases or spills. Rivers run downhill on the terrain: an inflow into each lake and an outflow below each dam. The 2016 gauge-to-reservoir relationships are data, so they are drawn as dashed arcs (hidden until you hover a reservoir or turn on Gauge links).
+  releases or spills. Rivers run downhill on the terrain: an inflow into each lake and an outflow below each dam. From the state view the main Central Valley rivers, the Delta's main channels, and the California Aqueduct (with its West and East branches to Pyramid, Castaic and Perris) and Delta-Mendota Canal are drawn as a faint glowing layer from approximate waypoints; it fades out close up. The aqueduct line passes San Luis Reservoir, which is not one of the tracked reservoirs. The 2016 gauge-to-reservoir relationships are data, so they are drawn as dashed arcs (hidden until you hover a reservoir or turn on Gauge links).
   Animated lakes and ocean, sky with Day / Golden hour / Night, fly-to on click with a detail card and
   sparkline, labels that give way with distance (the text keeps full contrast; only its backing plate fades), a drought
   replay with a camera path (cuts between stops under reduced motion), a compare split

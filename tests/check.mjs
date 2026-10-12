@@ -441,6 +441,16 @@ async function main() {
 		const spike = await debug3d(page, "c.maxSpike()");
 		check("No terrain spikes: every land cell within 220 m of its neighbours' mean", spike <= 221, `${spike.toFixed(0)} m`);
 		const rip = await debug3d(page, "c.riparian()");
+		const rivers = await debug3d(page, "c.mainRivers()");
+		check("Overview shows the main-stem rivers", [ "Sacramento", "Feather", "American", "San Joaquin" ].every((n) => rivers.includes(n)), rivers.join(", "));
+		const gold = [];
+		for (const m of [ "2017-04", "2014-09" ]) {
+			await setState(page, { dateIndex: await monthIndex(page, m) });
+			gold.push(await debug3d(page, "c.gold()"));
+		}
+		check("Grass is golden in a drought September, green in a wet April", gold[1] > 0.7 && gold[0] < 0.2, `Apr 2017 ${gold[0].toFixed(2)}, Sep 2014 ${gold[1].toFixed(2)}`);
+		const rf = await debug3d(page, "c.riparian()");
+		check("Woodland and shrubs beyond the river banks", rf.forest > 1000 && rf.shrub > 500, `${rf.forest} forest trees, ${rf.shrub} shrubs`);
 		check("No lake water above the shoreline: the water fades out where the bed meets the level", await debug3d(page, "c.lakeEdgeSoft()"));
 		check("Rivers have trees and boulders along their banks", rip.pine + rip.broad > 1000 && rip.rock > 200, `${rip.pine} conifers, ${rip.broad} broadleaf, ${rip.rock} boulders`);
 		check("Bank trees grow only on vegetated ground", rip.minVeg >= 0.05, `lowest vegetation under a tree ${rip.minVeg.toFixed(2)}`);
@@ -512,6 +522,11 @@ async function main() {
 			await setState(page, { dateIndex: await monthIndex(page, month), selected: id });
 			await waitStill(page, 3000);
 			await shot(page, file, ".stage");
+			if (sky === "night" && id === "PNF") {
+				// The moon's reflection path runs through the middle of the view: moon ahead, at the view's pitch.
+				const mv = await debug3d(page, "(() => { const m = c.sc.scene && window.droughtViz.views['3d'].debug(); const f = c.sc.controls.target.clone().sub(c.sc.camera.position).normalize(); const d = c.moonDir(); return { cos: f.x * d.x + f.y * -d.y + f.z * d.z, y: d.y }; })()");
+				check("Night: the moon sits ahead of the camera so lakes show its path", mv.cos > 0.95 && mv.y > 0.1, `alignment ${mv.cos.toFixed(3)}`);
+			}
 		}
 		await page.selectOption(".js-sky", "day");
 
@@ -620,7 +635,7 @@ async function main() {
 					check("iPhone 12 defaults to low quality", (await page.locator(".js-quality").inputValue()) === "low");
 					const ripLow = await debug3d(page, "c.riparian()");
 					check("Low quality keeps trees light", ripLow.bank <= 2200 && ripLow.forest <= 1600 && ripLow.shrub <= 1200 && ripLow.rock <= 400, `${ripLow.bank} bank + ${ripLow.forest} forest trees, ${ripLow.shrub} shrubs, ${ripLow.rock} boulders`);
-					check("Bank trees are skipped at the overview", !(await debug3d(page, "c.sc.scene.getObjectByName("riparian").visible")));
+					check("Bank trees are skipped at the overview", !(await debug3d(page, "c.sc.scene.getObjectByName('riparian').visible")));
 					await page.locator("#view-3d").scrollIntoViewIfNeeded();
 					const b2 = await page.locator("#view-3d").boundingBox();
 					const [ x, y ] = await page.evaluate(() => window.droughtViz.views["3d"].screenPos("SHA"));

@@ -35,18 +35,6 @@ The original 2016 page is kept, unchanged apart from data paths, in [`legacy/`](
   sparkline, labels that give way with distance (the text keeps full contrast; only its backing plate fades), a drought
   replay with a camera path (cuts between stops under reduced motion), a compare split
   (e.g. Sep 2014 vs Apr 2017), and a Low/High quality setting (Low by default on phones).
-- **Diorama (three.js r147):** California's water system as a model in a glass museum case on a wooden plinth, lit
-  by one warm spotlight. North is on the left and the Sierra Nevada at the back; ten of the largest reservoirs
-  (Trinity, Shasta, Almanor, Berryessa, Oroville, New Bullards Bar, Folsom, New Melones, Don Pedro, Pine Flat) are carved
-  lakes fed by rivers, with a dam at each outlet and Feather Falls above Oroville. Each lake's water depth is its
-  % full for the month, so the drought exposes pale banks; Trinity is cut by the front face, where its water,
-  the soil and rock strata and a groundwater band show in section. The brass plate gives the month and statewide
-  storage, hovering a lake shows the shared tooltip and clicking it opens the detail card. The timeline drives it.
-  Clouds, rain, snow, snowpack and the groundwater table are **illustrative**: the repo has no precipitation or
-  groundwater data, so they follow the calendar and the month-over-month change in statewide storage. San Luis
-  Reservoir is not in the dataset, so it is not modelled. Procedural terrain, instanced trees and rocks, glass with
-  transmission (Low quality: reflective panes, no shadows, fewer trees), idle auto-rotate off under reduced motion.
-  `?mode=diorama` opens it.
 - **% of average.** Each reservoir's storage and the statewide total are also shown as a share of the average
   for the same calendar month over the record on the page (reported values only, at least five years per month),
   the way California's water agencies report reservoir conditions. Shown in the summary, tooltips and detail card.
@@ -118,7 +106,7 @@ From the repo root:
 python3 -m http.server 8000
 ```
 
-Then open http://localhost:8000/ (`?mode=2d` opens the 2D map, `?mode=diorama` the diorama, `?month=2015-09` picks a month, `?quality=low|high`).
+Then open http://localhost:8000/ (`?mode=2d` opens the 2D map, `?month=2015-09` picks a month, `?quality=low|high`).
 The 2016 version is at http://localhost:8000/legacy/.
 
 Refresh the data:
@@ -135,8 +123,7 @@ setting. Lake outlines are generated, not surveyed.
 
 `tests/check.mjs` runs headless Chromium with Playwright against a server it starts on a free port. It checks
 for console errors, the 2D map, detail card, sound (off by default, builds on click, mute), WebGL terrain,
-lake levels over time, 3D hover and click fly-to, time of day, compare, replay, the diorama (lakes fall in the
-drought and refill, weather, hover tooltip) and the iPhone 12 layout, and
+lake levels over time, 3D hover and click fly-to, time of day, compare, replay and the iPhone 12 layout, and
 saves screenshots to `tests/screenshots/`.
 
 ```sh

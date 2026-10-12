@@ -117,7 +117,6 @@ async function main() {
 		allErrors.push(...errors);
 		({ ctx, page, errors } = await openPage(browser, base, { noWebGL: true }));
 		check("Without WebGL the page falls back to 2D", (await stateOf(page)).mode === "2d" && (await page.locator(".mode-switch button[data-mode=\"3d\"]").isDisabled()));
-		check("Without WebGL the Diorama button is disabled", await page.locator(".mode-switch button[data-mode=\"diorama\"]").isDisabled());
 		await ctx.close();
 
 		// ---------- Desktop 2D ----------
@@ -266,7 +265,7 @@ async function main() {
 		// Detail card scene: waterline follows % full, low lakes show a bathtub ring, full ones barely any.
 		const scene = async (id, m) => {
 			await setState(page, { selected: id, dateIndex: await monthIndex(page, m) });
-			await page.waitForTimeout(1500);
+			await page.waitForTimeout(700);
 			return page.evaluate(() => {
 				const s = document.querySelector(".detail-dam");
 				return { pct: +s.dataset.pct, water: +s.querySelector(".dam-water").getAttribute("y"), ring: +s.querySelector("clipPath rect").getAttribute("height"), low: s.classList.contains("low"), label: s.getAttribute("aria-label") };
@@ -400,8 +399,6 @@ async function main() {
 		for (const month of [ "2014-09", "2017-04" ]) {
 			await setState(page, { dateIndex: await monthIndex(page, month) });
 			await page.waitForTimeout(3500);
-			// SwiftShader can run at ~2 fps; let the eased spill values settle before judging them.
-			await page.waitForFunction(() => window.droughtViz.views["3d"].debug().outflow().every((o) => (o.spill > 0.05) === (o.pct !== null && o.pct > 0.9)), null, { timeout: 15000, polling: 500 }).catch(() => {});
 			const out = await debug3d(page, "c.outflow()");
 			const wet = out.filter((o) => o.pct !== null && o.pct > 0.003);
 			// Long enough to see, unless it runs straight into the next lake downstream.
@@ -539,59 +536,6 @@ async function main() {
 		allErrors.push(...errors);
 		await ctx.close();
 
-		// ---------- Diorama ----------
-		({ ctx, page, errors } = await openPage(browser, base, { query: "?mode=diorama&month=2014-09" }));
-		const dio = (expr) => page.evaluate(`(() => { const c = window.droughtViz.views.diorama.debug(); return ${expr}; })()`);
-		check("?mode=diorama opens the diorama", (await stateOf(page)).mode === "diorama" && (await page.locator("#view-diorama canvas").count()) === 1 && await page.locator("#view-3d").isHidden());
-		const dioLakes = await dio("c.lakes()");
-		check("Diorama models the largest reservoirs", [ "SHA", "ORO", "CLE", "NML", "DNP", "BER", "ALM", "FOL" ].every((id) => dioLakes.includes(id)), dioLakes.join(","));
-		const levelsAt = async (m) => {
-			await setState(page, { dateIndex: await monthIndex(page, m) });
-			return dio("Object.fromEntries(c.lakes().map((id) => [ id, c.targetLevel(id) ]))");
-		};
-		const [ lv11, lv14, lv17 ] = [ await levelsAt("2011-10"), await levelsAt("2014-09"), await levelsAt("2017-04") ];
-		const dropped = dioLakes.filter((id) => lv14[id] < lv11[id] - 0.05 && lv14[id] < lv17[id] - 0.05);
-		check("Diorama lakes drop in the drought and refill in 2017", dropped.length >= dioLakes.length - 1, `${dropped.length}/${dioLakes.length}; Shasta ${lv11.SHA.toFixed(2)} → ${lv14.SHA.toFixed(2)} → ${lv17.SHA.toFixed(2)}`);
-		// SwiftShader renders slowly; give the easing time to settle.
-		await page.waitForFunction(() => { const c = window.droughtViz.views.diorama.debug(); return Math.abs(c.level("SHA") - c.targetLevel("SHA")) < 0.05; }, null, { timeout: 30000, polling: 250 }).catch(() => {});
-		check("Diorama water eases to the month's level", Math.abs(await dio("c.level('SHA') - c.targetLevel('SHA')")) < 0.05);
-		await setState(page, { dateIndex: await monthIndex(page, "2017-02") });
-		const wx17 = await dio("c.weather()");
-		await setState(page, { dateIndex: await monthIndex(page, "2014-09") });
-		const wx14 = await dio("c.weather()");
-		check("Diorama rains or snows in a wet month, not in a dry one", wx17.rain + wx17.snow > 0 && wx14.rain + wx14.snow === 0, `Feb 2017 ${JSON.stringify(wx17)}, Sep 2014 ${JSON.stringify(wx14)}`);
-		await page.waitForFunction(() => !window.droughtViz.views.diorama.debug().moving(), null, { timeout: 30000 }).catch(() => {});
-		await dio("c.setIdle(false)");
-		await page.waitForTimeout(800);
-		const sb = await page.locator("#view-diorama").boundingBox();
-		const [ hx, hy ] = await page.evaluate(() => window.droughtViz.views.diorama.screenPos("SHA"));
-		await page.mouse.move(sb.x + hx, sb.y + hy);
-		await page.waitForTimeout(400);
-		const dtt = await page.locator("#tooltip").innerText().catch(() => "");
-		check("Diorama hover shows the lake's storage, % full and % of average", /Shasta/.test(dtt) && /Full/.test(dtt) && /Of average/.test(dtt), dtt.split("\n")[0]);
-		await page.mouse.move(sb.x + 5, sb.y + 5);
-		for (const m of [ "2011-10", "2014-09", "2017-04" ]) {
-			await setState(page, { dateIndex: await monthIndex(page, m) });
-			await page.waitForTimeout(2500);
-			await shot(page, `diorama-${m}.png`, ".stage");
-		}
-		await page.locator(".mode-switch button[data-mode=\"2d\"]").click();
-		await page.waitForTimeout(300);
-		check("Leaving the diorama hides it", await page.locator("#view-diorama").isHidden());
-		allErrors.push(...errors);
-		await ctx.close();
-
-		// ---------- Diorama under reduced motion: no idle auto-rotate ----------
-		({ ctx, page, errors } = await openPage(browser, base, { query: "?mode=diorama", reducedMotion: "reduce" }));
-		await page.evaluate(() => window.droughtViz.views.diorama.debug().setIdle(true));
-		const camAt = () => page.evaluate(() => window.droughtViz.views.diorama.debug().camera.position.toArray().map((v) => v.toFixed(3)).join(","));
-		await page.waitForTimeout(300);
-		const c0 = await camAt();
-		await page.waitForTimeout(2000);
-		check("Reduced motion: the diorama does not auto-rotate", c0 === await camAt() && !(await page.evaluate(() => window.droughtViz.views.diorama.debug().controls.autoRotate)));
-		allErrors.push(...errors);
-		await ctx.close();
-
 		// ---------- Reduced motion: replay cuts between stops ----------
 		({ ctx, page, errors } = await openPage(browser, base, { query: "?mode=3d", reducedMotion: "reduce" }));
 		await waitStill(page, 500);
@@ -610,10 +554,9 @@ async function main() {
 
 		// ---------- iPhone 12 ----------
 		for (const scheme of [ "light", "dark" ]) {
-			for (const mode of [ "2d", "3d", "diorama" ]) {
+			for (const mode of [ "2d", "3d" ]) {
 				({ ctx, page, errors } = await openPage(browser, base, { phone: true, scheme, query: `?mode=${mode}` }));
 				if (mode === "3d") await waitStill(page, 1500);
-				else if (mode === "diorama") await page.waitForTimeout(2500);
 				else await page.waitForTimeout(400);
 				check(`iPhone 12 ${mode} ${scheme}: no horizontal scroll`, await noHScroll(page));
 				if (mode === "3d" && scheme === "light") {

@@ -23,17 +23,11 @@ export function loadThree() {
 	return pending;
 }
 
-// Probed once and the probe context released, so the views don't each hold a spare WebGL context.
-let hasGL = null;
 export function webglAvailable() {
-	if (hasGL !== null) return hasGL;
 	try {
 		const c = document.createElement("canvas");
-		const gl = window.WebGLRenderingContext && (c.getContext("webgl2") || c.getContext("webgl"));
-		hasGL = Boolean(gl);
-		gl?.getExtension("WEBGL_lose_context")?.loseContext();
+		return Boolean(window.WebGLRenderingContext && (c.getContext("webgl2") || c.getContext("webgl")));
 	} catch (e) {
-		hasGL = false;
+		return false;
 	}
-	return hasGL;
 }

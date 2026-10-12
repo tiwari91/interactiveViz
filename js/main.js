@@ -8,7 +8,6 @@ import { renderLegend } from "./legend.js";
 import { initTheme } from "./theme.js";
 import { createMap2D } from "./map2d.js";
 import { createView3D } from "./view3d.js";
-import { createDiorama } from "./viewDiorama.js";
 import { createDetailCard } from "./detailCard.js";
 import { createAudio } from "./audio/engine.js";
 import { initSoundControls } from "./audio/controls.js";
@@ -35,12 +34,11 @@ function initialMode(params) {
 		gl = Boolean(window.WebGLRenderingContext && (canvas.getContext("webgl2") || canvas.getContext("webgl")));
 	} catch (e) { /* no WebGL */ }
 	if (!gl) return "2d";
-	const known = (m) => m === "2d" || m === "3d" || m === "diorama";
 	const asked = params.get("mode");
-	if (known(asked)) return asked;
+	if (asked === "2d" || asked === "3d") return asked;
 	try {
 		const saved = localStorage.getItem(MODE_KEY);
-		if (known(saved)) return saved;
+		if (saved === "2d" || saved === "3d") return saved;
 	} catch (e) { /* storage unavailable */ }
 	return "3d";
 }
@@ -118,7 +116,6 @@ async function start() {
 	const views = {
 		"2d": createMap2D($("#view-2d"), data, store, tooltip, audio),
 		"3d": createView3D($("#view-3d"), data, store, tooltip, audio),
-		diorama: createDiorama($("#view-diorama"), data, store, tooltip),
 	};
 	const release = createRelease(data);
 	const soundUi = { turnOn: async () => {} };
@@ -166,11 +163,10 @@ async function start() {
 			localStorage.setItem(MODE_KEY, b.dataset.mode);
 		} catch (e) { /* storage unavailable */ }
 	}));
-	for (const m of [ "3d", "diorama" ]) {
-		if (views[m].available) continue;
-		const b = document.querySelector(`.mode-switch button[data-mode="${m}"]`);
-		b.disabled = true;
-		b.title = "Needs WebGL, which is turned off in this browser";
+	if (!views["3d"].available) {
+		const b3 = document.querySelector(".mode-switch button[data-mode=\"3d\"]");
+		b3.disabled = true;
+		b3.title = "3D needs WebGL, which is turned off in this browser";
 	}
 	views["3d"].onProgress = setProgress;
 
@@ -179,20 +175,18 @@ async function start() {
 		modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
 		renderLegend($("#legend"), mode);
 		$("#stage-hint").textContent = views[mode].hint;
-		for (const m of Object.keys(views)) {
-			$(`#view-${m}`).hidden = m !== mode;
-			if (m !== mode) views[m].pause();
-		}
+		$("#view-2d").hidden = mode !== "2d";
+		$("#view-3d").hidden = mode !== "3d";
+		views[mode === "2d" ? "3d" : "2d"].pause();
 		const url = new URL(location.href);
 		if (url.searchParams.has("mode")) {
 			url.searchParams.set("mode", mode);
 			history.replaceState(null, "", url);
 		}
-		// First visit to a WebGL view: show the loading bar while it builds.
-		const first3d = mode !== "2d" && views[mode].available && !views[mode].debug();
+		const first3d = mode === "3d" && !views["3d"].debug();
 		if (first3d) {
 			loading.classList.remove("done");
-			setProgress(0.05, mode === "3d" ? "Loading 3D terrain…" : "Building the diorama…");
+			setProgress(0.05, "Loading 3D terrain…");
 		}
 		try {
 			await views[mode].mount(setProgress);

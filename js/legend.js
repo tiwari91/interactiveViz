@@ -77,20 +77,6 @@ const KEY_3D = `
 		<span>Dot = % full</span>
 	</span>`;
 
-const KEY_DIORAMA = `
-	<span class="legend-item">
-		<svg width="30" height="20" aria-hidden="true"><ellipse cx="15" cy="10" rx="13" ry="8" fill="#ddd0b4" stroke="#b9ab90"/><ellipse cx="17" cy="11" rx="8" ry="4.5" fill="#2f6f86"/></svg>
-		<span>Lake depth = % full<br>pale banks = exposed shore</span>
-	</span>
-	<span class="legend-item">
-		<svg width="28" height="20" aria-hidden="true"><rect x="1" y="1" width="26" height="4" fill="#3d2a17"/><rect x="1" y="5" width="26" height="6" fill="#6b4a2c"/><rect x="1" y="11" width="26" height="8" fill="#3b4a5c"/><line x1="1" y1="11" x2="27" y2="11" stroke="#5aa9e6" stroke-width="1.5"/></svg>
-		<span>Front face: soil, rock<br>and groundwater (illustrative)</span>
-	</span>
-	<span class="legend-item">
-		<svg width="26" height="20" aria-hidden="true"><circle cx="9" cy="7" r="5" fill="#c9ced6"/><circle cx="16" cy="6" r="6" fill="#dfe3e8"/><path d="M8 14l-1 4M13 14l-1 4M18 14l-1 4" stroke="#7fb2e6" stroke-width="1.4" stroke-linecap="round"/></svg>
-		<span>Rain, snow and snowpack<br>(illustrative, from storage gains)</span>
-	</span>`;
-
 export function ensurePatterns() {
 	if (document.getElementById("hatch-nodata")) return;
 	const holder = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -104,5 +90,5 @@ export function ensurePatterns() {
 
 export function renderLegend(el, mode) {
 	ensurePatterns();
-	el.innerHTML = mode === "diorama" ? ramp() + KEY_DIORAMA : ramp() + (mode === "3d" ? KEY_3D : KEY_2D) + FLOOD + NO_DATA;
+	el.innerHTML = ramp() + (mode === "3d" ? KEY_3D : KEY_2D) + FLOOD + NO_DATA;
 }

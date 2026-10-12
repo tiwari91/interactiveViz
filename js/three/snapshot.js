@@ -3,6 +3,9 @@
 import { markColor, NO_DATA_COLOR } from "../scales.js";
 import { createRelease, smoothstep } from "../release.js";
 
+// How far the grass has cured by calendar month (0 = January), in an average year.
+const SEASON = [ 0.25, 0.15, 0.05, 0, 0.1, 0.45, 0.8, 1, 1, 0.9, 0.65, 0.4 ];
+
 export function createSnapshots(data, basins, foamSpots) {
 	const { releaseOf: rel } = createRelease(data);
 	const index = new Map(basins.basins.map((b, i) => [ b.r.id, i ]));
@@ -31,6 +34,8 @@ export function createSnapshots(data, basins, foamSpots) {
 			return s.kind === "spill" ? rel.spill : rel.pct === null || rel.outlet <= 0 ? 0 : 0.35 + 0.65 * rel.outlet;
 		});
 		const statewide = data.totals[i].pct;
+		// Land browns as statewide storage falls from ~75% toward ~30%.
+		const dryness = 1 - smoothstep(0.32, 0.72, statewide);
 		const snap = {
 			levels,
 			tints,
@@ -40,8 +45,9 @@ export function createSnapshots(data, basins, foamSpots) {
 			foam,
 			outlet: release.map((r) => r.outlet),
 			spill: release.map((r) => r.spill),
-			// Land browns as statewide storage falls from ~75% toward ~30%.
-			dryness: 1 - smoothstep(0.32, 0.72, statewide),
+			dryness,
+			// Grass: green in a wet spring, golden through a dry summer and autumn.
+			gold: Math.min(1, SEASON[data.calMonth[i]] * (0.55 + 0.6 * dryness) + dryness * 0.25),
 		};
 		cache.set(i, snap);
 		return snap;

@@ -349,9 +349,8 @@ export function createTerrain(THREE, data, world, basins, quality) {
 		group,
 		detail,
 		// Golden grass: late summer and autumn, and more of it in a dry year.
-		setSeason(month, dryness) {
-			const season = [ 0.25, 0.15, 0.05, 0, 0.1, 0.45, 0.8, 1, 1, 0.9, 0.65, 0.4 ][month];
-			uniforms.uGold.value = Math.min(1, season * (0.55 + 0.6 * dryness) + dryness * 0.25);
+		setGold(v) {
+			uniforms.uGold.value = v;
 		},
 		get gold() {
 			return uniforms.uGold.value;

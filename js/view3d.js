@@ -129,7 +129,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 
 		// Animated state starts at the current month.
 		const s0 = snapshot(store.get().dateIndex);
-		const cur = { levels: [ ...s0.levels ], foam: [ ...s0.foam ], outlet: [ ...s0.outlet ], spill: [ ...s0.spill ], dryness: s0.dryness };
+		const cur = { levels: [ ...s0.levels ], foam: [ ...s0.foam ], outlet: [ ...s0.outlet ], spill: [ ...s0.spill ], dryness: s0.dryness, gold: s0.gold };
 		let target = s0;
 		const presetParts = { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, terrain };
 		const usePreset = (name) => {
@@ -150,6 +150,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			dams.foam.apply(state.foam);
 			outflow.apply(state.outlet, state.spill);
 			terrain.setDryness(state.dryness);
+			terrain.setGold(state.gold);
+			mainRivers.setFlow(1 - state.dryness);
 		}
 
 		// Camera: start pulled back, then settle on the home pose.
@@ -344,6 +346,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				cur.spill[i] += (target.spill[i] - cur.spill[i]) * k;
 			}
 			cur.dryness += (target.dryness - cur.dryness) * k * 0.6;
+			cur.gold += (target.gold - cur.gold) * k * 0.6;
 
 			if (pointer && !dragging && !replayFn) {
 				const h = pickAt(pointer[0], pointer[1]);
@@ -413,8 +416,6 @@ export function createView3D(container, data, store, tooltip, audio) {
 
 		function setMonth(i) {
 			target = snapshot(i);
-			terrain.setSeason(data.calMonth[i], target.dryness);
-			mainRivers.setFlow(1 - target.dryness);
 			outflow.setWidths(target.outlet);
 			labels.setValues(i);
 		}
@@ -496,7 +497,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 				return e.data[i] <= 0 && world.bayMask[i] < 0.5;
 			},
 			moonDir: () => shared.uMoonDir.value.clone(),
-			gold: () => terrain.gold,
+			gold: () => target.gold,
+			goldNow: () => terrain.gold,
 			groundSamples: () => outflow.groundSamples(),
 			riverLevelsReady: () => outflow.levelsReady(),
 			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),

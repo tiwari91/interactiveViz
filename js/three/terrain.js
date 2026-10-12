@@ -181,13 +181,25 @@ vec4 gD1;`)
 		float veg = (1.0 - smoothstep(0.25, 0.45, slope)) * (1.0 - step(0.8, lum)) * smoothstep(0.02, 0.06, lum);
 		vec4 d4 = texture2D(uDetail, vWPos.xz * 0.023 + 0.13);
 		float scrubN = d2.g * 0.45 + d4.r * 0.25 + d3.r * 0.3;
-		float scrub = smoothstep(0.47, 0.56, scrubN) * veg;
+		// The flat valley floor is farmland, not scrub: rectangular fields instead.
+		float valley = smoothstep(1.9, 1.0, vWPos.y) * (1.0 - smoothstep(0.02, 0.06, slope));
+		float patchNear = 1.0 - smoothstep(90.0, 260.0, dist);
+		float scrub = smoothstep(0.44, 0.6, scrubN) * veg * (1.0 - valley) * (0.35 + 0.65 * patchNear);
 		float clumps = smoothstep(0.3, 0.7, gD1.a + gD1.g * 0.5);
 		vec3 scrubC = mix(vec3(0.07, 0.09, 0.035), vec3(0.13, 0.12, 0.06), uGold * 0.5) * (0.7 + 0.7 * clumps);
 		float open = (1.0 - scrub) * veg * smoothstep(0.35, 0.6, d3.g * 0.6 + d4.g * 0.4);
 		vec3 goldC = vec3(0.36, 0.27, 0.1) * mix(0.82, 1.15, gD1.r);
 		ground = mix(ground, goldC, open * uGold * 0.85);
 		ground = mix(ground, scrubC, scrub * 0.9);
+		if (valley > 0.0) {
+			vec2 f = floor(vWPos.xz * vec2(0.55, 0.42) + vec2(floor(vWPos.z * 0.21) * 0.5, 0.0));
+			float h1 = fract(sin(dot(f, vec2(12.9898, 78.233))) * 43758.5453);
+			vec3 field = h1 < 0.3 ? vec3(0.13, 0.17, 0.06) : h1 < 0.55 ? vec3(0.2, 0.21, 0.09) : h1 < 0.75 ? mix(vec3(0.3, 0.25, 0.12), vec3(0.36, 0.29, 0.13), uGold) : vec3(0.23, 0.18, 0.12);
+			vec2 e = abs(fract(vWPos.xz * vec2(0.55, 0.42) + vec2(floor(vWPos.z * 0.21) * 0.5, 0.0)) - 0.5);
+			float edge = smoothstep(0.47, 0.5, max(e.x, e.y));
+			field = mix(field * mix(0.88, 1.08, gD1.r), vec3(0.16, 0.14, 0.1), edge * 0.6);
+			ground = mix(ground, mix(ground, field, 0.65), valley * patchNear);
+		}
 		// Creases and steep faces sit in shade; rounded tops catch light.
 		ground *= 1.0 - 0.22 * smoothstep(0.12, 0.42, slope) * (1.0 - gRock * 0.5);
 		// Rock: greyer, cracked, with lighter weathered faces.

@@ -27,7 +27,9 @@ function chaikin(p) {
 export function createRouter(basins, world) {
 	const surface = (x, z) => {
 		const s = basins.surfaceAt(x, z);
-		return Math.max(0.3, s ? s.h : world.groundY(x, z));
+		// Lake beds can sit below sea level (a deep bowl in the low foothills); only open ground
+		// is held at the shore height.
+		return s && s.zone === "bowl" ? s.h : Math.max(0.3, s ? s.h : world.groundY(x, z));
 	};
 
 	// Steepest descent with momentum; stops at a pit, when it would climb, at the

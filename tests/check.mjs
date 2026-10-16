@@ -540,6 +540,33 @@ async function main() {
 		const dangling = ends.filter((e) => e.ending === "fade" && !(e.drop >= -0.2 || e.slope < 0.1));
 		const endCounts = ends.reduce((m, e) => ({ ...m, [e.ending]: (m[e.ending] ?? 0) + 1 }), {});
 		check("No river ends dangling on a slope", ends.length >= 30 && dangling.length === 0, `${Object.entries(endCounts).map(([ k, v ]) => `${k} ${v}`).join(", ")}${dangling.length ? `; dangling: ${dangling.map((e) => `${e.id} slope ${e.slope} drop ${e.drop}`).join(", ")}` : ""}`);
+		// Every outflow starts at its dam and every inflow reaches the water, in a drought, a wet
+		// spring, the statewide low and each lake's own record low; no line has a gap in it.
+		const riverGaps = await debug3d(page, `(() => {
+			const d = window.droughtViz.data;
+			const sets = [ "2014-09", "2017-04", "2015-09" ].map((m) => [ d.months.indexOf(m), null ]);
+			d.reservoirs.forEach((r) => {
+				let bi = -1;
+				r.series.forEach((v, i) => { if (v !== null && (bi < 0 || v < r.series[bi])) bi = i; });
+				if (bi >= 0) sets.push([ bi, r.id ]);
+			});
+			const bad = { dam: [], water: [], line: [] };
+			let checked = 0;
+			for (const [ m, only ] of sets) {
+				for (const g of c.riverGaps(m)) {
+					if (only && g.id !== only) continue;
+					checked++;
+					const at = d.months[m] + " " + g.id;
+					if (!g.hasOut || g.damGap > 1.0) bad.dam.push(at + " " + g.damGap?.toFixed(2));
+					if (!g.hasIn || g.waterGap > 0.3) bad.water.push(at + " " + g.waterGap?.toFixed(2));
+					if (g.lineGap > 2.5) bad.line.push(at + " " + g.lineGap.toFixed(2));
+				}
+			}
+			return { checked, bad };
+		})()`);
+		check("Every outflow starts at its dam (drought, wet, lows)", riverGaps.checked > 100 && riverGaps.bad.dam.length === 0, `${riverGaps.checked} lake-months${riverGaps.bad.dam.length ? `; ${riverGaps.bad.dam.slice(0, 6).join(", ")}` : ""}`);
+		check("Every inflow reaches the current water (drought, wet, lows)", riverGaps.bad.water.length === 0, riverGaps.bad.water.slice(0, 6).join(", ") || "none short");
+		check("No gaps inside any river line", riverGaps.bad.line.length === 0, riverGaps.bad.line.slice(0, 6).join(", ") || "none");
 		const longOut = await debug3d(page, "c.outflow().filter((o) => o.length >= 8 || o.joins).length");
 		const nOut = await debug3d(page, "c.outflow().length");
 		check("Most outflows run well downstream", longOut >= 28, `${longOut} of ${nOut} longer than 8 units or joining a bigger river`);

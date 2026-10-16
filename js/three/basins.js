@@ -4,6 +4,7 @@
 // low reservoir shows a shrunken lake and an exposed shoreline.
 import { fbm, hash2 } from "./world.js";
 
+const LAKE_DIRECTION = { ISB: [ 0.05, 0.04 ] };
 const DAM_U = 0.82; // dam sits this many half-lengths downstream of the lake centre
 const smooth = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
@@ -84,6 +85,14 @@ function makeBasin(r, maxCap, world) {
 		}
 		ux = -best.cx;
 		uz = -best.cz;
+	}
+	// Where the guess is wrong, the lake's real direction from the dam (lon, lat offsets):
+	// Isabella's main dam sits at the south-west end, the lake runs north-east up the Kern.
+	const real = LAKE_DIRECTION[r.id];
+	if (real) {
+		const [ px, pz ] = world.project([ r.lon + real[0], r.lat + real[1] ]);
+		ux = px - dx;
+		uz = pz - dz;
 	}
 	let len = Math.hypot(ux, uz);
 	if (len < 1e-3) {

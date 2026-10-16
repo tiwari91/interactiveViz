@@ -14,6 +14,8 @@ const RIBBON_VERT = `
 	varying float vFar;
 	uniform float uRelease[DAMS];
 	uniform float uSpill[DAMS];
+	uniform float uLevel[DAMS];
+	varying float vLevel;
 	varying float vSide;
 	varying float vAlong;
 	varying float vRel;
@@ -35,6 +37,7 @@ const RIBBON_VERT = `
 		vSide = aSide;
 		vAlong = aAlong;
 		vRel = rel;
+		vLevel = uLevel[k];
 		vKind = kind;
 		vEnd = aMeta.z - aAlong;
 		vec4 wp = modelMatrix * vec4(p, 1.0);
@@ -58,6 +61,7 @@ const RIBBON_FRAG = `
 	varying float vSide;
 	varying float vAlong;
 	varying float vRel;
+	varying float vLevel;
 	varying float vKind;
 	varying float vEnd;
 	varying vec3 vWorld;
@@ -71,6 +75,8 @@ const RIBBON_FRAG = `
 	float ripple(vec2 p) { return noise(p) * 0.5 + noise(p * 2.3 + 4.1) * 0.3 + noise(p * 5.1 - 2.7) * 0.2; }
 	void main() {
 		if (vRel < (vKind > 1.5 ? 0.02 : 0.001)) discard;
+		// An inflow runs on down the exposed lake bed and disappears under the current water.
+		if (vKind > 0.5 && vKind < 1.5 && vWorld.y < vLevel - 0.02) discard;
 		float chute = step(1.5, vKind);
 		float speed = mix(0.9 + 2.6 * vRel, 7.0, chute);
 		float side = abs(vSide);
@@ -258,6 +264,9 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	// Carry a ground path on from where steepest descent gave up: down the valley floor
 	// (lowest ground in a cone around the way to the nearest main stem), never climbing.
 	function onward(pts, own) {
+		// A river that reaches another lake ends at its shore.
+		const enters = pts.findIndex(([ x, z ], i) => i > 2 && lakeAt(x, z, own));
+		if (enters > 0) return pts.slice(0, enters + 1);
 		const out = pts.slice();
 		let [ px, pz ] = out[out.length - 1];
 		if (nearStem(px, pz, 1.2) || lakeAt(px, pz, own)) return out;
@@ -327,13 +336,145 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		}
 		return out;
 	}
+	function upValley(own, maxLen) {
+		let u = 0;
+		while (u < own.Lu * 2 && own.sOf(u, 0) < 1) u += 0.2;
+		let [ px, pz ] = own.toWorld(u + 0.3, 0);
+		const path = [ [ px, pz ] ];
+		let high = ground2(px, pz);
+		let [ hx, hz ] = own.eu;
+		const STEP = router.STEP;
+		for (let walked = 0; walked < maxLen; walked += STEP) {
+			let best = null;
+			for (let a = -1.2; a <= 1.2001; a += 0.2) {
+				const dx = hx * Math.cos(a) - hz * Math.sin(a);
+				const dz = hx * Math.sin(a) + hz * Math.cos(a);
+				const q = [ px + dx * STEP, pz + dz * STEP ];
+				const g = ground2(...q);
+				if (g < high - CLIMB * 0.8 || own.sOf(...own.toLocal(...q)) < 1) continue;
+				const score = g + Math.abs(a) * 0.05;
+				if (!best || score < best.score) best = { q, g, score, dx, dz };
+			}
+			if (!best) break;
+			[ px, pz ] = best.q;
+			path.push(best.q);
+			high = Math.max(high, best.g);
+			hx = hx * 0.55 + best.dx * 0.3 + own.eu[0] * 0.15;
+			hz = hz * 0.55 + best.dz * 0.3 + own.eu[1] * 0.15;
+			const l = Math.hypot(hx, hz) || 1;
+			hx /= l;
+			hz /= l;
+		}
+		return path.reverse();
+	}
+	// Carry an inflow on from the full-pool shore down the lake bed toward the dam, so it always
+	// reaches the water however low the lake is (the part under water is hidden).
+	// Carry an inflow on from the full-pool shore across the lake bed to its deepest point, so it
+	// meets the water however low the lake is (the part under water is hidden). The route is the
+	// one water itself would take: a priority flood from the shore (lowest pass first) to the bottom.
+	function intoBed(pts, own) {
+		const out = pts.slice();
+		const H = 0.4;
+		const [ ua, ub ] = [ own.u0 - 0.5, own.Lu * 1.4 ];
+		const [ va, vb ] = [ -own.Lv * 1.4, own.Lv * 1.4 ];
+		const nu = Math.ceil((ub - ua) / H) + 1;
+		const nv = Math.ceil((vb - va) / H) + 1;
+		const N = nu * nv;
+		const hgt = new Float32Array(N).fill(Infinity);
+		let bottom = -1;
+		for (let i = 0; i < nu; i++) {
+			for (let j = 0; j < nv; j++) {
+				const u = ua + i * H;
+				const v = va + j * H;
+				const sv = own.sOf(u, v);
+				if (sv > 1.1 || u < own.dam.u + 0.4) continue;
+				const k = i * nv + j;
+				hgt[k] = ground2(...own.toWorld(u, v));
+				if (sv < 1 && (bottom < 0 || hgt[k] < hgt[bottom])) bottom = k;
+			}
+		}
+		const [ sx, sz ] = out[out.length - 1];
+		const [ su, sv ] = own.toLocal(sx, sz);
+		let start = -1;
+		let sd = Infinity;
+		for (let k = 0; k < N; k++) {
+			if (hgt[k] === Infinity) continue;
+			const d = Math.hypot(ua + Math.floor(k / nv) * H - su, va + (k % nv) * H - sv);
+			if (d < sd) {
+				sd = d;
+				start = k;
+			}
+		}
+		if (start < 0 || bottom < 0) return out;
+		const key = new Float32Array(N).fill(Infinity);
+		const prev = new Int32Array(N).fill(-1);
+		const done = new Uint8Array(N);
+		const heap = [];
+		const push = (k) => {
+			heap.push(k);
+			let c = heap.length - 1;
+			while (c > 0) {
+				const p = (c - 1) >> 1;
+				if (key[heap[p]] <= key[heap[c]]) break;
+				[ heap[p], heap[c] ] = [ heap[c], heap[p] ];
+				c = p;
+			}
+		};
+		const pop = () => {
+			const top = heap[0];
+			const last = heap.pop();
+			if (heap.length) {
+				heap[0] = last;
+				let c = 0;
+				for (;;) {
+					const l = c * 2 + 1;
+					const r = l + 1;
+					let m = c;
+					if (l < heap.length && key[heap[l]] < key[heap[m]]) m = l;
+					if (r < heap.length && key[heap[r]] < key[heap[m]]) m = r;
+					if (m === c) break;
+					[ heap[m], heap[c] ] = [ heap[c], heap[m] ];
+					c = m;
+				}
+			}
+			return top;
+		};
+		key[start] = hgt[start];
+		push(start);
+		while (heap.length) {
+			const k = pop();
+			if (done[k]) continue;
+			done[k] = 1;
+			if (k === bottom) break;
+			const i = Math.floor(k / nv);
+			const j = k % nv;
+			for (const [ di, dj ] of [ [ 1, 0 ], [ -1, 0 ], [ 0, 1 ], [ 0, -1 ], [ 1, 1 ], [ 1, -1 ], [ -1, 1 ], [ -1, -1 ] ]) {
+				const ii = i + di;
+				const jj = j + dj;
+				if (ii < 0 || jj < 0 || ii >= nu || jj >= nv) continue;
+				const q = ii * nv + jj;
+				if (done[q] || hgt[q] === Infinity) continue;
+				// Lowest pass first; among equal passes, the lower ground.
+				const kq = Math.max(key[k], hgt[q]) + hgt[q] * 1e-3;
+				if (kq < key[q]) {
+					key[q] = kq;
+					prev[q] = k;
+					push(q);
+				}
+			}
+		}
+		if (!done[bottom]) return out;
+		const route = [];
+		for (let k = bottom; k >= 0 && k !== start; k = prev[k]) route.push(own.toWorld(ua + Math.floor(k / nv) * H, va + (k % nv) * H));
+		return out.concat(route.reverse());
+	}
 	const order = list.map((_, i) => i).sort((a, b) => list[b].r.capacity - list[a].r.capacity);
 	for (const di of order) {
 		const b = list[di];
 		const info = dams.info.get(b.r.id);
 		// From the downstream toe, along the canyon floor, then downhill.
 		// Arch dams bulge upstream, so start below the dam line, never in the lake.
-		const toe = b.toWorld(Math.min(info.toeU, b.dam.u - 0.6), 0);
+		const toe = info.toeU <= b.dam.u - 0.6 ? [ info.toePoint[0], info.toePoint[2] ] : b.toWorld(b.dam.u - 0.6, b.toLocal(info.toePoint[0], info.toePoint[2])[1]);
 		const raw0 = router.downhill(toe, [ -b.eu[0], -b.eu[1] ], 24 + b.Lu * 2.4, { avoid: b });
 		const pts = onward(raw0, b);
 		let seq = router.drape(pts);
@@ -395,10 +536,10 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			if (next) into[di] = next.r.id;
 		}
 
-		// Inflow: start up the valley above the lake and let the water run down into it.
-		const tip = b.toWorld(b.Lu * 1.25, 0);
-		const start = [ tip[0] + b.eu[0] * (b.Lu * 1.2 + 6), tip[1] + b.eu[1] * (b.Lu * 1.2 + 6) ];
-		const inPts = router.downhill(start, [ -b.eu[0], -b.eu[1] ], b.Lu * 3 + 20, { into: b });
+		// Inflow: traced from the lake's upstream shore up the valley floor (lowest ground that
+		// never drops going upstream, so the river never climbs going down), then carried from
+		// the shore across the lake bed toward the dam, so it meets the water at any level.
+		const inPts = intoBed(upValley(b, b.Lu * 1.6 + 12), b);
 		const inSeq = router.drape(inPts);
 		if (inSeq.length > 6) {
 			const st = stripGeometry(inSeq, out, { dam: di, kind: KIND.INFLOW, weight: weightOf(b) });
@@ -422,6 +563,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	geom.setAttribute("aDir", new THREE.Float32BufferAttribute(out.dir, 2));
 	geom.setIndex(out.index);
 	const release = new Array(n).fill(0);
+	const levelU = new Array(n).fill(-100);
 	const spill = new Array(n).fill(0);
 	const night = { value: 0 };
 	const ribbonMat = new THREE.ShaderMaterial({
@@ -433,6 +575,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			uFogNear: shared.uFogNear,
 			uFogFar: shared.uFogFar,
 			uRelease: { value: release },
+			uLevel: { value: levelU },
 			uSpill: { value: spill },
 			uSunDir: shared.uSunDir,
 			uSunColor: shared.uSunColor,
@@ -612,6 +755,21 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		lengths,
 		// For tests: how each dam's river ends (river, stem, lake or fade) and the ground slope there.
 		endings,
+		// For tests: each strip's dam, kind, first and last centre point, lowest point and the
+		// biggest step between neighbouring centre points (a gap in the line).
+		links: () => strips.filter((st) => st.kind !== KIND.CHUTE).map((st) => {
+			let gap = 0;
+			let minY = Infinity;
+			st.centre.forEach((p, i) => {
+				if (i) gap = Math.max(gap, Math.hypot(p[0] - st.centre[i - 1][0], p[2] - st.centre[i - 1][2]));
+				minY = Math.min(minY, p[1]);
+			});
+			// Lowest point of the line inside its own lake outline (Infinity if it never gets there).
+			const own = list[st.dam];
+			let inLake = Infinity;
+			for (const p of st.centre) if (own.sOf(...own.toLocal(p[0], p[2])) < 1.05) inLake = Math.min(inLake, p[1]);
+			return { dam: st.dam, kind: st.kind, start: st.centre[0], end: st.centre[st.centre.length - 1], gap, minY, inLake };
+		}),
 		bankPoints,
 		nearChute,
 		router,
@@ -637,6 +795,10 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				compareAttr.needsUpdate = true;
 			}
 			geom.setAttribute("position", compareAttr);
+		},
+		// Current water surface per lake: inflows show only above it.
+		setLevels(levels) {
+			for (let i = 0; i < n; i++) levelU[i] = levels[i];
 		},
 		apply(outlet, spillNow) {
 			for (let i = 0; i < n; i++) {

@@ -160,6 +160,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			lakes.apply(state.levels, snap.tints, snap.visible);
 			dams.foam.apply(state.foam);
 			outflow.apply(state.outlet, state.spill);
+			outflow.setLevels(state.levels);
 			terrain.setDryness(state.dryness);
 			terrain.setGold(state.gold);
 			mainRivers.setFlow(1 - state.dryness);
@@ -602,6 +603,36 @@ export function createView3D(container, data, store, tooltip, audio) {
 			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
 			verifyWater: () => outflow.verify(),
 			riverEndings: () => outflow.endings,
+			// For tests, at a month: outflow start to dam toe, inflow to the current water (vertical
+			// gap above the water, 0 once it reaches it or the lake is empty) and gaps inside a line.
+			riverLinks: () => outflow.links().map((r) => ({ ...r, id: basins.basins[r.dam].r.id })),
+			damInfo: (id) => { const d = dams.info.get(id); return { toePoint: d.toePoint, center: d.center, toeU: d.toeU }; },
+			riverGaps: (i) => {
+				const snap = snapshot(i);
+				const rows = outflow.links();
+				return basins.basins.map((b, di) => {
+					const toe = dams.info.get(b.r.id).toePoint;
+					const outs = rows.filter((r) => r.dam === di && r.kind === 0);
+					const ins = rows.filter((r) => r.dam === di && r.kind === 1);
+					const level = snap.levels[di];
+					return {
+						id: b.r.id,
+						// Outflow start to the dam: its downstream toe, or the dam line itself (arch dams
+						// bulge upstream, so their outflow starts just below the line).
+						damGap: outs.length ? Math.min(...outs.map((r) => {
+							const [ u, v ] = b.toLocal(r.start[0], r.start[2]);
+							const toLine = Math.abs(v) <= b.dam.halfWidth ? Math.abs(u - b.dam.u) : Infinity;
+							return Math.min(toLine, Math.hypot(r.start[0] - toe[0], r.start[2] - toe[2]));
+						})) : null,
+						// How far above the current water the inflow stops inside its lake; an inflow that
+						// never enters the lake outline counts as a gap (99).
+						waterGap: ins.length ? Math.min(99, Math.max(0, Math.min(...ins.map((r) => r.inLake - 0.12)) - Math.max(level, b.levelFor(0)))) : null,
+						lineGap: Math.max(0, ...rows.filter((r) => r.dam === di).map((r) => r.gap)),
+						hasOut: outs.length > 0,
+						hasIn: ins.length > 0,
+					};
+				});
+			},
 			anisotropy: () => terrain.detail.anisotropy,
 			mainRivers: () => mainRivers.names,
 			waterways: () => ({ delta: mainRivers.delta, canals: mainRivers.canals, ends: mainRivers.ends }),

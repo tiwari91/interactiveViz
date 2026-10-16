@@ -188,7 +188,7 @@ vec4 gD1;`)
 		vec4 d4 = texture2D(uDetail, vWPos.xz * 0.023 + 0.13);
 		float scrubN = d2.g * 0.45 + d4.r * 0.25 + d3.r * 0.3;
 		// The flat valley floor is farmland, not scrub: rectangular fields instead.
-		float valley = smoothstep(1.9, 1.0, vWPos.y) * (1.0 - smoothstep(0.02, 0.06, slope)) * (1.0 - vBare);
+		float valley = smoothstep(1.2, 0.8, vWPos.y) * (1.0 - smoothstep(0.02, 0.06, slope)) * (1.0 - vBare);
 		float patchNear = 1.0 - smoothstep(90.0, 260.0, dist);
 		float scrub = smoothstep(0.44, 0.6, scrubN) * veg * (1.0 - valley) * (0.35 + 0.65 * patchNear);
 		float clumps = smoothstep(0.3, 0.7, gD1.a + gD1.g * 0.5);

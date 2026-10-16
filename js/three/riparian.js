@@ -179,16 +179,21 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 		}
 		const y = router.surface(x, z);
 		const isConifer = m > 900 + hash2(Math.round(x), Math.round(z)) * 500;
-		const sc = (isConifer ? 0.75 : 0.6) + rnd() * 0.45;
+		// Mostly young trees with the odd big one, so a stand never reads as identical copies.
+		const r0 = rnd();
+		const sc = (isConifer ? 0.62 : 0.5) + r0 * r0 * 1.0;
 		e.set((rnd() - 0.5) * 0.12, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.12);
 		q.setFromEuler(e);
-		s.set(sc * (0.85 + rnd() * 0.3), sc * (0.9 + rnd() * 0.35), sc * (0.85 + rnd() * 0.3));
+		// Conifers run tall and narrow; oaks spread wider than they are tall.
+		const w = isConifer ? 0.75 + rnd() * 0.25 : 0.95 + rnd() * 0.45;
+		const hgt = isConifer ? 1.1 + rnd() * 0.5 : 0.8 + rnd() * 0.3;
+		s.set(sc * w, sc * hgt, sc * w * (0.85 + rnd() * 0.3));
 		m4.compose(v.set(x, y - 0.04, z), q, s);
 		const mesh = isConifer ? pines : broads;
 		const key = isConifer ? "pine" : "broad";
 		mesh.setMatrixAt(counts[key], m4);
 		// Small brightness and hue variation per tree; the crown colour comes from the geometry.
-		mesh.setColorAt(counts[key], c.setHSL(0.25 + (rnd() - 0.5) * 0.08, 0.25, 0.42 + rnd() * 0.16).multiplyScalar(2));
+		mesh.setColorAt(counts[key], c.setHSL(0.24 + (rnd() - 0.5) * 0.12, 0.18 + rnd() * 0.15, 0.3 + rnd() * 0.2).multiplyScalar(2));
 		counts[key]++;
 		counts[forest ? "forest" : "bank"]++;
 		blob(x, y, z, sc * (isConifer ? 1.1 : 1.3));

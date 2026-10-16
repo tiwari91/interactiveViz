@@ -704,6 +704,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// For tests, at a month: outflow start to dam toe, inflow to the current water (vertical
 			// gap above the water, 0 once it reaches it or the lake is empty) and gaps inside a line.
 			riverLinks: () => outflow.links().map((r) => ({ ...r, id: basins.basins[r.dam].r.id })),
+			stemPoints: () => outflow.stemPoints(),
 			damInfo: (id) => { const d = dams.info.get(id); return { toePoint: d.toePoint, center: d.center, toeU: d.toeU }; },
 			riverGaps: (i) => {
 				const snap = snapshot(i);

@@ -117,7 +117,54 @@ export function createRouter(basins, world) {
 		}
 		return { out, full: true };
 	}
+	// A walk that dithers in a hollow can double back over itself: cut out any loop (a point
+	// that comes back near an earlier one) and any final back-and-forth, so the line never hooks.
+	function untangle(pts) {
+		const out = [];
+		for (const p of pts) {
+			let back = -1;
+			for (let i = out.length - 2; i >= Math.max(0, out.length - 30); i--) {
+				if (Math.hypot(out[i][0] - p[0], out[i][1] - p[1]) < STEP * (out.length - i > 3 ? 1.2 : 0.8)) {
+					back = i;
+					break;
+				}
+			}
+			if (back >= 0) out.length = back + 1;
+			else out.push(p);
+		}
+		// Cut across hairpins: where the line turns back by more than about 110 degrees over a
+		// couple of steps, drop the points at the bend so it runs through as one curve.
+		for (let pass = 0; pass < 80; pass++) {
+			let cut = -1;
+			for (let i = 2; i < out.length - 2 && cut < 0; i++) {
+				for (const k of [ 2, 3, 4 ]) {
+					if (i < k || i + k >= out.length) continue;
+					const a = [ out[i][0] - out[i - k][0], out[i][1] - out[i - k][1] ];
+					const b = [ out[i + k][0] - out[i][0], out[i + k][1] - out[i][1] ];
+					const cos = (a[0] * b[0] + a[1] * b[1]) / ((Math.hypot(...a) * Math.hypot(...b)) || 1);
+					if (cos < -0.34) {
+						cut = i;
+						break;
+					}
+				}
+			}
+			if (cut < 0) break;
+			out.splice(cut, 1);
+		}
+		// Trim a tail that turns back sharply on the way it came.
+		for (let pops = 0; pops < 6 && out.length > 4; pops++) {
+			const n = out.length;
+			const a = [ out[n - 2][0] - out[n - 4][0], out[n - 2][1] - out[n - 4][1] ];
+			const b = [ out[n - 1][0] - out[n - 2][0], out[n - 1][1] - out[n - 2][1] ];
+			const cos = (a[0] * b[0] + a[1] * b[1]) / ((Math.hypot(...a) * Math.hypot(...b)) || 1);
+			if (cos > -0.5) break;
+			out.pop();
+		}
+		return out;
+	}
+
 	function drape(pts) {
+		pts = untangle(pts);
 		let best = null;
 		for (const cand of [ chaikin(chaikin(pts)), chaikin(pts), pts ]) {
 			const r = drapeWith(cand);

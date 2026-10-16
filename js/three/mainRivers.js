@@ -97,9 +97,9 @@ const VERT = `
 		vKind = aKind;
 		vVis = aVis;
 		vAlong = aAlong;
-		// Close up the terrain-hugging ribbons (outflow.js) carry the main stems; this luminous
-		// line takes over from mid-distance so the network still reads on the state view.
-		vNear = smoothstep(60.0, 200.0, camD);
+		// Rivers: the terrain-hugging ribbons (outflow.js) carry the main stems up to the state view,
+		// where this cheap luminous line takes over. Canals are only drawn as this line.
+		vNear = aKind > 1.5 ? smoothstep(60.0, 200.0, camD) : smoothstep(320.0, 560.0, camD);
 		vec4 wp = modelMatrix * vec4(p, 1.0);
 		vWorld = wp.xyz;
 		gl_Position = projectionMatrix * viewMatrix * wp;

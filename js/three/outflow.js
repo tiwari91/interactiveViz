@@ -78,6 +78,9 @@ const RIBBON_FRAG = `
 	float ripple(vec2 p) { return noise(p) * 0.5 + noise(p * 2.3 + 4.1) * 0.3 + noise(p * 5.1 - 2.7) * 0.2; }
 	void main() {
 		if (vRel < (vKind > 1.5 ? 0.02 : 0.001)) discard;
+		// Main stems hand over to the overview line far out (and skip the shading there).
+		float mainFade = vKind > 2.5 ? 1.0 - smoothstep(380.0, 560.0, length(cameraPosition - vWorld)) : 1.0;
+		if (mainFade <= 0.0) discard;
 		// An inflow runs on down the exposed lake bed and disappears under the current water.
 		if (vKind > 0.5 && vKind < 1.5 && vYl < vLevel - 0.02) discard;
 		float chute = step(1.5, vKind) * step(vKind, 2.5);
@@ -132,7 +135,7 @@ const RIBBON_FRAG = `
 		col = mix(col, uWater * mix(1.6, 0.9, uNight) + vec3(0.03, 0.07, 0.11), vFar * 0.75);
 		float edge = 1.0 - smoothstep(0.55, 1.0, side) * (1.0 - wet * 0.3);
 		float ends = vKind < 0.5 ? smoothstep(0.0, 12.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : vKind > 2.5 ? smoothstep(0.0, 4.0, vAlong) : 1.0;
-		float a = edge * ends * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.8, 0.98, wet);
+		float a = edge * ends * mainFade * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.8, 0.98, wet);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
 		gl_FragColor = vec4(mix(col, uFogColor, fog), a);
 		#include <tonemapping_fragment>
@@ -326,13 +329,20 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				const score = g + Math.abs(a) * (reach ? 0.05 : 0.02);
 				if (!best || score < best.score) best = { q, g, score, dx, dz };
 			}
+			// Never back over the dam into its own lake.
+			{
+				const [ uq, vq ] = own.toLocal(...best.q);
+				if (uq > own.dam.u - 0.3 && own.sOf(uq, vq) < 1.3) best.g = Infinity;
+			}
 			if (best.g > low + CLIMB * 0.8) {
-				// Blocked ahead: any way round that does not climb, short of turning back.
+				// Blocked ahead: any way round that does not climb, short of turning back on itself.
 				for (let a = -2.6; a <= 2.6001; a += 0.2) {
 					const dx = hx * Math.cos(a) - hz * Math.sin(a);
 					const dz = hx * Math.sin(a) + hz * Math.cos(a);
 					const q = [ px + dx * STEP, pz + dz * STEP ];
 					const g = ground2(...q);
+					const [ uq, vq ] = own.toLocal(...q);
+					if (uq > own.dam.u - 0.3 && own.sOf(uq, vq) < 1.3) continue;
 					if (g < best.g) best = { q, g, score: g, dx, dz };
 				}
 				if (best.g > low + CLIMB * 0.8) break;
@@ -512,7 +522,13 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			if (hit) {
 				seq = seq.slice(0, k);
 				const last = seq[seq.length - 1];
-				seq.push([ hit.p[0], Math.min(last[1], hit.p[1]), hit.p[2] ]);
+				// Run on into the bigger river, unless that point lies back the way it came.
+				const prev = seq[Math.max(0, seq.length - 4)];
+				const ax = last[0] - prev[0];
+				const az = last[2] - prev[2];
+				const bx = hit.p[0] - last[0];
+				const bz = hit.p[2] - last[2];
+				if ((ax * bx + az * bz) / ((Math.hypot(ax, az) * Math.hypot(bx, bz)) || 1) > -0.34) seq.push([ hit.p[0], Math.min(last[1], hit.p[1]), hit.p[2] ]);
 				joins[di] = list[hit.di].r.id;
 				break;
 			}
@@ -581,21 +597,34 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		if (di === undefined) continue;
 		// Only on the valley floor and away from the reservoirs' carved ground: in the foothill
 		// canyons and around the lakes the outflow ribbons already run.
+		// Start where the first dam's river joins it, so a dam's outflow and the main stem do not
+		// run side by side below the dam.
+		let from = 0;
+		const joinsHere = endings.filter((e) => e.ending === "stem").map((e) => line.findIndex(([ x, z ]) => Math.hypot(x - e.x, z - e.z) < 1.7)).filter((i) => i >= 0);
+		if (joinsHere.length) from = Math.min(...joinsHere);
 		const runs = [];
 		let run = [];
-		for (const [ x, z ] of line) {
-			if (ground2(x, z) < 1.25 && !basins.surfaceAt(x, z)) run.push([ x, ground2(x, z) + router.OFFSET, z ]);
+		for (const [ x, z ] of line.slice(from)) {
+			if (!lakeAt(x, z, null, 1.0)) run.push([ x, ground2(x, z) + router.OFFSET, z ]);
 			else if (run.length) {
 				runs.push(run);
 				run = [];
 			}
 		}
 		if (run.length) runs.push(run);
-		const wide = line.name in STEM_DAM ? 1.25 : 0.85;
+		const wide = line.name in STEM_DAM ? 0.85 : 0.6;
 		for (const seq of runs) {
 			if (seq.length < 3) continue;
+			// The ribbon carries the main stem from close up to the state view (where a cheap line
+			// takes over), so a river below a dam always has the main stem it runs into. Narrower where the ground slopes
+			// steeply across it, so it never bridges a valley side.
 			const st = stripGeometry(seq, out, { dam: di, kind: KIND.MAIN, joins: true, weight: 0 });
-			strips.push({ ...st, kind: KIND.MAIN, dam: di, centre: seq, shape: () => wide, sample: ground });
+			const narrow = seq.map((p, i) => {
+				const [ sx, sz ] = st.frames[i];
+				const cross = Math.abs(ground2(p[0] + sx * 1.5, p[2] + sz * 1.5) - ground2(p[0] - sx * 1.5, p[2] - sz * 1.5)) / 3;
+				return Math.max(0.45, 1 - cross * 1.6);
+			});
+			strips.push({ ...st, kind: KIND.MAIN, dam: di, centre: seq, shape: (i) => wide * narrow[i], sample: ground });
 		}
 	}
 
@@ -803,6 +832,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		endings,
 		// For tests: each strip's dam, kind, first and last centre point, lowest point and the
 		// biggest step between neighbouring centre points (a gap in the line).
+		// For tests: centre points of the main-stem ribbons.
+		stemPoints: () => strips.filter((st) => st.kind === KIND.MAIN).flatMap((st) => st.centre.map((p) => [ p[0], p[2] ])),
 		links: () => strips.filter((st) => st.kind !== KIND.CHUTE && st.kind !== KIND.MAIN).map((st) => {
 			let gap = 0;
 			let minY = Infinity;
@@ -814,7 +845,20 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			const own = list[st.dam];
 			let inLake = Infinity;
 			for (const p of st.centre) if (own.sOf(...own.toLocal(p[0], p[2])) < 1.05) inLake = Math.min(inLake, p[1]);
-			return { dam: st.dam, kind: st.kind, start: st.centre[0], end: st.centre[st.centre.length - 1], gap, minY, inLake };
+			// Sharpest turn along the line, between headings about 1.5 units apart (a hook or U-turn
+			// shows as a turn near 180 degrees).
+			let turn = 0;
+			const c = st.centre;
+			for (let i = 0, j = 0, k = 0; i < c.length; i++) {
+				while (j < i && st.alongs[i] - st.alongs[j] > 1.5) j++;
+				while (k < c.length - 1 && st.alongs[k] - st.alongs[i] < 1.5) k++;
+				if (j === i || k === i) continue;
+				const a = [ c[i][0] - c[j][0], c[i][2] - c[j][2] ];
+				const b = [ c[k][0] - c[i][0], c[k][2] - c[i][2] ];
+				const cos = (a[0] * b[0] + a[1] * b[1]) / ((Math.hypot(...a) * Math.hypot(...b)) || 1);
+				turn = Math.max(turn, Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI);
+			}
+			return { dam: st.dam, kind: st.kind, start: st.centre[0], end: st.centre[st.centre.length - 1], gap, minY, inLake, turn };
 		}),
 		bankPoints,
 		nearChute,

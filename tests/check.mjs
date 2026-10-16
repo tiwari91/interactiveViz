@@ -604,6 +604,17 @@ async function main() {
 		check("Every outflow starts at its dam (drought, wet, lows)", riverGaps.checked > 100 && riverGaps.bad.dam.length === 0, `${riverGaps.checked} lake-months${riverGaps.bad.dam.length ? `; ${riverGaps.bad.dam.slice(0, 6).join(", ")}` : ""}`);
 		check("Every inflow reaches the current water (drought, wet, lows)", riverGaps.bad.water.length === 0, riverGaps.bad.water.slice(0, 6).join(", ") || "none short");
 		check("No gaps inside any river line", riverGaps.bad.line.length === 0, riverGaps.bad.line.slice(0, 6).join(", ") || "none");
+		// A river that ends at a main stem ends on the drawn main-stem ribbon (the same ribbon is
+		// drawn at every zoom, so this holds at the overview, mid and close zooms), and no river
+		// line hooks or doubles back on itself.
+		const stemJoin = await debug3d(page, `(() => {
+			const sp = c.stemPoints();
+			const off = c.riverEndings().filter((e) => e.ending === "stem").filter((e) => !sp.some((p) => Math.hypot(p[0] - e.x, p[1] - e.z) < 2.5));
+			const hooks = c.riverLinks().filter((l) => l.turn > 120).map((l) => l.id + (l.kind ? " inflow " : " outflow ") + l.turn.toFixed(0));
+			return { stems: c.riverEndings().filter((e) => e.ending === "stem").length, off: off.map((e) => e.id), hooks, ribbon: sp.length };
+		})()`);
+		check("Rivers that reach a main stem end on the drawn main-stem ribbon", stemJoin.stems >= 8 && stemJoin.ribbon > 500 && stemJoin.off.length === 0, `${stemJoin.stems} joins, ${stemJoin.ribbon} ribbon points${stemJoin.off.length ? `; off the ribbon: ${stemJoin.off.join(", ")}` : ""}`);
+		check("No river line turns back on itself (no hooks over 120 degrees)", stemJoin.hooks.length === 0, stemJoin.hooks.join(", ") || "none");
 		const longOut = await debug3d(page, "c.outflow().filter((o) => o.length >= 8 || o.joins).length");
 		const nOut = await debug3d(page, "c.outflow().length");
 		check("Most outflows run well downstream", longOut >= 28, `${longOut} of ${nOut} longer than 8 units or joining a bigger river`);

@@ -130,7 +130,7 @@ const FRAG = `
 			// The ripples tilt R, which breaks the path into glints on its own.
 			float path = smoothstep(0.9975, 0.99985, az) * exp(-del * del * 70.0);
 			float disc = pow(max(dot(Rn, uMoonDir), 0.0), 600.0);
-			col += uLift * uSunColor * (path * 0.12 + disc * 0.3);
+			col += uLift * uSunColor * (path * 0.12 * (1.0 - ndv) * (1.0 - ndv) + disc * 0.3);
 		}
 		float fog = smoothstep(uFogNear, uFogFar, gDist);
 		float edgeA = vRow >= 0.0 ? smoothstep(0.0, 0.3, depth) : 1.0;

@@ -290,7 +290,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				const p = poseOf(THREE, sc.camera, sc.controls);
 				const f = e.key === "+" || e.key === "=" ? 0.7 : 1 / 0.7;
 				const dist = Math.min(sc.controls.maxDistance, Math.max(sc.controls.minDistance, p.dist * f));
-				mover = flyTo(THREE, sc.camera, sc.controls, { ...p, dist, polar: p.polar + (polarFor(dist) - p.polar) * 0.5 }, motionMs(350));
+				mover = flyTo(THREE, sc.camera, sc.controls, { ...p, dist, polar: p.polar + (polarFor(dist, reliefAt(dist)) - p.polar) * 0.5 }, motionMs(350));
 			} else if (e.key === "Escape" && !store.get().selected) {
 				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
 			}
@@ -363,12 +363,11 @@ export function createView3D(container, data, store, tooltip, audio) {
 				}
 			}
 			const [ dx, dz ] = info.center;
-			return {
-				target: [ dx + (b.cx - dx) * 0.3, info.crest - info.height * 0.35, dz + (b.cz - dz) * 0.3 ],
-				dist: 8 + info.halfWidth * 2.2 + b.Lu * 0.55,
-				polar: 0.95,
-				az: Math.atan2(dir[0], dir[1]),
-			};
+			// Far enough to take in the dam, most of the lake behind it and the river below.
+			const target = [ dx + (b.cx - dx) * 0.4, info.crest - info.height * 0.35, dz + (b.cz - dz) * 0.4 ];
+			const dist = 6 + Math.max(info.halfWidth * 2.5, b.Lu * 1.1);
+			const relief = Math.max(0, ringGround(target[0], target[2], Math.max(4, dist * 0.6)) - target[1]) / dist;
+			return { target, dist, polar: polarFor(dist, relief), az: Math.atan2(dir[0], dir[1]) };
 		}
 		function focus(id) {
 			if (!basins.byId.get(id)) return;
@@ -383,13 +382,22 @@ export function createView3D(container, data, store, tooltip, audio) {
 		};
 		// Keep the camera above the terrain and its view of the target clear: sample the
 		// ground along the sight line and lift the camera until every sample is above it.
-		const CLEAR_F = [ 1, 0.9, 0.78, 0.64, 0.5, 0.36 ];
+		const CLEAR_F = [ 1, 0.93, 0.86, 0.78, 0.7, 0.62, 0.54, 0.46, 0.38, 0.3, 0.22 ];
+		// Highest ground in a ring round a point (not just under it): canyon rims count.
+		const RING = Array.from({ length: 12 }, (_, k) => [ Math.cos(k * Math.PI / 6), Math.sin(k * Math.PI / 6) ]);
+		function ringGround(x, z, r) {
+			let g = groundAt(x, z);
+			for (const [ cx, cz ] of RING) g = Math.max(g, groundAt(x + cx * r, z + cz * r), groundAt(x + cx * r * 0.5, z + cz * r * 0.5));
+			return g;
+		}
 		function keepAbove() {
 			const t = sc.controls.target;
 			const p = sc.camera.position;
 			const dist = p.distanceTo(t);
 			const margin = 1.5 + dist * 0.05;
-			let need = -Infinity;
+			// Close in, stay well above the local terrain: at least 40% of the distance to the
+			// target above the highest ground round the camera, so a view never sits beside cliffs.
+			let need = dist < 120 ? ringGround(p.x, p.z, Math.max(3, dist * 0.35)) + dist * 0.4 : -Infinity;
 			for (const f of CLEAR_F) {
 				const x = t.x + (p.x - t.x) * f;
 				const z = t.z + (p.z - t.z) * f;
@@ -403,9 +411,16 @@ export function createView3D(container, data, store, tooltip, audio) {
 
 		// Zooming in tilts toward a low, oblique view (about 35 degrees above the horizon);
 		// zooming out tilts toward looking down on the state.
-		const polarFor = (d) => {
+		// In steep country (high ground round the target) look down more steeply, up to about
+		// 50 degrees, so canyon walls do not fill the view.
+		const reliefAt = (d) => {
+			const t = sc.controls.target;
+			return Math.max(0, ringGround(t.x, t.z, Math.max(4, d * 0.6)) - t.y) / Math.max(1, d);
+		};
+		const polarFor = (d, relief = 0) => {
 			const t = Math.min(1, Math.max(0, (Math.log(d) - Math.log(40)) / (Math.log(1600) - Math.log(40))));
-			return 0.96 - 0.34 * t * t * (3 - 2 * t);
+			const base = 0.96 - 0.34 * t * t * (3 - 2 * t);
+			return Math.max(0.62, base - Math.min(0.34, relief * 1.1) * (1 - t));
 		};
 		let zoomAt = 0;
 		let lastDist = 0;
@@ -421,7 +436,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			if (mover || replayFn || now - zoomAt > 350 || dl < 1e-4) return;
 			off.copy(sc.camera.position).sub(sc.controls.target);
 			sph.setFromVector3(off);
-			sph.phi += (polarFor(d) - sph.phi) * Math.min(1, dl * 2.2);
+			sph.phi += (polarFor(d, reliefAt(d)) - sph.phi) * Math.min(1, dl * 2.2);
 			sph.phi = Math.min(sc.controls.maxPolarAngle, sph.phi);
 			sc.camera.position.copy(sc.controls.target).add(off.setFromSpherical(sph));
 		}
@@ -727,6 +742,25 @@ export function createView3D(container, data, store, tooltip, audio) {
 			},
 			// For tests: camera height above the ground beneath it, and the fly-to pose for a lake.
 			clearance: () => sc.camera.position.y - groundAt(sc.camera.position.x, sc.camera.position.z),
+			// For tests: the camera's height over the highest ground round it against its distance,
+			// whether the sight line to the target clears the ground, and where the target lands on screen.
+			viewCheck() {
+				const p = sc.camera.position;
+				const t = sc.controls.target;
+				const d = p.distanceTo(t);
+				const above = p.y - ringGround(p.x, p.z, Math.max(3, d * 0.35));
+				let clear = true;
+				for (let k = 1; k < 40; k++) {
+					const f = k / 40;
+					const x = t.x + (p.x - t.x) * f;
+					const y = t.y + (p.y - t.y) * f;
+					const z = t.z + (p.z - t.z) * f;
+					if (groundAt(x, z) > y + 0.05) clear = false;
+				}
+				v3.copy(t).project(sc.camera);
+				const r = canvas.getBoundingClientRect();
+				return { dist: d, above, ratio: above / d, clear, screen: [ r.left + (v3.x + 1) / 2 * r.width, r.top + (1 - v3.y) / 2 * r.height ], canvas: [ r.left, r.top, r.right, r.bottom ] };
+			},
 			focusPose,
 			damInView(id) {
 				const info = dams.info.get(id);

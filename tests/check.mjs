@@ -474,6 +474,29 @@ async function main() {
 			if (!(r.clear > 1 && r.dam && r.dist < 60)) flyBad.push(`${id} clear ${r.clear.toFixed(1)} dam ${r.dam} dist ${r.dist.toFixed(0)}`);
 		}
 		check("Fly-to keeps the camera above ground, close, with the dam in view", flyBad.length === 0, flyBad.join("; ") || `${flyIds.length} lakes`);
+		// Zoomed right in over the steepest reservoirs: the camera stays well above the local
+		// terrain (40% of its distance), sees the target past every wall, and the target sits in
+		// the open part of the view, not under the detail card.
+		const steepBad = [];
+		for (const id of [ "PNF", "NML", "DNP", "ORO", "SHA" ]) {
+			await setState(page, { selected: id });
+			await waitStill(page, 400);
+			const sp = (await debug3d(page, "c.viewCheck()")).screen;
+			await page.mouse.move(sp[0], sp[1]);
+			for (let k = 0; k < 16; k++) {
+				await page.mouse.wheel(0, -400);
+				await page.waitForTimeout(60);
+			}
+			await waitStill(page, 1200);
+			const v = await debug3d(page, "c.viewCheck()");
+			const card = await page.evaluate(() => { const c = document.querySelector(".detail-card"); if (!c || c.hidden) return null; const r = c.getBoundingClientRect(); return [ r.left, r.top, r.right, r.bottom ]; });
+			const [ x, y ] = v.screen;
+			const onCanvas = x > v.canvas[0] && x < v.canvas[2] && y > v.canvas[1] && y < v.canvas[3];
+			const underCard = card && x > card[0] && x < card[2] && y > card[1] && y < card[3];
+			if (!(v.ratio >= 0.38 && v.clear && onCanvas && !underCard)) steepBad.push(`${id} height/dist ${v.ratio.toFixed(2)} sight ${v.clear ? "clear" : "blocked"} at ${x.toFixed(0)},${y.toFixed(0)}${underCard ? " under card" : ""}`);
+		}
+		await setState(page, { selected: null });
+		check("Zoomed in over the steepest lakes: above the terrain, clear sight line, target in view", steepBad.length === 0, steepBad.join("; ") || "PNF, NML, DNP, ORO, SHA");
 		// Orbiting right down and zooming in cannot put the camera into the hills.
 		await page.evaluate(() => { const c = window.droughtViz.views["3d"].debug(); const t = c.sc.controls.target; const p = c.sc.camera.position; p.set(t.x + 15, t.y - 3, t.z + 15); });
 		await page.waitForTimeout(800);

@@ -43,7 +43,7 @@ export const PRESETS = {
 		label: "Day", top: 0x2f68b8, horizon: 0xcfdfec, ground: 0xb9c6cf, sun: [ -0.42, 0.78, 0.46 ], sunColor: 0xfff1dc, sunIntensity: 1.55, env: 0.45,
 		hemiSky: 0xdfe9f5, hemiGround: 0x7d725c, hemiIntensity: 0.25, fog: 0xbfd1e3, fogNear: 1100, fogFar: 4200, stars: 0,
 		river: 0x3a8cc6, riverHi: 0xe8f7ff, glow: 0, border: 0xffffff, borderOpacity: 0.55,
-		deep: 0x174a63, shallow: 0x2c7189, oceanDeep: 0x173d57, oceanShallow: 0x2b6a84,
+		deep: 0x123f5a, shallow: 0x2f8a8c, oceanDeep: 0x173d57, oceanShallow: 0x2b6a84,
 	},
 	golden: {
 		label: "Golden hour", top: 0x41639e, horizon: 0xf0bd88, ground: 0x9a7a62, sun: [ -0.86, 0.2, 0.48 ], sunColor: 0xffc890, sunIntensity: 1.6, env: 0.45,

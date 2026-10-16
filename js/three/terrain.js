@@ -13,7 +13,7 @@ function palette(THREE) {
 	return {
 		beach: c(0xd9c9a3),
 		valleyWet: c(0x6a7d47), fieldWet: c(0x7d8d52),
-		valleyDry: c(0xa8926a), fieldDry: c(0x95825d),
+		valleyDry: c(0xa8926a), fieldDry: c(0x7c8150),
 		hillWet: c(0x6a7445), hillDry: c(0xa08658),
 		forestWet: c(0x2a3f26), forestDry: c(0x37442a),
 		sage: c(0x8a8b6a),
@@ -55,7 +55,8 @@ function shadeTerrain(P, m, slopeY, lon, lat, nz, inCA, out, outDry) {
 		dry.copy(P.beach);
 	} else {
 		// Patchwork of fields on the valley floor, plain ground elsewhere.
-		const field = m < 160 ? hash2(Math.floor(lon * 45), Math.floor(lat * 45)) : 0.5;
+		// Irrigated fields stay green through a drought, so the valley floor reads as a patchwork.
+		const field = m < 160 ? Math.pow(hash2(Math.floor(lon * 45), Math.floor(lat * 45)), 1.6) : 0.3;
 		tmp.copy(P.valleyWet).lerp(P.fieldWet, field);
 		dry.copy(P.valleyDry).lerp(P.fieldDry, field);
 		const hill = smoothstep(150, 500, m + nz * 120);

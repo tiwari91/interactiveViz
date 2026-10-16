@@ -16,6 +16,7 @@ const RIBBON_VERT = `
 	uniform float uSpill[DAMS];
 	uniform float uLevel[DAMS];
 	varying float vLevel;
+	varying float vYl;
 	varying float vSide;
 	varying float vAlong;
 	varying float vRel;
@@ -38,6 +39,7 @@ const RIBBON_VERT = `
 		vAlong = aAlong;
 		vRel = rel;
 		vLevel = uLevel[k];
+		vYl = position.y;
 		vKind = kind;
 		vEnd = aMeta.z - aAlong;
 		vec4 wp = modelMatrix * vec4(p, 1.0);
@@ -62,6 +64,7 @@ const RIBBON_FRAG = `
 	varying float vAlong;
 	varying float vRel;
 	varying float vLevel;
+	varying float vYl;
 	varying float vKind;
 	varying float vEnd;
 	varying vec3 vWorld;
@@ -76,7 +79,7 @@ const RIBBON_FRAG = `
 	void main() {
 		if (vRel < (vKind > 1.5 ? 0.02 : 0.001)) discard;
 		// An inflow runs on down the exposed lake bed and disappears under the current water.
-		if (vKind > 0.5 && vKind < 1.5 && vWorld.y < vLevel - 0.02) discard;
+		if (vKind > 0.5 && vKind < 1.5 && vYl < vLevel - 0.02) discard;
 		float chute = step(1.5, vKind) * step(vKind, 2.5);
 		float speed = mix(0.9 + 2.6 * vRel, 7.0, chute);
 		float side = abs(vSide);

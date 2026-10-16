@@ -2,7 +2,7 @@
 // month animation, picking, fly-to, drought replay, compare split and sound cues.
 import { loadThree, webglAvailable } from "./three/loader.js";
 import { createScene, homePose, comparePose } from "./three/scene.js";
-import { createWorld, loadElevation } from "./three/world.js";
+import { createWorld, loadElevation, EXAGGERATION } from "./three/world.js";
 import { createBasins } from "./three/basins.js";
 import { createTerrain } from "./three/terrain.js";
 import { createLakes, createOcean, waterUniforms } from "./three/water.js";
@@ -121,7 +121,29 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const snapshot = createSnapshots(data, basins, dams.foam.spots);
 		dams.foam.uniforms.uTime = shared.uTime;
 		dams.foam.mesh.material.uniforms.uTime = shared.uTime;
-		sc.scene.add(sky.mesh, terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, riparian.group, mainRivers.mesh);
+		// Everything on the ground sits in one group whose vertical scale follows the zoom: the
+		// overview keeps its relief exaggeration so the Sierra reads, a close view comes down to
+		// near true scale so foothills are not sheer cliffs. CPU heights are scaled by vScale.
+		const land = new THREE.Group();
+		land.add(terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, riparian.group, mainRivers.mesh);
+		sc.scene.add(sky.mesh, land);
+		let vScale = 1;
+		const NEAR_EXAG = 1.6;
+		const scaleFor = (d) => {
+			const t = Math.min(1, Math.max(0, (Math.log(d) - Math.log(12)) / (Math.log(320) - Math.log(12))));
+			return (NEAR_EXAG + (EXAGGERATION - NEAR_EXAG) * t * t * (3 - 2 * t)) / EXAGGERATION;
+		};
+		function fitScale() {
+			const k = scaleFor(sc.camera.position.distanceTo(sc.controls.target));
+			if (Math.abs(k - vScale) < 1e-4) return;
+			const r = k / vScale;
+			sc.controls.target.y *= r;
+			sc.camera.position.y *= r;
+			vScale = k;
+			land.scale.y = k;
+			land.updateMatrixWorld(true);
+			riparian.setUnsquash(1 / k);
+		}
 
 		// Invisible pick volumes over each lake and dam.
 		const pickGeom = new THREE.CylinderGeometry(1, 1, 1, 18);
@@ -135,7 +157,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			m4.makeScale((b.Lu * 1.2 - b.u0 + 0.6) / 2, b.D + 4, b.Lv * 1.15).premultiply(basis).setPosition(x, b.P - b.D / 2 + 1, z);
 			pick.setMatrixAt(i, m4);
 		});
-		sc.scene.add(pick);
+		land.add(pick);
 
 		// Animated state starts at the current month.
 		const s0 = snapshot(store.get().dateIndex);
@@ -364,9 +386,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 			}
 			const [ dx, dz ] = info.center;
 			// Far enough to take in the dam, most of the lake behind it and the river below.
-			const target = [ dx + (b.cx - dx) * 0.4, info.crest - info.height * 0.35, dz + (b.cz - dz) * 0.4 ];
 			const dist = 6 + Math.max(info.halfWidth * 2.5, b.Lu * 1.1);
-			const relief = Math.max(0, ringGround(target[0], target[2], Math.max(4, dist * 0.6)) - target[1]) / dist;
+			const k = scaleFor(dist);
+			const target = [ dx + (b.cx - dx) * 0.4, (info.crest - info.height * 0.35) * k, dz + (b.cz - dz) * 0.4 ];
+			const relief = Math.max(0, ringGround(target[0], target[2], Math.max(4, dist * 0.6)) / vScale * k - target[1]) / dist;
 			return { target, dist, polar: polarFor(dist, relief), az: Math.atan2(dir[0], dir[1]) };
 		}
 		function focus(id) {
@@ -378,7 +401,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		// Ground under a point: carved basin surface if any, else the DEM; never below the sea plane.
 		const groundAt = (x, z) => {
 			const s = basins.surfaceAt(x, z);
-			return Math.max(0.3, s ? s.h : world.groundY(x, z));
+			return Math.max(0.3, s ? s.h : world.groundY(x, z)) * vScale;
 		};
 		// Keep the camera above the terrain and its view of the target clear: sample the
 		// ground along the sight line and lift the camera until every sample is above it.
@@ -472,6 +495,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			} else if (mover && mover(now)) mover = null;
 			sc.controls.update();
 			zoomTilt(now);
+			fitScale();
 			keepAbove();
 			fitNear();
 			if (shared.uLift.value > 0) {
@@ -568,10 +592,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 				const cr = container.getBoundingClientRect();
 				const avoid = controls.tagRects().map((r) => [ r.left - cr.left - 4, r.top - cr.top - 4, r.right - cr.left + 4, r.bottom - cr.top + 4 ]);
 				labelsLeft.update(sc.camera, w, h, null, false, sc.controls.target, groundAt, reachScale, halves[0], avoid);
-				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale, halves[1], avoid);
+				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale, halves[1], avoid, vScale);
 			} else {
 				if (labelsLeft) labelsLeft.update(sc.camera, w, h, null, true);
-				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale);
+				labels.update(sc.camera, w, h, store.get().selected ?? hovered, false, sc.controls.target, groundAt, reachScale, null, [], vScale);
 			}
 
 			if (now - lastAudio > 150) {
@@ -650,7 +674,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				if (on) {
 					const keyAt = (id, dist, az, polar = 0.98) => {
 						const b = basins.byId.get(id);
-						return { target: [ b.cx, b.P - 2, b.cz ], dist, az, polar };
+						return { target: [ b.cx, (b.P - 2) * scaleFor(dist), b.cz ], dist, az, polar };
 					};
 					const wide = home();
 					// Under reduced motion the camera cuts from stop to stop instead of flying.
@@ -669,7 +693,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			},
 			screenPos(id) {
 				const b = basins.byId.get(id);
-				v3.set(b.cx, b.levelFor(0.6), b.cz).project(sc.camera);
+				v3.set(b.cx, b.levelFor(0.6) * vScale, b.cz).project(sc.camera);
 				return [ (v3.x + 1) / 2 * container.clientWidth, (1 - v3.y) / 2 * container.clientHeight ];
 			},
 			level: (id) => cur.levels[basins.basins.findIndex((b) => b.r.id === id)],
@@ -742,6 +766,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			},
 			// For tests: camera height above the ground beneath it, and the fly-to pose for a lake.
 			clearance: () => sc.camera.position.y - groundAt(sc.camera.position.x, sc.camera.position.z),
+			vScale: () => vScale,
 			// For tests: the camera's height over the highest ground round it against its distance,
 			// whether the sight line to the target clears the ground, and where the target lands on screen.
 			viewCheck() {
@@ -764,7 +789,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			focusPose,
 			damInView(id) {
 				const info = dams.info.get(id);
-				v3.set(info.center[0], info.crest, info.center[1]).project(sc.camera);
+				v3.set(info.center[0], info.crest * vScale, info.center[1]).project(sc.camera);
 				return v3.z < 1 && Math.abs(v3.x) < 0.9 && Math.abs(v3.y) < 0.9;
 			},
 			// For tests: lowest height of each spillway chute floor above the ground under its full width.

@@ -305,7 +305,8 @@ async function main() {
 		// Detail card scene: waterline follows % full, low lakes show a bathtub ring, full ones barely any.
 		const scene = async (id, m) => {
 			await setState(page, { selected: id, dateIndex: await monthIndex(page, m) });
-			await page.waitForTimeout(1500);
+			// The card's waterline animates; give slow software-rendered frames time to finish it.
+			await page.waitForTimeout(3000);
 			return page.evaluate(() => {
 				const s = document.querySelector(".detail-dam");
 				return { pct: +s.dataset.pct, water: +s.querySelector(".dam-water").getAttribute("y"), ring: +s.querySelector("clipPath rect").getAttribute("height"), low: s.classList.contains("low"), label: s.getAttribute("aria-label") };
@@ -499,7 +500,8 @@ async function main() {
 		check("Zoomed in over the steepest lakes: above the terrain, clear sight line, target in view", steepBad.length === 0, steepBad.join("; ") || "PNF, NML, DNP, ORO, SHA");
 		// Orbiting right down and zooming in cannot put the camera into the hills.
 		await page.evaluate(() => { const c = window.droughtViz.views["3d"].debug(); const t = c.sc.controls.target; const p = c.sc.camera.position; p.set(t.x + 15, t.y - 3, t.z + 15); });
-		await page.waitForTimeout(800);
+		// A frame or two later (SwiftShader frames can take most of a second).
+		await page.waitForFunction(() => window.droughtViz.views["3d"].debug().clearance() > 1, null, { timeout: 6000, polling: 200 }).catch(() => {});
 		check("Camera stays above the terrain when pushed into it", (await debug3d(page, "c.clearance()")) > 1, `${(await debug3d(page, "c.clearance()")).toFixed(2)} units`);
 		const spike = await debug3d(page, "c.maxSpike()");
 		check("No terrain spikes: every land cell within 220 m of its neighbours' mean", spike <= 221, `${spike.toFixed(0)} m`);

@@ -8,6 +8,7 @@ const VERT = `
 	varying vec3 vTint;
 	varying float vHi;
 	varying vec2 vUv;
+	varying float vYl;
 	#ifdef USE_INSTANCING
 		attribute float aHighlight;
 		attribute float aRow;
@@ -35,6 +36,7 @@ const VERT = `
 		#endif
 		vec4 w = modelMatrix * p;
 		vWorld = w.xyz;
+		vYl = p.y; // height before the land's zoom-dependent vertical scale
 		gl_Position = projectionMatrix * viewMatrix * w;
 	}`;
 
@@ -66,6 +68,7 @@ const FRAG = `
 	varying vec3 vTint;
 	varying float vHi;
 	varying vec2 vUv;
+	varying float vYl;
 	float gDist;
 
 	// Each wave fades out with distance before it can alias into moire.
@@ -87,7 +90,7 @@ const FRAG = `
 		float depth = 6.0;
 		if (vRow >= 0.0) {
 			float below = texture2D(uBed, vec2(vUv.x, (vRow + vUv.y) / uRows)).r * uBedScale;
-			depth = vWorld.y - (vFull - below);
+			depth = vYl - (vFull - below);
 			if (depth < 0.0) discard;
 		}
 		gDist = length(cameraPosition - vWorld);

@@ -144,10 +144,10 @@ function material(THREE, uniforms) {
 		shader.uniforms.uNight = uniforms.uNight;
 		shader.uniforms.uGold = uniforms.uGold;
 		shader.vertexShader = shader.vertexShader
-			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nattribute float bare;\nuniform float uDry;\nvarying vec3 vWPos;\nvarying vec3 vWN;\nvarying float vBare;")
+			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nattribute float bare;\nuniform float uDry;\nvarying vec3 vWPos;\nvarying vec3 vWN;\nvarying float vBare;\nvarying float vLY;")
 			.replace("#include <color_vertex>", "#include <color_vertex>\n\tvColor.rgb = mix(color.rgb, colorDry, uDry);\n\tvBare = bare;")
-			.replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\n\tvWN = normalize(mat3(modelMatrix) * objectNormal);")
-			.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n\tvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+			.replace("#include <beginnormal_vertex>", "#include <beginnormal_vertex>\n\tvWN = normalize(objectNormal);")
+			.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n\tvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n\tvLY = transformed.y;");
 		// Close-up detail: grass grain and tufts on gentle ground, cracked rock on steep ground,
 		// from a mipmapped detail texture at two scales, plus matching bumps. Fades with distance.
 		shader.fragmentShader = shader.fragmentShader
@@ -155,6 +155,7 @@ function material(THREE, uniforms) {
 varying vec3 vWPos;
 varying vec3 vWN;
 varying float vBare;
+varying float vLY;
 uniform sampler2D uDetail;
 uniform float uNight;
 uniform float uGold;
@@ -188,7 +189,7 @@ vec4 gD1;`)
 		vec4 d4 = texture2D(uDetail, vWPos.xz * 0.023 + 0.13);
 		float scrubN = d2.g * 0.45 + d4.r * 0.25 + d3.r * 0.3;
 		// The flat valley floor is farmland, not scrub: rectangular fields instead.
-		float valley = smoothstep(1.2, 0.8, vWPos.y) * (1.0 - smoothstep(0.02, 0.06, slope)) * (1.0 - vBare);
+		float valley = smoothstep(1.2, 0.8, vLY) * (1.0 - smoothstep(0.02, 0.06, slope)) * (1.0 - vBare);
 		float patchNear = 1.0 - smoothstep(90.0, 260.0, dist);
 		float scrub = smoothstep(0.44, 0.6, scrubN) * veg * (1.0 - valley) * (0.35 + 0.65 * patchNear);
 		float clumps = smoothstep(0.3, 0.7, gD1.a + gD1.g * 0.5);
@@ -232,7 +233,7 @@ vec4 gD1;`)
 		vec3 V = normalize(cameraPosition - vWPos);
 		vec3 N = normalize(vWN);
 		float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-		float hiGround = smoothstep(0.0, 40.0, vWPos.y);
+		float hiGround = smoothstep(0.0, 40.0, vLY);
 		totalEmissiveRadiance += uNight * vec3(0.07, 0.09, 0.14) * (rim * 0.9 + hiGround * 0.25) * diffuseColor.rgb * 3.0;
 	}`)
 			.replace("#include <normal_fragment_maps>", `#include <normal_fragment_maps>

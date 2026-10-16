@@ -96,9 +96,13 @@ function broadleaf(THREE, detail = 0) {
 }
 
 // Instances shrink to nothing between FADE_NEAR and FADE_FAR from the camera.
+// Trees keep their shape when the land's vertical scale changes with zoom (view3d).
+const unsquash = { value: 1 };
 function fadeByDistance(mat) {
 	mat.onBeforeCompile = (sh) => {
-		sh.vertexShader = sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+		sh.uniforms.uUnsquash = unsquash;
+		sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nuniform float uUnsquash;").replace("#include <begin_vertex>", `#include <begin_vertex>
+	transformed.y *= uUnsquash;
 	{
 		vec3 base = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 		float f = 1.0 - smoothstep(${FADE_NEAR.toFixed(1)}, ${FADE_FAR.toFixed(1)}, distance(base, cameraPosition));
@@ -305,6 +309,9 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 	return {
 		group,
 		// Skip the whole set when the camera is too high for any tree to be drawn.
+		setUnsquash(v) {
+			unsquash.value = v;
+		},
 		update(camera, groundBelow) {
 			group.visible = camera.position.y - groundBelow < FADE_FAR;
 		},

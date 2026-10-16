@@ -44,7 +44,7 @@ export function createLabels(THREE, container, basins, maxCap) {
 		// phone frames the state from further out), so names show over the same part of it.
 		// clip: [x0, x1, y0, y1] screen box this layer covers (one half of the compare split), or
 		// null; avoid: [x0, y0, x1, y1] boxes names must keep clear of (e.g. the compare chips).
-		update(camera, width, height, active, hidden, target = null, groundAt = null, reachScale = 1, clip = null, avoid = []) {
+		update(camera, width, height, active, hidden, target = null, groundAt = null, reachScale = 1, clip = null, avoid = [], yScale = 1) {
 			layer.style.display = hidden ? "none" : "";
 			if (hidden) return;
 			layer.style.clipPath = clip ? `inset(${clip[2]}px ${Math.max(0, width - clip[1])}px ${Math.max(0, height - clip[3])}px ${clip[0]}px)` : "";
@@ -54,7 +54,7 @@ export function createLabels(THREE, container, basins, maxCap) {
 			const near = target ? cam.distanceTo(target) : Infinity;
 			const reach = near < 400 ? near * 4 + 80 : Infinity;
 			for (const it of items) {
-				v.set(it.b.cx, it.b.P + 2.2, it.b.cz);
+				v.set(it.b.cx, it.b.P * yScale + 2.2 * Math.max(0.5, yScale), it.b.cz);
 				const dist = v.distanceTo(cam);
 				const isActive0 = it.b.r.id === active;
 				let hide = !isActive0 && dist > reach;

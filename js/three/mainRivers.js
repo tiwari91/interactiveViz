@@ -44,7 +44,7 @@ const KIND = { river: 0, delta: 1, canal: 2 };
 // World [x, z] points, about one unit apart, along every main-stem river and Delta channel:
 // the outflow ribbons below the dams run on until they meet one of these.
 export function stemLines(world) {
-	return [ ...Object.values(RIVERS), ...Object.values(DELTA) ].map((ll) => {
+	return [ ...Object.entries(RIVERS), ...Object.entries(DELTA) ].map(([ name, ll ]) => {
 		const pts = chaikin(chaikin(chaikin(ll.map((p) => world.project(p)))));
 		const seq = [];
 		for (let i = 0; i < pts.length - 1; i++) {
@@ -54,9 +54,13 @@ export function stemLines(world) {
 			for (let k = 0; k < n; k++) seq.push([ ax + (bx - ax) * k / n, az + (bz - az) * k / n ]);
 		}
 		seq.push(pts[pts.length - 1]);
+		seq.name = name;
 		return seq;
 	});
 }
+
+// The dam whose release a main stem carries below it (the Delta channels carry the Sacramento).
+export const STEM_DAM = { Sacramento: "SHA", Feather: "ORO", Yuba: "BUL", American: "FOL", "San Joaquin": "MIL", Tuolumne: "DNP", Stanislaus: "NML", Merced: "NML" };
 
 function chaikin(p) {
 	const out = [ p[0] ];
@@ -93,7 +97,9 @@ const VERT = `
 		vKind = aKind;
 		vVis = aVis;
 		vAlong = aAlong;
-		vNear = smoothstep(18.0, 70.0, camD);
+		// Close up the terrain-hugging ribbons (outflow.js) carry the main stems; this luminous
+		// line takes over from mid-distance so the network still reads on the state view.
+		vNear = smoothstep(60.0, 200.0, camD);
 		vec4 wp = modelMatrix * vec4(p, 1.0);
 		vWorld = wp.xyz;
 		gl_Position = projectionMatrix * viewMatrix * wp;

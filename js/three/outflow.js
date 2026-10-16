@@ -4,7 +4,7 @@
 // and small warm lights on the dam at night. Width, speed, foam and mist follow
 // the same release value that drives the dam's sound (release.js).
 import { createRouter, stripGeometry, placeStrip, KIND, ACROSS, CLIMB } from "./outflowPaths.js";
-import { stemLines } from "./mainRivers.js";
+import { stemLines, STEM_DAM } from "./mainRivers.js";
 
 const RIBBON_VERT = `
 	attribute float aSide;
@@ -25,7 +25,7 @@ const RIBBON_VERT = `
 	void main() {
 		int k = int(aMeta.x + 0.5);
 		float kind = aMeta.y;
-		float rel = kind > 1.5 ? uSpill[k] : uRelease[k];
+		float rel = kind > 1.5 && kind < 2.5 ? uSpill[k] : uRelease[k];
 		// Geometry is rebuilt on the ground for each month's width (see placeStrip).
 		vec3 p = position + vec3(0.0, 0.03, 0.0);
 		// Seen from far away the big rivers widen to stay a few pixels wide, and lift a little
@@ -77,45 +77,59 @@ const RIBBON_FRAG = `
 		if (vRel < (vKind > 1.5 ? 0.02 : 0.001)) discard;
 		// An inflow runs on down the exposed lake bed and disappears under the current water.
 		if (vKind > 0.5 && vKind < 1.5 && vWorld.y < vLevel - 0.02) discard;
-		float chute = step(1.5, vKind);
+		float chute = step(1.5, vKind) * step(vKind, 2.5);
 		float speed = mix(0.9 + 2.6 * vRel, 7.0, chute);
 		float side = abs(vSide);
-		// The strip carries a gravel bank on each side; the edge of the water wanders.
+		// Ground slope under the ribbon (from screen-space derivatives): white water only where
+		// the river runs steeply, not as a stroke along its edges.
+		vec3 gN = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+		float steep = 1.0 - abs(gN.y);
+		// The water's edge wanders a little; outside it, wet dark gravel and rock blend into the ground.
 		float wob = noise(vec2(vAlong * 0.9, vSide > 0.0 ? 1.7 : 5.3)) - 0.5;
-		float waterEdge = mix(0.8, 1.0, chute) + wob * 0.12 * (1.0 - chute);
-		float wet = 1.0 - smoothstep(waterEdge - 0.06, waterEdge, side);
+		float waterEdge = mix(0.74, 0.98, chute) + wob * 0.14 * (1.0 - chute);
+		float wet = 1.0 - smoothstep(waterEdge - 0.08, waterEdge + 0.02, side);
 		wet = mix(wet, 1.0, vFar);
+		// Flowing ripples: two octaves scrolled downstream at different speeds, stretched along the flow.
 		vec2 q = vec2(vAlong * 1.1 - uTime * speed, vSide * 3.2);
 		float h0 = ripple(q);
 		float hx = ripple(q + vec2(0.07, 0.0));
 		float hy = ripple(q + vec2(0.0, 0.07));
-		vec3 n = normalize(vec3((h0 - hx) * 2.4, 1.0, (h0 - hy) * 1.2));
+		float rough = 1.8 + 3.0 * vRel + 6.0 * steep;
+		vec3 n = normalize(vec3((h0 - hx) * rough, 1.0, (h0 - hy) * rough * 0.5));
 		vec3 V = normalize(cameraPosition - vWorld);
-		float fres = 0.04 + 0.96 * pow(1.0 - max(dot(n, V), 0.0), 5.0);
+		float ndv = max(dot(n, V), 0.0);
+		float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
 		vec3 R = reflect(-V, n);
+		// Reflection of the sky the scene is lit by: bright by day, near black at night.
 		vec3 sky = mix(uSkyHorizon, uSkyTop, clamp(R.y * 1.4, 0.0, 1.0));
-		// Deeper and darker mid-channel, clearer toward the banks.
-		float depth = 1.0 - side / max(0.2, waterEdge);
-		vec3 body = mix(uWater * 1.25, uWater * 0.62, smoothstep(0.0, 0.9, depth));
-		vec3 col = mix(body, sky, fres * 0.7);
-		col += uSunColor * pow(max(dot(R, uSunDir), 0.0), 140.0) * 1.6;
-		// White water: churn below the outlet, riffles where the flow is strong, all of a chute.
-		float churn = vKind < 0.5 ? exp(-vAlong / (1.2 + 3.0 * vRel)) : 0.0;
+		// Water colour from depth: brown-green over the shallow gravel at the edges, dark teal mid-channel.
+		float depth = clamp(1.0 - side / max(0.2, waterEdge), 0.0, 1.0);
+		vec3 shallowC = vec3(0.075, 0.08, 0.05);
+		vec3 deepC = vec3(0.012, 0.05, 0.055);
+		vec3 body = mix(shallowC, deepC, smoothstep(0.05, 0.8, depth)) * (1.0 - 0.75 * uNight);
+		vec3 col = mix(body, sky, fres);
+		col += uSunColor * pow(max(dot(R, uSunDir), 0.0), 220.0) * (1.4 - 0.6 * uNight);
+		// White water: churn just below the outlet, rapids where the bed is steep, aeration on a chute.
+		float churn = vKind < 0.5 ? exp(-vAlong / (0.8 + 2.0 * vRel)) : 0.0;
 		float streak = noise(vec2(vAlong * 0.8 - uTime * speed * 0.7, vSide * 7.0));
-		float foam = smoothstep(0.84 - 0.18 * vRel - 0.45 * churn, 0.97, h0 * 0.55 + streak * 0.45) + churn * 0.5;
-		foam += smoothstep(waterEdge - 0.16, waterEdge - 0.03, side) * wet * 0.35 * (0.4 + vRel);
-		foam = mix(foam, 0.55 + 0.45 * smoothstep(0.35, 0.75, streak), chute);
-		col = mix(col, uFoam, clamp(foam, 0.0, 1.0) * 0.9);
-		col += uNight * vec3(0.04, 0.07, 0.1) * (0.6 + foam);
-		// Wet gravel bank outside the water.
-		vec3 bank = uBank * (0.75 + 0.35 * noise(vec2(vAlong * 6.0, vSide * 9.0)));
-		bank *= mix(0.7, 1.0, smoothstep(waterEdge, 1.0, side));
+		float rapids = smoothstep(0.18, 0.45, steep) * (0.4 + 0.6 * vRel);
+		float foam = smoothstep(0.75, 0.98, h0 * 0.4 + streak * 0.6) * (rapids + churn * 0.8);
+		foam += churn * 0.35 * smoothstep(0.3, 0.7, streak);
+		// Chute: a thin fast sheet over the concrete, white and aerated in streaks down the steep part.
+		float sheet = smoothstep(0.25, 0.8, noise(vec2(vSide * 9.0, vAlong * 0.6 - uTime * 6.0)) * 0.6 + streak * 0.4);
+		foam = mix(foam, (0.35 + 0.65 * sheet) * (0.5 + 0.5 * smoothstep(0.1, 0.35, steep)), chute);
+		vec3 foamC = uFoam * mix(1.0, 0.18, uNight);
+		col = mix(col, foamC, clamp(foam, 0.0, 1.0) * 0.85);
+		// Wet bank: dark gravel and rock right at the water, drying and fading into the ground.
+		float grit = noise(vec2(vAlong * 6.0, vSide * 9.0));
+		float dryness = smoothstep(waterEdge, 1.0, side);
+		vec3 bank = mix(uBank * 0.38, uBank * 0.75, dryness) * (0.65 + 0.6 * grit) * (1.0 - 0.7 * uNight);
 		col = mix(bank, col, wet);
-		// From afar: a clean, slightly luminous blue line.
-		col = mix(col, uWater * 1.9 + vec3(0.04, 0.1, 0.16) * (1.0 + uNight), vFar * 0.75);
-		float edge = 1.0 - smoothstep(0.86, 1.0, side);
-		float ends = vKind < 0.5 ? smoothstep(0.0, 12.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : 1.0;
-		float a = edge * ends * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.75, 0.97, wet);
+		// From afar: a clean blue line so the river network reads on the state view (dimmer at night).
+		col = mix(col, uWater * mix(1.6, 0.9, uNight) + vec3(0.03, 0.07, 0.11), vFar * 0.75);
+		float edge = 1.0 - smoothstep(0.55, 1.0, side) * (1.0 - wet * 0.3);
+		float ends = vKind < 0.5 ? smoothstep(0.0, 12.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : vKind > 2.5 ? smoothstep(0.0, 4.0, vAlong) : 1.0;
+		float a = edge * ends * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.8, 0.98, wet);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
 		gl_FragColor = vec4(mix(col, uFogColor, fog), a);
 		#include <tonemapping_fragment>
@@ -216,7 +230,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	const ONWARD_MAX = 140;
 	const stemGrid = new Map();
 	const stemPts = [];
-	for (const line of stemLines(world)) {
+	const stems = stemLines(world);
+	for (const line of stems) {
 		for (const p of line) {
 			stemPts.push(p);
 			const key = `${Math.floor(p[0] / STEM_CELL)},${Math.floor(p[1] / STEM_CELL)}`;
@@ -554,6 +569,33 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		}
 	});
 
+	// Main stems and Delta channels as the same ribbon, so close up a river below a dam runs on
+	// into the Sacramento or San Joaquin instead of meeting a line that has faded out. Each
+	// carries the release of the big dam above it; on the valley floor it never fades.
+	const damIndex = new Map(list.map((b, i) => [ b.r.id, i ]));
+	for (const line of stems) {
+		const di = damIndex.get(STEM_DAM[line.name] ?? "SHA");
+		if (di === undefined) continue;
+		// Only on the valley floor and away from the reservoirs' carved ground: in the foothill
+		// canyons and around the lakes the outflow ribbons already run.
+		const runs = [];
+		let run = [];
+		for (const [ x, z ] of line) {
+			if (ground2(x, z) < 1.25 && !basins.surfaceAt(x, z)) run.push([ x, ground2(x, z) + router.OFFSET, z ]);
+			else if (run.length) {
+				runs.push(run);
+				run = [];
+			}
+		}
+		if (run.length) runs.push(run);
+		const wide = line.name in STEM_DAM ? 1.25 : 0.85;
+		for (const seq of runs) {
+			if (seq.length < 3) continue;
+			const st = stripGeometry(seq, out, { dam: di, kind: KIND.MAIN, joins: true, weight: 0 });
+			strips.push({ ...st, kind: KIND.MAIN, dam: di, centre: seq, shape: () => wide, sample: ground });
+		}
+	}
+
 	const positions = new Float32Array(out.count * 3);
 	const geom = new THREE.BufferGeometry();
 	geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -581,7 +623,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			uSunColor: shared.uSunColor,
 			uSkyTop: shared.uSkyTop,
 			uSkyHorizon: shared.uSkyHorizon,
-			uBank: { value: new THREE.Color(0x8c7e66) },
+			uBank: { value: new THREE.Color(0x6e6352) },
 			uWater: { value: new THREE.Color(0x2f7186) },
 			uFoam: { value: new THREE.Color(0xf2fbff) },
 			uNight: night,
@@ -589,6 +631,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		transparent: true,
 		depthWrite: false,
 		side: THREE.DoubleSide,
+		extensions: { derivatives: true },
 		polygonOffset: true,
 		polygonOffsetFactor: -6,
 		polygonOffsetUnits: -6,
@@ -657,7 +700,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	group.add(ribbon, mistPoints, lights);
 
 	// Half-width scale per kind for a release value.
-	const widthFor = (kind, rel) => (kind === KIND.OUTFLOW ? 0.38 + 0.8 * rel : kind === KIND.INFLOW ? 0.3 + 0.25 * rel : 1);
+	const widthFor = (kind, rel) => (kind === KIND.OUTFLOW ? 0.38 + 0.8 * rel : kind === KIND.INFLOW ? 0.3 + 0.25 * rel : kind === KIND.MAIN ? 0.7 + 0.9 * rel : 1);
 	// Ground heights under each strip at five release levels. They are sampled in idle time
 	// after the first frame; from then on a month change only interpolates between them
 	// instead of re-sampling the terrain for every vertex, which used to cost a dropped
@@ -727,7 +770,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	function bankPoints(step = 1.1) {
 		const pts = [];
 		for (const st of strips) {
-			if (st.kind === KIND.CHUTE) continue;
+			if (st.kind === KIND.CHUTE || st.kind === KIND.MAIN) continue;
 			const full = widthFor(st.kind, 1) * BANK;
 			for (let i = 0; i < st.centre.length; i++) {
 				const d = st.alongs[i];
@@ -757,7 +800,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		endings,
 		// For tests: each strip's dam, kind, first and last centre point, lowest point and the
 		// biggest step between neighbouring centre points (a gap in the line).
-		links: () => strips.filter((st) => st.kind !== KIND.CHUTE).map((st) => {
+		links: () => strips.filter((st) => st.kind !== KIND.CHUTE && st.kind !== KIND.MAIN).map((st) => {
 			let gap = 0;
 			let minY = Infinity;
 			st.centre.forEach((p, i) => {
@@ -811,7 +854,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			night.value = v;
 			lightOn.value = v;
 			ribbonMat.uniforms.uWater.value.set(v > 0.5 ? 0x3f8fb8 : 0x2f7186);
-			ribbonMat.uniforms.uBank.value.set(v > 0.5 ? 0x3a3a40 : 0x8c7e66);
+			ribbonMat.uniforms.uBank.value.set(v > 0.5 ? 0x4a4a50 : 0x6e6352);
 		},
 		state: () => list.map((b, i) => ({
 			id: b.r.id,
@@ -844,11 +887,13 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 							const gap = Math.abs(y - (router.surface(x, z) + router.OFFSET));
 							if (gap > maxGap) {
 								maxGap = gap;
-								worst = `${list[st.dam].r.id} ${[ "outflow", "inflow" ][st.kind]}`;
+								worst = `${list[st.dam].r.id} ${[ "outflow", "inflow", "chute", "main stem" ][st.kind]} at ${x.toFixed(0)},${z.toFixed(0)}`;
 							}
 						}
 					}
 				}
+				// Main stems follow mapped courses across the flat valley floor, not a computed descent.
+				if (st.kind === KIND.MAIN) continue;
 				let low = Infinity;
 				for (const p of st.centre) {
 					maxClimb = Math.max(maxClimb, p[1] - low);

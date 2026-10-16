@@ -109,15 +109,17 @@ const FRAG = `
 		vec3 shallowCol = mix(uShallow * 1.25, uSand * (1.0 - 0.75 * uLift), 0.3 * (1.0 - smoothstep(0.0, 0.8, depth)));
 		vec3 body = mix(shallowCol, uDeep * mix(0.85, 0.6, uLift), deepness) * (0.92 + 0.16 * g.z / 0.1);
 		body = mix(body, vTint, uTintMix);
-		vec3 col = mix(body, sky, fres * 0.6);
+		// Night: the water body goes dark and the surface is mostly reflection.
+		body *= 1.0 - 0.6 * uLift;
+		vec3 col = mix(body, sky, fres * mix(0.75, 0.95, uLift));
 		// A thin lapping line right at the water's edge.
 		float lap = vRow >= 0.0 ? smoothstep(0.0, 0.05, depth) * (1.0 - smoothstep(0.06, 0.22, depth)) : 0.0;
-		col = mix(col, uFoamCol, lap * (0.3 + 0.2 * sin(uTime * 1.3 + vWorld.x * 0.7 + vWorld.z * 0.5)));
+		col = mix(col, uFoamCol * (1.0 - 0.8 * uLift), lap * (0.1 + 0.06 * sin(uTime * 1.3 + vWorld.x * 0.7 + vWorld.z * 0.5)));
 		float spec = pow(max(dot(R, uSunDir), 0.0), 260.0);
-		col += uSunColor * spec * 2.4;
-		col += vec3(0.9, 0.95, 1.0) * vHi * 0.07;
+		// The sun's glint; at night the moon's is much fainter.
+		col += uSunColor * spec * 2.4 * (1.0 - 0.85 * uLift);
+		col += vec3(0.9, 0.95, 1.0) * vHi * mix(0.05, 0.012, uLift);
 		// Night: moonlit sheen so water still reads against dark land.
-		col += uLift * (vec3(0.003, 0.006, 0.012) + uSunColor * spec * 1.5);
 		// Moonlight: a broad soft sheen on the water as well as the sharp glint.
 		// Moon path: the moon sits low ahead of the viewer, so its reflection runs as a broken,
 		// vertically stretched band of glints across the water toward the camera.
@@ -128,10 +130,10 @@ const FRAG = `
 			// The ripples tilt R, which breaks the path into glints on its own.
 			float path = smoothstep(0.9975, 0.99985, az) * exp(-del * del * 70.0);
 			float disc = pow(max(dot(Rn, uMoonDir), 0.0), 600.0);
-			col += uLift * uSunColor * (path * 0.55 + disc * 1.5);
+			col += uLift * uSunColor * (path * 0.12 + disc * 0.3);
 		}
 		float fog = smoothstep(uFogNear, uFogFar, gDist);
-		float edgeA = vRow >= 0.0 ? smoothstep(0.0, 0.12, depth) : 1.0;
+		float edgeA = vRow >= 0.0 ? smoothstep(0.0, 0.3, depth) : 1.0;
 		gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha * edgeA);
 		#include <tonemapping_fragment>
 		#include <encodings_fragment>
@@ -207,7 +209,7 @@ export function createLakes(THREE, basins, shared) {
 		uScale: { value: 0.9 },
 		uTintMix: { value: 0.05 },
 		uClip: { value: 1 },
-		uAlpha: { value: 0.94 },
+		uAlpha: { value: 0.985 },
 		uDeep: { value: new THREE.Color(0x174a63) },
 		uShallow: { value: new THREE.Color(0x2c7189) },
 		uBed: { value: bed.tex },

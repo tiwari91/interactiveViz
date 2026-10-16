@@ -309,10 +309,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			} else if (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_") {
 				// Keyboard zoom, with the same tilt toward an oblique view as the wheel and pinch.
 				e.preventDefault();
-				const p = poseOf(THREE, sc.camera, sc.controls);
-				const f = e.key === "+" || e.key === "=" ? 0.7 : 1 / 0.7;
-				const dist = Math.min(sc.controls.maxDistance, Math.max(sc.controls.minDistance, p.dist * f));
-				mover = flyTo(THREE, sc.camera, sc.controls, { ...p, dist, polar: p.polar + (polarFor(dist, reliefAt(dist)) - p.polar) * 0.5 }, motionMs(350));
+				zoomBy(e.key === "+" || e.key === "=" ? 0.7 : 1 / 0.7);
 			} else if (e.key === "Escape" && !store.get().selected) {
 				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
 			}
@@ -326,38 +323,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 			kbId = null;
 		});
 
-		// Zoom toward the point under the cursor: before the controls dolly, slide the
-		// target (and camera with it) a little toward the ground point under the pointer.
-		canvas.addEventListener("wheel", (e) => {
-			if (ui.replaying || e.deltaY >= 0) return;
-			const p = local(e);
-			ndc.set((p[0] / canvas.clientWidth) * 2 - 1, -(p[1] / canvas.clientHeight) * 2 + 1);
-			raycaster.setFromCamera(ndc, sc.camera);
-			const o = raycaster.ray.origin;
-			const d = raycaster.ray.direction;
-			if (d.y >= -0.02) return;
-			// March the ray down to the ground.
-			let hit = null;
-			const far = sc.camera.position.distanceTo(sc.controls.target) * 3;
-			for (let t = 0; t < far; t += far / 160) {
-				const x = o.x + d.x * t;
-				const y = o.y + d.y * t;
-				const z = o.z + d.z * t;
-				if (y <= groundAt(x, z)) {
-					hit = [ x, y, z ];
-					break;
-				}
-			}
-			if (!hit) return;
-			const k = Math.min(0.2, 0.0015 * Math.min(200, -e.deltaY));
-			const shift = new THREE.Vector3(hit[0] - sc.controls.target.x, hit[1] - sc.controls.target.y, hit[2] - sc.controls.target.z).multiplyScalar(k);
-			sc.controls.target.add(shift);
-			sc.camera.position.add(shift);
-			mover = null;
-		}, { passive: true, capture: true });
 		sc.controls.addEventListener("start", () => {
 			dragging = true;
 			mover = null;
+			zoom.active = false;
 			tooltip.hide();
 		});
 		sc.controls.addEventListener("end", () => {
@@ -445,24 +414,123 @@ export function createView3D(container, data, store, tooltip, audio) {
 			const base = 0.96 - 0.34 * t * t * (3 - 2 * t);
 			return Math.max(0.62, base - Math.min(0.34, relief * 1.1) * (1 - t));
 		};
-		let zoomAt = 0;
-		let lastDist = 0;
-		const markZoom = () => { zoomAt = performance.now(); };
-		canvas.addEventListener("wheel", markZoom, { passive: true });
-		canvas.addEventListener("touchmove", (e) => { if (e.touches.length > 1) markZoom(); }, { passive: true });
+		// Smooth zoom. Wheel, trackpad, pinch, double-click and + / - all set a goal distance;
+		// each frame the camera eases toward it (exponential, about 75 ms, at most 12% a frame),
+		// scaling about the ground point under the pointer so that point stays put on screen.
+		// Tilt follows the eased distance, pivoting about the same point. Idle frames do nothing.
+		sc.controls.enableZoom = false;
 		const sph = new THREE.Spherical();
 		const off = new THREE.Vector3();
-		function zoomTilt(now) {
-			const d = sc.camera.position.distanceTo(sc.controls.target);
-			const dl = lastDist ? Math.abs(Math.log(d / lastDist)) : 0;
-			lastDist = d;
-			if (mover || replayFn || now - zoomAt > 350 || dl < 1e-4) return;
-			off.copy(sc.camera.position).sub(sc.controls.target);
-			sph.setFromVector3(off);
-			sph.phi += (polarFor(d, reliefAt(d)) - sph.phi) * Math.min(1, dl * 2.2);
-			sph.phi = Math.min(sc.controls.maxPolarAngle, sph.phi);
-			sc.camera.position.copy(sc.controls.target).add(off.setFromSpherical(sph));
+		const axis = new THREE.Vector3();
+		const quat = new THREE.Quaternion();
+		const zoom = { goal: 0, anchor: new THREE.Vector3(), active: false };
+		const ZOOM_TAU = 0.075;
+		const ZOOM_STEP = 0.12;
+		function groundUnder(cx, cy) {
+			const r = canvas.getBoundingClientRect();
+			ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+			raycaster.setFromCamera(ndc, sc.camera);
+			const o = raycaster.ray.origin;
+			const d = raycaster.ray.direction;
+			if (d.y >= -0.01) return null;
+			const far = sc.camera.position.distanceTo(sc.controls.target) * 4;
+			const below = (t) => o.y + d.y * t <= groundAt(o.x + d.x * t, o.z + d.z * t);
+			let prev = 0;
+			for (let n = 1; n <= 200; n++) {
+				const t = (far * n) / 200;
+				if (below(t)) {
+					let lo = prev;
+					let hi = t;
+					for (let it = 0; it < 10; it++) {
+						const mid = (lo + hi) / 2;
+						if (below(mid)) hi = mid;
+						else lo = mid;
+					}
+					return new THREE.Vector3(o.x + d.x * hi, o.y + d.y * hi, o.z + d.z * hi);
+				}
+				prev = t;
+			}
+			return null;
 		}
+		// Returns false at a zoom limit (nothing to do), so the page may scroll on instead.
+		function zoomBy(factor, cx = null, cy = null) {
+			const d = sc.camera.position.distanceTo(sc.controls.target);
+			const base = zoom.active ? zoom.goal : d;
+			const goal = Math.min(sc.controls.maxDistance, Math.max(sc.controls.minDistance, base * factor));
+			if (Math.abs(Math.log(goal / base)) < 1e-4) return false;
+			const r = canvas.getBoundingClientRect();
+			const a = groundUnder(cx ?? r.left + r.width / 2, cy ?? r.top + r.height / 2);
+			zoom.anchor.copy(a ?? sc.controls.target);
+			zoom.goal = goal;
+			zoom.active = true;
+			mover = null;
+			return true;
+		}
+		function stepZoom(dt) {
+			if (!zoom.active) return;
+			if (replayFn || mover) {
+				zoom.active = false;
+				return;
+			}
+			const p = sc.camera.position;
+			const t = sc.controls.target;
+			const A = zoom.anchor;
+			const d = p.distanceTo(t);
+			const gap = Math.log(zoom.goal / d);
+			if (Math.abs(gap) < 2e-3) {
+				zoom.active = false;
+				return;
+			}
+			const step = Math.max(-ZOOM_STEP, Math.min(ZOOM_STEP, gap * (1 - Math.exp(-dt / ZOOM_TAU))));
+			const s = Math.exp(step);
+			p.sub(A).multiplyScalar(s).add(A);
+			t.sub(A).multiplyScalar(s).add(A);
+			// Tilt toward the view for this distance, pivoting about the anchor.
+			off.copy(p).sub(t);
+			sph.setFromVector3(off);
+			const want = Math.min(sc.controls.maxPolarAngle, polarFor(d * s, reliefAt(d * s)));
+			const dphi = (want - sph.phi) * Math.min(1, Math.abs(step) * 2.2);
+			if (Math.abs(dphi) > 1e-5) {
+				axis.set(off.z, 0, -off.x).normalize();
+				quat.setFromAxisAngle(axis, dphi);
+				const trial = off.clone().applyQuaternion(quat);
+				if (Math.acos(Math.min(1, trial.y / trial.length())) < sph.phi === dphi > 0) quat.setFromAxisAngle(axis, -dphi);
+				p.sub(A).applyQuaternion(quat).add(A);
+				t.sub(A).applyQuaternion(quat).add(A);
+			}
+		}
+		canvas.addEventListener("wheel", (e) => {
+			if (ui.replaying) return;
+			// Normalise lines and pages to pixels; a macOS trackpad pinch arrives as small
+			// ctrl+wheel deltas, so it is scaled up to match a wheel notch.
+			let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+			if (e.ctrlKey) dy *= 3.5;
+			dy = Math.max(-250, Math.min(250, dy));
+			const moved = zoomBy(Math.exp(dy * 0.00095), e.clientX, e.clientY);
+			// At a zoom limit the wheel scrolls the page on, so nobody is trapped over the map
+			// (a pinch never scrolls or zooms the page).
+			if (moved || e.ctrlKey) e.preventDefault();
+		}, { passive: false });
+		canvas.addEventListener("dblclick", (e) => {
+			if (!ui.replaying) zoomBy(0.5, e.clientX, e.clientY);
+		});
+		// Touch pinch, centred between the fingers. A two-finger pan only becomes a zoom once the
+		// fingers have spread or closed by more than about 6%.
+		let pinch = null;
+		const span = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY);
+		canvas.addEventListener("touchstart", (e) => {
+			pinch = e.touches.length === 2 ? { d0: span(e.touches), last: span(e.touches), on: false } : null;
+		}, { passive: true });
+		canvas.addEventListener("touchmove", (e) => {
+			if (!pinch || e.touches.length !== 2 || ui.replaying) return;
+			const d = span(e.touches);
+			if (!pinch.on && Math.abs(Math.log(d / pinch.d0)) > 0.06) pinch.on = true;
+			if (pinch.on && d > 0) zoomBy(pinch.last / d, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+			pinch.last = d;
+		}, { passive: true });
+		canvas.addEventListener("touchend", (e) => {
+			if (e.touches.length < 2) pinch = null;
+		}, { passive: true });
 		// The near plane follows the camera distance: close views keep depth precision (no
 		// z-fighting between ground, water and rivers), far views keep the whole state.
 		function fitNear() {
@@ -493,10 +561,13 @@ export function createView3D(container, data, store, tooltip, audio) {
 					if (idx !== store.get().dateIndex) store.set({ dateIndex: idx });
 				}
 			} else if (mover && mover(now)) mover = null;
+			stepZoom(dt);
 			sc.controls.update();
-			zoomTilt(now);
 			fitScale();
+			const y0 = sc.camera.position.y;
 			keepAbove();
+			// Held up by the ground: stop easing further in rather than fight the lift.
+			if (zoom.active && sc.camera.position.y > y0 + 1e-3 && zoom.goal < sc.camera.position.distanceTo(sc.controls.target)) zoom.active = false;
 			fitNear();
 			if (shared.uLift.value > 0) {
 				// Keep the moon low in front of the camera so lakes show its reflection path.
@@ -798,7 +869,14 @@ export function createView3D(container, data, store, tooltip, audio) {
 			linksVisible: () => links.visibleCount(),
 			setLinks: (v) => links.setShowAll(v),
 			pose: () => poseOf(THREE, sc.camera, sc.controls),
-			moving: () => Boolean(mover || replayFn),
+			moving: () => Boolean(mover || replayFn || zoom.active),
+			// For tests: ground point under a client position, and a world point's client position.
+			groundUnder: (x, y) => groundUnder(x, y)?.toArray() ?? null,
+			toClient(p) {
+				v3.set(...p).project(sc.camera);
+				const r = canvas.getBoundingClientRect();
+				return [ r.left + (v3.x + 1) / 2 * r.width, r.top + (1 - v3.y) / 2 * r.height ];
+			},
 			northDeg: () => northDeg,
 			keyboardPick: () => kbId,
 			dispose() {

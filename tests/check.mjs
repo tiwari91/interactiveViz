@@ -554,6 +554,48 @@ async function main() {
 		check("Wheel zoom moves toward the cursor", Math.hypot(z1.t[0] - t0[0], z1.t[2] - t0[2]) > 1, `target moved ${Math.hypot(z1.t[0] - t0[0], z1.t[2] - t0[2]).toFixed(1)} units`);
 		await debug3d(page, "c.home()");
 		await waitStill(page, 500);
+		// Wheel zoom eases: a burst of notches zooms in (then out) monotonically, never more than
+		// about 12% in one frame, and the ground point under the cursor stays under it.
+		const easeRun = async (dir) => {
+			const box = await page.locator("#view-3d canvas").boundingBox();
+			const x = box.x + box.width * 0.55;
+			const y = box.y + box.height * 0.55;
+			const anchor = await debug3d(page, `c.groundUnder(${x}, ${y})`);
+			await page.evaluate((a) => {
+				const c = window.droughtViz.views["3d"].debug();
+				window.__zl = [];
+				const f = () => {
+					window.__zl.push({ d: c.pose().dist, s: c.toClient(a) });
+					window.__zlr = requestAnimationFrame(f);
+				};
+				window.__zlr = requestAnimationFrame(f);
+			}, anchor);
+			await page.mouse.move(x, y);
+			for (let k = 0; k < 8; k++) {
+				await page.mouse.wheel(0, dir * 100);
+				await page.waitForTimeout(16);
+			}
+			await page.waitForTimeout(300);
+			await waitStill(page, 300);
+			const log = await page.evaluate(() => { cancelAnimationFrame(window.__zlr); return window.__zl; });
+			let mono = true;
+			let step = 0;
+			let drift = 0;
+			for (let i = 1; i < log.length; i++) {
+				const r = Math.log(log[i].d / log[i - 1].d);
+				if (r * dir < -1e-6) mono = false;
+				step = Math.max(step, Math.abs(r));
+				drift = Math.max(drift, Math.hypot(log[i].s[0] - x, log[i].s[1] - y));
+			}
+			return { mono, step: Math.exp(step) - 1, drift, from: log[0].d, to: log[log.length - 1].d, frames: log.length };
+		};
+		const zin = await easeRun(-1);
+		const zout = await easeRun(1);
+		const lim = await debug3d(page, "[ c.sc.controls.minDistance, c.sc.controls.maxDistance ]");
+		check("Wheel zoom eases smoothly toward the cursor, in and out", zin.mono && zout.mono && zin.to < zin.from * 0.6 && zout.to > zout.from * 1.6 && Math.max(zin.step, zout.step) < 0.13 && Math.max(zin.drift, zout.drift) < 4 && zin.to >= lim[0] && zout.to <= lim[1],
+			`in ${zin.from.toFixed(0)}->${zin.to.toFixed(0)} over ${zin.frames} frames, out ->${zout.to.toFixed(0)}; largest step ${(100 * Math.max(zin.step, zout.step)).toFixed(1)}%/frame; cursor point drift ${Math.max(zin.drift, zout.drift).toFixed(1)} px`);
+		await debug3d(page, "c.home()");
+		await waitStill(page, 500);
 		// Keyboard zoom (+ and -) for people who cannot use a wheel or pinch; it tilts toward an oblique view close up.
 		const k0 = await debug3d(page, "c.pose()");
 		await page.focus("#view-3d canvas");

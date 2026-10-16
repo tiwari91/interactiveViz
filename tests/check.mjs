@@ -529,6 +529,18 @@ async function main() {
 		check("Wheel zoom moves toward the cursor", Math.hypot(z1.t[0] - t0[0], z1.t[2] - t0[2]) > 1, `target moved ${Math.hypot(z1.t[0] - t0[0], z1.t[2] - t0[2]).toFixed(1)} units`);
 		await debug3d(page, "c.home()");
 		await waitStill(page, 500);
+		// Keyboard zoom (+ and -) for people who cannot use a wheel or pinch; it tilts toward an oblique view close up.
+		const k0 = await debug3d(page, "c.pose()");
+		await page.focus("#view-3d canvas");
+		for (let k = 0; k < 3; k++) {
+			await page.keyboard.press("+");
+			await waitStill(page, 600);
+		}
+		const k1 = await debug3d(page, "c.pose()");
+		await page.keyboard.press("-");
+		await waitStill(page, 600);
+		const k2 = await debug3d(page, "c.pose()");
+		check("Keyboard + and - zoom the 3D view", k1.dist < k0.dist * 0.6 && k2.dist > k1.dist * 1.2, `${k0.dist.toFixed(1)} -> ${k1.dist.toFixed(1)} -> ${k2.dist.toFixed(1)}, polar ${k0.polar.toFixed(2)} -> ${k1.polar.toFixed(2)}`);
 
 		// Water on the ground: strips sit on the terrain and never run uphill.
 		const water = await debug3d(page, "c.verifyWater()");

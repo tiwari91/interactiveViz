@@ -284,6 +284,13 @@ export function createView3D(container, data, store, tooltip, audio) {
 				tooltip.hide();
 				if (store.get().selected === kbId) focus(kbId);
 				else store.set({ selected: kbId });
+			} else if (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_") {
+				// Keyboard zoom, with the same tilt toward an oblique view as the wheel and pinch.
+				e.preventDefault();
+				const p = poseOf(THREE, sc.camera, sc.controls);
+				const f = e.key === "+" || e.key === "=" ? 0.7 : 1 / 0.7;
+				const dist = Math.min(sc.controls.maxDistance, Math.max(sc.controls.minDistance, p.dist * f));
+				mover = flyTo(THREE, sc.camera, sc.controls, { ...p, dist, polar: p.polar + (polarFor(dist) - p.polar) * 0.5 }, motionMs(350));
 			} else if (e.key === "Escape" && !store.get().selected) {
 				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
 			}
@@ -339,12 +346,27 @@ export function createView3D(container, data, store, tooltip, audio) {
 		function focusPose(id) {
 			const b = basins.byId.get(id);
 			const info = dams.info.get(id);
-			const dir = [ -b.eu[0] * 0.85 + b.ev[0] * 0.5, -b.eu[1] * 0.85 + b.ev[1] * 0.5 ];
+			// From downstream and to one side; take the side that has the sun across the view from
+			// a little behind the camera, so the dam face and the canyon are modelled by light.
+			const sunD = sc.sun.userData.dir;
+			const sl = Math.hypot(sunD.x, sunD.z) || 1;
+			let dir = null;
+			let bestScore = -Infinity;
+			for (const side of [ 0.5, -0.5, 0.85, -0.85 ]) {
+				const c = [ -b.eu[0] * 0.85 + b.ev[0] * side, -b.eu[1] * 0.85 + b.ev[1] * side ];
+				const cl = Math.hypot(c[0], c[1]);
+				const along = (c[0] * sunD.x + c[1] * sunD.z) / (cl * sl);
+				const score = -Math.pow(along - 0.35, 2) - Math.abs(side) * 0.15;
+				if (score > bestScore) {
+					bestScore = score;
+					dir = c;
+				}
+			}
 			const [ dx, dz ] = info.center;
 			return {
 				target: [ dx + (b.cx - dx) * 0.3, info.crest - info.height * 0.35, dz + (b.cz - dz) * 0.3 ],
 				dist: 8 + info.halfWidth * 2.2 + b.Lu * 0.55,
-				polar: 0.98,
+				polar: 0.95,
 				az: Math.atan2(dir[0], dir[1]),
 			};
 		}
@@ -379,6 +401,41 @@ export function createView3D(container, data, store, tooltip, audio) {
 			return need;
 		}
 
+		// Zooming in tilts toward a low, oblique view (about 35 degrees above the horizon);
+		// zooming out tilts toward looking down on the state.
+		const polarFor = (d) => {
+			const t = Math.min(1, Math.max(0, (Math.log(d) - Math.log(40)) / (Math.log(1600) - Math.log(40))));
+			return 0.96 - 0.34 * t * t * (3 - 2 * t);
+		};
+		let zoomAt = 0;
+		let lastDist = 0;
+		const markZoom = () => { zoomAt = performance.now(); };
+		canvas.addEventListener("wheel", markZoom, { passive: true });
+		canvas.addEventListener("touchmove", (e) => { if (e.touches.length > 1) markZoom(); }, { passive: true });
+		const sph = new THREE.Spherical();
+		const off = new THREE.Vector3();
+		function zoomTilt(now) {
+			const d = sc.camera.position.distanceTo(sc.controls.target);
+			const dl = lastDist ? Math.abs(Math.log(d / lastDist)) : 0;
+			lastDist = d;
+			if (mover || replayFn || now - zoomAt > 350 || dl < 1e-4) return;
+			off.copy(sc.camera.position).sub(sc.controls.target);
+			sph.setFromVector3(off);
+			sph.phi += (polarFor(d) - sph.phi) * Math.min(1, dl * 2.2);
+			sph.phi = Math.min(sc.controls.maxPolarAngle, sph.phi);
+			sc.camera.position.copy(sc.controls.target).add(off.setFromSpherical(sph));
+		}
+		// The near plane follows the camera distance: close views keep depth precision (no
+		// z-fighting between ground, water and rivers), far views keep the whole state.
+		function fitNear() {
+			const d = sc.camera.position.distanceTo(sc.controls.target);
+			const near = Math.min(2, Math.max(0.1, d * 0.012));
+			if (Math.abs(near - sc.camera.near) > sc.camera.near * 0.1) {
+				sc.camera.near = near;
+				sc.camera.updateProjectionMatrix();
+			}
+		}
+
 		function frame(now) {
 			if (!running) return;
 			raf = requestAnimationFrame(frame);
@@ -399,7 +456,9 @@ export function createView3D(container, data, store, tooltip, audio) {
 				}
 			} else if (mover && mover(now)) mover = null;
 			sc.controls.update();
+			zoomTilt(now);
 			keepAbove();
+			fitNear();
 			if (shared.uLift.value > 0) {
 				// Keep the moon low in front of the camera so lakes show its reflection path.
 				// Its elevation matches the view's pitch, so the path runs through the middle of the view.

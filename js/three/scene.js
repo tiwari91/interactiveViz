@@ -38,7 +38,9 @@ export function createScene(THREE, container, quality) {
 	const controls = new THREE.OrbitControls(camera, renderer.domElement);
 	controls.enableDamping = true;
 	controls.dampingFactor = 0.08;
-	controls.minDistance = 22;
+	// Close enough to read a dam's spillway and the lake edge; the near plane follows the
+	// distance (see view3d) so close views keep their depth precision.
+	controls.minDistance = 7;
 	controls.maxDistance = 2600;
 	controls.maxPolarAngle = Math.PI * 0.42;
 	controls.screenSpacePanning = false;

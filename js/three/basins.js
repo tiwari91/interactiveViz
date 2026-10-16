@@ -4,7 +4,7 @@
 // low reservoir shows a shrunken lake and an exposed shoreline.
 import { fbm, hash2 } from "./world.js";
 
-const LAKE_DIRECTION = { ISB: [ 0.05, 0.04 ] };
+const LAKE_DIRECTION = { ISB: [ 0.05, 0.04 ], COY: [ 0.02, 0.03 ] };
 const DAM_U = 0.82; // dam sits this many half-lengths downstream of the lake centre
 const smooth = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 
@@ -165,6 +165,10 @@ function makeBasin(r, maxCap, world) {
 	const shoreW = 0.28 + 0.32 * gentle;
 	// Lake bed right behind the dam; the canyon below starts a little lower.
 	const damFloor = bowlShape(u0 + 0.05, 0, Math.min(0.99, sOf(u0 + 0.05, 0)), 1);
+	// The carved canyon only runs a short way below the dam, then hands over to the natural
+	// (pit-filled) valley, which drains on its own: CANYON_L units, floored at the ground there.
+	const CANYON_L = 11;
+	const canyonFloorMin = world.groundY(...toWorld(u0 - CANYON_L, 0)) - 0.12;
 
 	// Carved height in local coordinates given the natural ground height.
 	// Only ever digs down, except small abutments either side of the dam.
@@ -191,11 +195,15 @@ function makeBasin(r, maxCap, world) {
 			const d = u0 - u;
 			// Canyon below the dam: never higher than a line falling away from the dam,
 			// and following the natural valley once that is lower.
-			const floorY = Math.min(damFloor - 0.35 - 0.09 * d, orig - 0.12);
-			const cw = damHalf * 0.35 + 0.3 * d;
+			// ...but never below the natural valley where the canyon leaves the carved patch, so
+			// there is no sill at its far end to trap the river, and the cut stays shallow where
+			// the valley below the dam is open.
+			const floorY = Math.min(orig - 0.12, Math.max(damFloor - 0.35 - 0.09 * d, canyonFloorMin + 0.012 * Math.max(0, CANYON_L - d)));
+			const cw = damHalf * 0.35 + 0.3 * d + 1.2 * smooth(d / (6 + 0.4 * Lu));
 			const canyon = floorY + Math.pow(Math.abs(v) / cw, 2) * (rim + 1 - floorY);
-			h = Math.min(orig, canyon);
-			zone = Math.abs(v) < cw ? "canyon" : "outside";
+			const keep = 1 - smooth((d - CANYON_L * 0.55) / (CANYON_L * 0.45));
+			h = orig + (Math.min(orig, canyon) - orig) * keep;
+			zone = Math.abs(v) < cw && keep > 0.5 ? "canyon" : "outside";
 		}
 		// Abutments: ground beside the dam ends rises to just above the crest.
 		const du = Math.abs(u - u0);

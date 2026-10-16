@@ -49,6 +49,12 @@ export function createWorld(data, elev) {
 
 	const { rows, cols, north, south, west, east, data: z } = elev;
 	despike(z, rows, cols);
+	if (!z.pitsFilled) {
+		fillPits(z, rows, cols);
+		// Filling next to a deep closed basin can leave a step; smooth any such spike again.
+		z.despiked = false;
+		despike(z, rows, cols);
+	}
 	const dlat = (north - south) / (rows - 1);
 	const dlon = (east - west) / (cols - 1);
 
@@ -90,6 +96,76 @@ export function createWorld(data, elev) {
 // At 7x vertical exaggeration a lone DEM cell that stands far above or below its four
 // neighbours renders as a needle or shard. Pull such cells back toward the local mean
 // (land only, once per grid; already-clamped grids are left as they are).
+// Shallow pits in the elevation grid (the coarse DEM leaves narrow river canyons blocked by
+// small sills) are filled up to their spill point with a tiny fall toward it, so water drawn
+// downhill always finds its way out, as the real river does. Deep closed basins (the Tulare
+// lake bed, Salton Sea, Death Valley) are left alone: rivers really end there.
+export const PIT_FILL_M = 250;
+function fillPits(z, rows, cols) {
+	if (z.pitsFilled) return;
+	const n = rows * cols;
+	const orig = Float32Array.from(z);
+	const done = new Uint8Array(n);
+	const heap = new Int32Array(n);
+	let size = 0;
+	const less = (a, b) => z[a] < z[b];
+	const push = (i) => {
+		let c = size++;
+		heap[c] = i;
+		while (c > 0) {
+			const p = (c - 1) >> 1;
+			if (!less(heap[c], heap[p])) break;
+			const t = heap[c]; heap[c] = heap[p]; heap[p] = t;
+			c = p;
+		}
+	};
+	const pop = () => {
+		const top = heap[0];
+		heap[0] = heap[--size];
+		let c = 0;
+		for (;;) {
+			const l = c * 2 + 1;
+			const r = l + 1;
+			let m = c;
+			if (l < size && less(heap[l], heap[m])) m = l;
+			if (r < size && less(heap[r], heap[m])) m = r;
+			if (m === c) break;
+			const t = heap[c]; heap[c] = heap[m]; heap[m] = t;
+			c = m;
+		}
+		return top;
+	};
+	for (let i = 0; i < n; i++) {
+		const r = Math.floor(i / cols);
+		const c = i % cols;
+		if (r === 0 || c === 0 || r === rows - 1 || c === cols - 1 || orig[i] <= 0) {
+			done[i] = 1;
+			push(i);
+		}
+	}
+	const EPS = 0.05;
+	while (size) {
+		const i = pop();
+		const r = Math.floor(i / cols);
+		const c = i % cols;
+		for (let dr = -1; dr <= 1; dr++) {
+			for (let dc = -1; dc <= 1; dc++) {
+				if (!dr && !dc) continue;
+				const rr = r + dr;
+				const cc = c + dc;
+				if (rr < 0 || cc < 0 || rr >= rows || cc >= cols) continue;
+				const j = rr * cols + cc;
+				if (done[j]) continue;
+				done[j] = 1;
+				const fill = z[i] + EPS;
+				if (orig[j] < fill && fill - orig[j] <= PIT_FILL_M) z[j] = fill;
+				push(j);
+			}
+		}
+	}
+	z.pitsFilled = true;
+}
+
 export const SPIKE_M = 220;
 function despike(z, rows, cols) {
 	if (z.despiked) return;

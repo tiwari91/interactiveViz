@@ -534,6 +534,12 @@ async function main() {
 		const water = await debug3d(page, "c.verifyWater()");
 		check("Rivers and outflows lie on the terrain", water.maxGap < 0.35, `max gap ${water.maxGap} (${water.worst}), ${water.strips} strips`);
 		check("Rivers and outflows only run downhill", water.maxClimb <= 0.46, `max climb ${water.maxClimb}`);
+		// No river stops dead on a slope: each one meets another river, a main stem, a lake or the
+		// sea, or fades out (dwindling) where the ground levels out or holds it in a hollow.
+		const ends = await debug3d(page, "c.riverEndings()");
+		const dangling = ends.filter((e) => e.ending === "fade" && !(e.drop >= -0.2 || e.slope < 0.1));
+		const endCounts = ends.reduce((m, e) => ({ ...m, [e.ending]: (m[e.ending] ?? 0) + 1 }), {});
+		check("No river ends dangling on a slope", ends.length >= 30 && dangling.length === 0, `${Object.entries(endCounts).map(([ k, v ]) => `${k} ${v}`).join(", ")}${dangling.length ? `; dangling: ${dangling.map((e) => `${e.id} slope ${e.slope} drop ${e.drop}`).join(", ")}` : ""}`);
 		const longOut = await debug3d(page, "c.outflow().filter((o) => o.length >= 8 || o.joins).length");
 		const nOut = await debug3d(page, "c.outflow().length");
 		check("Most outflows run well downstream", longOut >= 28, `${longOut} of ${nOut} longer than 8 units or joining a bigger river`);

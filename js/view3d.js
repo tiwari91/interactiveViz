@@ -601,6 +601,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// For tests: what each dam is visibly releasing right now.
 			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
 			verifyWater: () => outflow.verify(),
+			riverEndings: () => outflow.endings,
 			anisotropy: () => terrain.detail.anisotropy,
 			mainRivers: () => mainRivers.names,
 			waterways: () => ({ delta: mainRivers.delta, canals: mainRivers.canals, ends: mainRivers.ends }),

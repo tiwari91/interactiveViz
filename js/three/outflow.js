@@ -3,7 +3,8 @@
 // water down spillway chutes when a lake is above ~90% full, mist at the base,
 // and small warm lights on the dam at night. Width, speed, foam and mist follow
 // the same release value that drives the dam's sound (release.js).
-import { createRouter, stripGeometry, placeStrip, KIND, ACROSS } from "./outflowPaths.js";
+import { createRouter, stripGeometry, placeStrip, KIND, ACROSS, CLIMB } from "./outflowPaths.js";
+import { stemLines } from "./mainRivers.js";
 
 const RIBBON_VERT = `
 	attribute float aSide;
@@ -107,7 +108,7 @@ const RIBBON_FRAG = `
 		// From afar: a clean, slightly luminous blue line.
 		col = mix(col, uWater * 1.9 + vec3(0.04, 0.1, 0.16) * (1.0 + uNight), vFar * 0.75);
 		float edge = 1.0 - smoothstep(0.86, 1.0, side);
-		float ends = vKind < 0.5 ? smoothstep(0.0, 6.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : 1.0;
+		float ends = vKind < 0.5 ? smoothstep(0.0, 12.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : 1.0;
 		float a = edge * ends * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.75, 0.97, wet);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
 		gl_FragColor = vec4(mix(col, uFogColor, fog), a);
@@ -199,6 +200,133 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	const JOIN = 1.1;
 	const cell = (x, z) => `${Math.floor(x / JOIN)},${Math.floor(z / JOIN)}`;
 	const trunk = new Map();
+	const endings = [];
+
+	// Main-stem rivers and Delta channels on a coarse grid. An outflow never stops dead on a
+	// slope: it runs on down the valley floor to the main stem it really feeds, into a lake, or
+	// (far from any main stem, e.g. the Kings and Kern sinking into the Tulare basin) out onto
+	// flat valley ground, where it fades.
+	const STEM_CELL = 4;
+	const ONWARD_MAX = 140;
+	const stemGrid = new Map();
+	const stemPts = [];
+	for (const line of stemLines(world)) {
+		for (const p of line) {
+			stemPts.push(p);
+			const key = `${Math.floor(p[0] / STEM_CELL)},${Math.floor(p[1] / STEM_CELL)}`;
+			if (!stemGrid.has(key)) stemGrid.set(key, []);
+			stemGrid.get(key).push(p);
+		}
+	}
+	const nearStem = (x, z, r) => {
+		const cx = Math.floor(x / STEM_CELL);
+		const cz = Math.floor(z / STEM_CELL);
+		let best = null;
+		let bd = r;
+		for (let i = -1; i <= 1; i++) {
+			for (let j = -1; j <= 1; j++) {
+				for (const p of stemGrid.get(`${cx + i},${cz + j}`) ?? []) {
+					const d = Math.hypot(p[0] - x, p[1] - z);
+					if (d < bd) {
+						bd = d;
+						best = p;
+					}
+				}
+			}
+		}
+		return best;
+	};
+	const lakeAt = (x, z, own, s = 1.0) => list.find((o) => o !== own && Math.abs(x - o.cx) < o.reach && Math.abs(z - o.cz) < o.reach && o.sOf(...o.toLocal(x, z)) < s);
+	const nearestStem = (x, z) => {
+		let best = null;
+		let bd = Infinity;
+		for (const p of stemPts) {
+			const d = Math.hypot(p[0] - x, p[1] - z);
+			if (d < bd) {
+				bd = d;
+				best = p;
+			}
+		}
+		return [ best, bd ];
+	};
+	const ground2 = (x, z) => router.surface(x, z);
+	// The open sea or a bay (west of the Delta, whose islands also sit below sea level).
+	const atSea = (x, z) => {
+		const [ lon, lat ] = world.unproject(x, z);
+		return lon < -121.86 && world.metresAt(lon, lat) <= 0;
+	};
+	// Carry a ground path on from where steepest descent gave up: down the valley floor
+	// (lowest ground in a cone around the way to the nearest main stem), never climbing.
+	function onward(pts, own) {
+		const out = pts.slice();
+		let [ px, pz ] = out[out.length - 1];
+		if (nearStem(px, pz, 1.2) || lakeAt(px, pz, own)) return out;
+		const prev = out[Math.max(0, out.length - 3)];
+		let hx = px - prev[0];
+		let hz = pz - prev[1];
+		let [ tgt, td ] = nearestStem(px, pz);
+		const reach = td < ONWARD_MAX;
+		if (Math.hypot(hx, hz) < 1e-6) [ hx, hz ] = [ tgt[0] - px, tgt[1] - pz ];
+		let l = Math.hypot(hx, hz) || 1;
+		hx /= l;
+		hz /= l;
+		let low = ground2(px, pz);
+		const STEP = router.STEP;
+		const steps = Math.ceil((reach ? td * 2.5 : 90) / STEP);
+		for (let s = 0; s < steps; s++) {
+			// Far from any main stem: run on until the ground levels out onto a valley floor.
+			if (!reach && s * STEP > 10) {
+				const sl = Math.hypot(ground2(px + 1, pz) - ground2(px - 1, pz), ground2(px, pz + 1) - ground2(px, pz - 1)) / 2;
+				if (sl < 0.08) break;
+			}
+			if (reach && s % 20 === 19) [ tgt ] = nearestStem(px, pz);
+			let bx = hx;
+			let bz = hz;
+			if (reach) {
+				const tl = Math.hypot(tgt[0] - px, tgt[1] - pz) || 1;
+				bx = hx * 0.45 + ((tgt[0] - px) / tl) * 0.55;
+				bz = hz * 0.45 + ((tgt[1] - pz) / tl) * 0.55;
+				l = Math.hypot(bx, bz) || 1;
+				bx /= l;
+				bz /= l;
+			}
+			let best = null;
+			for (let a = -1.4; a <= 1.4001; a += 0.2) {
+				const dx = bx * Math.cos(a) - bz * Math.sin(a);
+				const dz = bx * Math.sin(a) + bz * Math.cos(a);
+				const q = [ px + dx * STEP, pz + dz * STEP ];
+				const g = ground2(...q);
+				const score = g + Math.abs(a) * (reach ? 0.05 : 0.02);
+				if (!best || score < best.score) best = { q, g, score, dx, dz };
+			}
+			if (best.g > low + CLIMB * 0.8) {
+				// Blocked ahead: any way round that does not climb, short of turning back.
+				for (let a = -2.6; a <= 2.6001; a += 0.2) {
+					const dx = hx * Math.cos(a) - hz * Math.sin(a);
+					const dz = hx * Math.sin(a) + hz * Math.cos(a);
+					const q = [ px + dx * STEP, pz + dz * STEP ];
+					const g = ground2(...q);
+					if (g < best.g) best = { q, g, score: g, dx, dz };
+				}
+				if (best.g > low + CLIMB * 0.8) break;
+			}
+			[ px, pz ] = best.q;
+			out.push(best.q);
+			hx = hx * 0.5 + best.dx * 0.5;
+			hz = hz * 0.5 + best.dz * 0.5;
+			l = Math.hypot(hx, hz) || 1;
+			hx /= l;
+			hz /= l;
+			low = Math.min(low, best.g);
+			const hit = nearStem(px, pz, 1.2);
+			if (hit) {
+				out.push(hit);
+				break;
+			}
+			if (lakeAt(px, pz, own) || atSea(px, pz)) break;
+		}
+		return out;
+	}
 	const order = list.map((_, i) => i).sort((a, b) => list[b].r.capacity - list[a].r.capacity);
 	for (const di of order) {
 		const b = list[di];
@@ -206,7 +334,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		// From the downstream toe, along the canyon floor, then downhill.
 		// Arch dams bulge upstream, so start below the dam line, never in the lake.
 		const toe = b.toWorld(Math.min(info.toeU, b.dam.u - 0.6), 0);
-		const pts = router.downhill(toe, [ -b.eu[0], -b.eu[1] ], 24 + b.Lu * 2.4, { avoid: b });
+		const raw0 = router.downhill(toe, [ -b.eu[0], -b.eu[1] ], 24 + b.Lu * 2.4, { avoid: b });
+		const pts = onward(raw0, b);
 		let seq = router.drape(pts);
 		for (let k = 6; k < seq.length; k++) {
 			const [ x, , z ] = seq[k];
@@ -242,9 +371,23 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		const sc = scales[di];
 		const seq = outSeq[di];
 		if (seq.length > 2) {
-			const st = stripGeometry(seq, out, { dam: di, kind: KIND.OUTFLOW, joins: joins[di], weight: weightOf(b) });
+			// How the river ends: at another dam's river, a main stem, a lake, or fading out on
+			// flat valley ground. Only the last fades; the others run on into what they meet.
+			const [ ex, , ez ] = seq[seq.length - 1];
+			const ending = joins[di] ? "river" : nearStem(ex, ez, 1.6) ? "stem" : lakeAt(ex, ez, b, 1.4) ? "lake" : atSea(ex, ez) ? "sea" : "fade";
+			const slope = Math.hypot(ground2(ex + 1, ez) - ground2(ex - 1, ez), ground2(ex, ez + 1) - ground2(ex, ez - 1)) / 2;
+			// Lowest ground a little way round the end, relative to the end: >= 0 means the water
+			// sits in a hollow with nowhere lower to go.
+			let drop = Infinity;
+			for (let k = 0; k < 16; k++) drop = Math.min(drop, ground2(ex + Math.cos(k * Math.PI / 8) * 1.5, ez + Math.sin(k * Math.PI / 8) * 1.5) - ground2(ex, ez));
+			endings.push({ id: b.r.id, ending, x: +ex.toFixed(2), z: +ez.toFixed(2), slope: +slope.toFixed(3), drop: +drop.toFixed(3), length: 0 });
+			const st = stripGeometry(seq, out, { dam: di, kind: KIND.OUTFLOW, joins: ending !== "fade", weight: weightOf(b) });
+			endings[endings.length - 1].length = +st.length.toFixed(1);
 			// Narrow at the outlet, wide tailrace, then a natural river width.
-			const shape = (i, d) => sc * (0.55 + 0.45 * smooth(0, 3, d)) * (1 - 0.5 * smooth(5, 16, d));
+			// A river that fades out (sinking into the valley floor) dwindles over its last stretch.
+			const total = st.length;
+			const dwindle = ending === "fade" ? (d) => 0.3 + 0.7 * smooth(0, 14, total - d) : () => 1;
+			const shape = (i, d) => sc * (0.55 + 0.45 * smooth(0, 3, d)) * (1 - 0.5 * smooth(5, 16, d)) * dwindle(d);
 			strips.push({ ...st, kind: KIND.OUTFLOW, dam: di, centre: seq, shape, sample: ground });
 			lengths[di] = st.length;
 			const end = seq[seq.length - 1];
@@ -467,6 +610,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	return {
 		group,
 		lengths,
+		// For tests: how each dam's river ends (river, stem, lake or fade) and the ground slope there.
+		endings,
 		bankPoints,
 		nearChute,
 		router,

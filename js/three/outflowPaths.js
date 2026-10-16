@@ -96,16 +96,34 @@ export function createRouter(basins, world) {
 	}
 
 	// Ground path -> centreline heights that never rise (beyond tolerance) along the flow.
-	function drape(pts) {
-		const seq = chaikin(chaikin(pts)).map(([ x, z ]) => [ x, surface(x, z) + OFFSET, z ]);
+	// Smoothest first; if corner cutting lifts the line onto a canyon wall and it would have
+	// to stop short, use less smoothing so the river still reaches its end.
+	function drapeWith(seq0) {
+		const seq = seq0.map(([ x, z ]) => [ x, surface(x, z) + OFFSET, z ]);
 		let low = Infinity;
+		let skipped = 0;
 		const out = [];
 		for (const p of seq) {
-			if (p[1] > low + CLIMB_TOL) break; // smoothing pushed it uphill: stop here
+			// A single lifted corner is dropped (the strip runs straight past it).
+			if (p[1] > low + CLIMB_TOL) {
+				if (++skipped > 8) return { out, full: false };
+				continue;
+			}
+			skipped = 0;
 			low = Math.min(low, p[1]);
 			out.push(p);
 		}
-		return out;
+		return { out, full: true };
+	}
+	function drape(pts) {
+		let best = null;
+		for (const cand of [ chaikin(chaikin(pts)), chaikin(pts), pts ]) {
+			const r = drapeWith(cand);
+			if (r.full) return r.out;
+			const len = r.out.length / cand.length;
+			if (!best || len > best.len) best = { out: r.out, len };
+		}
+		return best.out;
 	}
 
 	return { surface, downhill, drape, OFFSET, STEP };

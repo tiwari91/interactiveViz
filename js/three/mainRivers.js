@@ -41,6 +41,23 @@ const CANALS = {
 
 const KIND = { river: 0, delta: 1, canal: 2 };
 
+// World [x, z] points, about one unit apart, along every main-stem river and Delta channel:
+// the outflow ribbons below the dams run on until they meet one of these.
+export function stemLines(world) {
+	return [ ...Object.values(RIVERS), ...Object.values(DELTA) ].map((ll) => {
+		const pts = chaikin(chaikin(chaikin(ll.map((p) => world.project(p)))));
+		const seq = [];
+		for (let i = 0; i < pts.length - 1; i++) {
+			const [ ax, az ] = pts[i];
+			const [ bx, bz ] = pts[i + 1];
+			const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az)));
+			for (let k = 0; k < n; k++) seq.push([ ax + (bx - ax) * k / n, az + (bz - az) * k / n ]);
+		}
+		seq.push(pts[pts.length - 1]);
+		return seq;
+	});
+}
+
 function chaikin(p) {
 	const out = [ p[0] ];
 	for (let i = 0; i < p.length - 1; i++) {
@@ -76,7 +93,7 @@ const VERT = `
 		vKind = aKind;
 		vVis = aVis;
 		vAlong = aAlong;
-		vNear = smoothstep(70.0, 220.0, camD);
+		vNear = smoothstep(18.0, 70.0, camD);
 		vec4 wp = modelMatrix * vec4(p, 1.0);
 		vWorld = wp.xyz;
 		gl_Position = projectionMatrix * viewMatrix * wp;

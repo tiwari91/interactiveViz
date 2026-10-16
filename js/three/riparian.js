@@ -14,9 +14,23 @@ function merge(THREE, parts) {
 	const nrm = [];
 	const col = [];
 	const c = new THREE.Color();
-	for (const { geom, color, shade = 0.45 } of parts) {
+	for (const { geom, color, shade = 0.45, round = null } of parts) {
+		// Smooth normals: shared across faces of an indexed part, or pointing out from a lobe's
+		// centre, so crowns read as soft rounded masses rather than facets.
+		if (geom.index) geom.computeVertexNormals();
 		const g = geom.index ? geom.toNonIndexed() : geom;
-		g.computeVertexNormals();
+		if (round) {
+			const pp = g.attributes.position;
+			const nn = new Float32Array(pp.count * 3);
+			for (let i = 0; i < pp.count; i++) {
+				const dx = pp.getX(i) - round[0];
+				const dy = (pp.getY(i) - round[1]) * 0.8 + 0.12;
+				const dz = pp.getZ(i) - round[2];
+				const l = Math.hypot(dx, dy, dz) || 1;
+				nn.set([ dx / l, dy / l, dz / l ], i * 3);
+			}
+			g.setAttribute("normal", new THREE.BufferAttribute(nn, 3));
+		} else if (!geom.index) g.computeVertexNormals();
 		g.computeBoundingBox();
 		const { min, max } = g.boundingBox;
 		const p = g.attributes.position;
@@ -27,7 +41,8 @@ function merge(THREE, parts) {
 			// Self-shading: lower and downward-facing parts of a crown are darker.
 			const h = (p.getY(i) - min.y) / Math.max(1e-6, max.y - min.y);
 			const k = 1 - shade + shade * (0.55 * h + 0.45 * (n.getY(i) * 0.5 + 0.5));
-			c.set(color).multiplyScalar(k);
+			// Leaf-clump mottling so a crown is never one flat colour.
+			c.set(color).multiplyScalar(k * (0.82 + 0.36 * hash2(Math.round(p.getX(i) * 53), Math.round((p.getY(i) + p.getZ(i)) * 61))));
 			col.push(c.r, c.g, c.b);
 		}
 	}
@@ -64,7 +79,7 @@ function conifer(THREE) {
 	return merge(THREE, parts);
 }
 
-function broadleaf(THREE) {
+function broadleaf(THREE, detail = 0) {
 	const parts = [];
 	const trunk = new THREE.CylinderGeometry(0.05, 0.08, 0.42, 5);
 	trunk.translate(0, 0.21, 0);
@@ -72,10 +87,10 @@ function broadleaf(THREE) {
 	// A clump of overlapping lobes of different sizes.
 	[ [ 0, 0.68, 0, 0.36 ], [ 0.22, 0.58, 0.08, 0.27 ], [ -0.18, 0.6, -0.12, 0.29 ], [ 0.05, 0.86, -0.08, 0.25 ], [ -0.08, 0.55, 0.2, 0.24 ], [ 0.16, 0.78, -0.16, 0.22 ], [ -0.2, 0.8, 0.1, 0.21 ] ].forEach(([ x, y, z, r ], k) => {
 		// Low-poly lobes (20 faces each): the clump shape carries the look, not the facets.
-		const g = jitter(new THREE.IcosahedronGeometry(r, 0), 0.3, k * 31 + 5);
+		const g = jitter(new THREE.IcosahedronGeometry(r, detail), detail ? 0.35 : 0.3, k * 31 + 5);
 		g.scale(1, 0.85, 1);
 		g.translate(x, y, z);
-		parts.push({ geom: g, color: 0x4d6a34, shade: 0.6 });
+		parts.push({ geom: g, color: 0x4d6a34, shade: 0.6, round: [ x, y, z ] });
 	});
 	return merge(THREE, parts);
 }
@@ -105,9 +120,9 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 		return seed / 2147483647;
 	};
 
-	const treeMat = fadeByDistance(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true }));
+	const treeMat = fadeByDistance(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92 }));
 	const rockMat = fadeByDistance(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, flatShading: true }));
-	const broadGeom = broadleaf(THREE);
+	const broadGeom = broadleaf(THREE, 0);
 	const pines = new THREE.InstancedMesh(conifer(THREE), treeMat, maxTrees + maxForest);
 	const broads = new THREE.InstancedMesh(broadGeom, treeMat, maxTrees + maxForest);
 	// Low shrubs: the broadleaf clump, squashed and small.

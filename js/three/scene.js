@@ -22,6 +22,9 @@ export function createScene(THREE, container, quality) {
 	const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, high ? 2 : 1.25));
 	renderer.outputEncoding = THREE.sRGBEncoding;
+	// Filmic tone mapping: bright sky and sun glints roll off instead of clipping to white.
+	renderer.toneMapping = THREE.ACESFilmicToneMapping;
+	renderer.toneMappingExposure = 0.9;
 	renderer.shadowMap.enabled = high;
 	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 	container.appendChild(renderer.domElement);
@@ -77,5 +80,26 @@ export function createScene(THREE, container, quality) {
 		return true;
 	}
 
-	return { renderer, scene, camera, controls, hemi, sun, resize, updateSun };
+	// Image-based lighting from the sky dome itself: the sky's colour, the bright sun side and
+	// the darker ground below light every standard material (terrain, dams, trees).
+	const pmrem = new THREE.PMREMGenerator(renderer);
+	const envScene = new THREE.Scene();
+	let envRT = null;
+	function updateEnv(skyMesh, intensity = 0.5) {
+		if (!envScene.children.length) envScene.add(new THREE.Mesh(skyMesh.geometry, skyMesh.material));
+		const next = pmrem.fromScene(envScene, 0.02, 1, 10000);
+		envRT?.dispose();
+		envRT = next;
+		scene.environment = envRT.texture;
+		scene.traverse((o) => {
+			const mats = o.material ? (Array.isArray(o.material) ? o.material : [ o.material ]) : [];
+			for (const m of mats) if (m.isMeshStandardMaterial) m.envMapIntensity = intensity;
+		});
+	}
+	function disposeEnv() {
+		envRT?.dispose();
+		pmrem.dispose();
+	}
+
+	return { renderer, scene, camera, controls, hemi, sun, resize, updateSun, updateEnv, disposeEnv };
 }

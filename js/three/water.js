@@ -133,6 +133,7 @@ const FRAG = `
 		float fog = smoothstep(uFogNear, uFogFar, gDist);
 		float edgeA = vRow >= 0.0 ? smoothstep(0.0, 0.12, depth) : 1.0;
 		gl_FragColor = vec4(mix(col, uFogColor, fog), uAlpha * edgeA);
+		#include <tonemapping_fragment>
 		#include <encodings_fragment>
 	}`;
 

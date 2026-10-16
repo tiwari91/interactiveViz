@@ -12,15 +12,15 @@ function palette(THREE) {
 	const c = (hex) => new THREE.Color(hex);
 	return {
 		beach: c(0xd9c9a3),
-		valleyWet: c(0x7a8d58), fieldWet: c(0x8e9e66),
-		valleyDry: c(0xbca77d), fieldDry: c(0xab9670),
-		hillWet: c(0x7f8858), hillDry: c(0xab9068),
-		forestWet: c(0x405a39), forestDry: c(0x55603a),
-		sage: c(0x9a9b78),
-		desert: c(0xcdb68c), desertDry: c(0xd6c095),
-		rock: c(0x8b8378), rockDark: c(0x6c655d),
+		valleyWet: c(0x6a7d47), fieldWet: c(0x7d8d52),
+		valleyDry: c(0xa8926a), fieldDry: c(0x95825d),
+		hillWet: c(0x6a7445), hillDry: c(0xa08658),
+		forestWet: c(0x2a3f26), forestDry: c(0x37442a),
+		sage: c(0x8a8b6a),
+		desert: c(0xc2a882), desertDry: c(0xcab38a),
+		rock: c(0x80786d), rockDark: c(0x5f5951),
 		snow: c(0xf3f4f5),
-		mineral: c(0xbfae8c), mineralBand: c(0xa8977a), mineralWet: c(0x7d705c),
+		mineral: c(0xd3c8b0), mineralBand: c(0xbcae92), mineralWet: c(0x7d705c),
 		cliff: c(0x7e7466),
 		neighbour: c(0x948e83),
 	};
@@ -61,7 +61,9 @@ function shadeTerrain(P, m, slopeY, lon, lat, nz, inCA, out, outDry) {
 		const hill = smoothstep(150, 500, m + nz * 120);
 		tmp.lerp(P.hillWet, hill);
 		dry.lerp(P.hillDry, hill);
-		const forest = smoothstep(800, 1300, m + nz * 260) * (1 - smoothstep(2600, 3000, m));
+		// The wetter north (Klamath, Shasta, northern Sierra) is wooded much lower down.
+		const low = smoothstep(38.6, 40.4, lat) * 650;
+		const forest = smoothstep(800 - low, 1300 - low, m + nz * 260) * (1 - smoothstep(2600, 3000, m));
 		tmp.lerp(P.forestWet, forest);
 		dry.lerp(P.forestDry, forest);
 		const d = desertAt(lon, lat, nz) * (1 - forest * 0.6);

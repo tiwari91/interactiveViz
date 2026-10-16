@@ -111,6 +111,7 @@ const RIBBON_FRAG = `
 		float a = edge * ends * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.75, 0.97, wet);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
 		gl_FragColor = vec4(mix(col, uFogColor, fog), a);
+		#include <tonemapping_fragment>
 		#include <encodings_fragment>
 	}`;
 
@@ -141,6 +142,7 @@ const MIST_FRAG = `
 		float d = dot(c, c) * 4.0;
 		if (d > 1.0 || vA < 0.01) discard;
 		gl_FragColor = vec4(uColor, (1.0 - d) * (1.0 - d) * vA * 0.3);
+		#include <tonemapping_fragment>
 		#include <encodings_fragment>
 	}`;
 
@@ -165,6 +167,7 @@ const LIGHT_FRAG = `
 		if (d > 1.0 || vA < 0.01) discard;
 		float core = smoothstep(1.0, 0.0, d);
 		gl_FragColor = vec4(vec3(1.0, 0.82, 0.55) * (0.6 + core), core * core * vA);
+		#include <tonemapping_fragment>
 		#include <encodings_fragment>
 	}`;
 

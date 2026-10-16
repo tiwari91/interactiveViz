@@ -344,6 +344,7 @@ const FOAM_FRAG = `
 		vec3 col = mix(vec3(0.62, 0.8, 0.9), uColor, smoothstep(0.35, 0.8, n));
 		col += uNight * vec3(0.06, 0.09, 0.12);
 		gl_FragColor = vec4(col, min(1.0, a * 1.15));
+		#include <tonemapping_fragment>
 		#include <encodings_fragment>
 	}`;
 

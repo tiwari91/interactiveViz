@@ -107,6 +107,7 @@ const FRAG = `
 		vec3 col = mix(mix(uColor, uGlow, (1.0 - s) * (0.35 + 0.25 * shimmer)), mix(uCanal, uGlow, (1.0 - s) * 0.3), canal);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
 		gl_FragColor = vec4(mix(col, uFogColor, fog * 0.7), core * vNear * vVis * mix(0.55 + 0.4 * uFlow, 0.85, canal));
+		#include <tonemapping_fragment>
 		#include <encodings_fragment>
 	}`;
 

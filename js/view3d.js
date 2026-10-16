@@ -144,6 +144,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const presetParts = { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, terrain };
 		const usePreset = (name) => {
 			const p = applyPreset(name, presetParts);
+			sc.updateEnv(sky.mesh, p.env);
 			const nightV = name === "night" ? 1 : 0;
 			outflow.setNight(nightV);
 			links.setTheme(nightV > 0);
@@ -653,6 +654,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				this.stop();
 				unsub();
 				ro.disconnect();
+				sc.disposeEnv();
 				sc.renderer.dispose();
 				sc.renderer.forceContextLoss();
 				container.innerHTML = "";

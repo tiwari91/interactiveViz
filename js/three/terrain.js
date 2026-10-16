@@ -63,7 +63,7 @@ function shadeTerrain(P, m, slopeY, lon, lat, nz, inCA, out, outDry) {
 		tmp.lerp(P.hillWet, hill);
 		dry.lerp(P.hillDry, hill);
 		// The wetter north (Klamath, Shasta, northern Sierra) is wooded much lower down.
-		const low = smoothstep(38.6, 40.4, lat) * 650;
+		const low = smoothstep(38.6, 40.4, lat) * 780;
 		const forest = smoothstep(800 - low, 1300 - low, m + nz * 260) * (1 - smoothstep(2600, 3000, m));
 		tmp.lerp(P.forestWet, forest);
 		dry.lerp(P.forestDry, forest);
@@ -193,7 +193,14 @@ vec4 gD1;`)
 		float scrub = smoothstep(0.44, 0.6, scrubN) * veg * (1.0 - valley) * (0.35 + 0.65 * patchNear);
 		float clumps = smoothstep(0.3, 0.7, gD1.a + gD1.g * 0.5);
 		vec3 scrubC = mix(vec3(0.07, 0.09, 0.035), vec3(0.13, 0.12, 0.06), uGold * 0.5) * (0.7 + 0.7 * clumps);
-		float open = (1.0 - scrub) * veg * smoothstep(0.35, 0.6, d3.g * 0.6 + d4.g * 0.4);
+		// Conifer and oak woodland (dark ground colour): a closed canopy of dark crowns with
+		// sunlit tops and small gaps, which never turns to golden grass.
+		float conifer = (1.0 - smoothstep(0.07, 0.16, lum)) * veg * (1.0 - valley);
+		float crowns = smoothstep(0.25, 0.75, gD1.a * 0.6 + gD1.g * 0.4 + d4.r * 0.3);
+		vec3 canopyC = mix(vec3(0.016, 0.03, 0.014), vec3(0.05, 0.075, 0.03), crowns) * mix(0.85, 1.15, d2.g);
+		ground = mix(ground, canopyC, conifer * (0.55 + 0.4 * patchNear));
+		scrub *= 1.0 - conifer;
+		float open = (1.0 - scrub) * (1.0 - conifer) * veg * smoothstep(0.35, 0.6, d3.g * 0.6 + d4.g * 0.4);
 		vec3 goldC = vec3(0.36, 0.27, 0.1) * mix(0.82, 1.15, gD1.r);
 		ground = mix(ground, goldC, open * uGold * 0.85);
 		ground = mix(ground, scrubC, scrub * 0.9);

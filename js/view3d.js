@@ -17,6 +17,7 @@ import { createSnapshots } from "./three/snapshot.js";
 import { flyTo, poseOf, poseToPosition, replayPath } from "./three/camera.js";
 import { createControls3D } from "./three/controls3d.js";
 import { getQuality, saveQuality } from "./three/quality.js";
+import { createPulses } from "./three/pulses.js";
 import { currentTheme } from "./theme.js";
 
 const d3 = window.d3;
@@ -105,6 +106,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const dams = createDams(THREE, data, basins);
 		const links = createGaugeLinks(THREE, data, world, basins);
 		const outflow = createOutflow(THREE, basins, dams, world, shared, ui.quality);
+		const pulses = createPulses(THREE, outflow.outflowLines(), { perLine: ui.quality === "low" ? 4 : 8 });
+		outflow.group.add(pulses.points);
 		const mainRivers = createMainRivers(THREE, world, outflow.router, shared, basins);
 		const riparian = createRiparian(THREE, outflow, outflow.router, basins, world, ui.quality);
 		await step(0.95, "Filling lakes…");
@@ -184,6 +187,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const s0 = snapshot(store.get().dateIndex);
 		const cur = { levels: [ ...s0.levels ], foam: [ ...s0.foam ], outlet: [ ...s0.outlet ], spill: [ ...s0.spill ], dryness: s0.dryness, gold: s0.gold };
 		let target = s0;
+		let fxLevel = 0;
 		const presetParts = { sky, sun: sc.sun, hemi: sc.hemi, scene: sc.scene, water: shared, lakes, ocean, terrain };
 		const usePreset = (name) => {
 			const p = applyPreset(name, presetParts);
@@ -768,13 +772,17 @@ export function createView3D(container, data, store, tooltip, audio) {
 			sc.updateSun();
 
 			// Ease toward the target month.
-			const k = 1 - Math.exp(-dt * 4.5);
+			// Reduced motion: each month shows at once, no tween.
+			const k = reducedMotion.matches ? 1 : 1 - Math.exp(-dt * 4.5);
 			for (let i = 0; i < cur.levels.length; i++) cur.levels[i] += (target.levels[i] - cur.levels[i]) * k;
 			for (let i = 0; i < cur.foam.length; i++) cur.foam[i] += (target.foam[i] - cur.foam[i]) * k;
 			for (let i = 0; i < cur.outlet.length; i++) {
 				cur.outlet[i] += (target.outlet[i] - cur.outlet[i]) * k;
 				cur.spill[i] += (target.spill[i] - cur.spill[i]) * k;
 			}
+			fxLevel = runEvent(now);
+			pulses.update(dt, cur.outlet, outflow.group.visible && !reducedMotion.matches);
+			placeRecord();
 			cur.dryness += (target.dryness - cur.dryness) * k * 0.6;
 			cur.gold += (target.gold - cur.gold) * k * 0.6;
 
@@ -892,7 +900,109 @@ export function createView3D(container, data, store, tooltip, audio) {
 			}));
 		}
 
+		// Record-low marker: in the month a lake reaches its lowest storage in the data, a quiet ring
+		// settles on it with its % full; it fades after a few seconds or when the month changes.
+		const recordAt = new Map();
+		for (const b of basins.basins) {
+			const r = b.r;
+			if (r.floodControl || !r.hasData) continue;
+			let lo = -1;
+			r.series.forEach((v, i) => {
+				if (v !== null && !(r.filled && r.filled[i]) && (lo < 0 || v < r.series[lo])) lo = i;
+			});
+			if (lo >= 0) recordAt.set(lo, [ ...(recordAt.get(lo) ?? []), r ].sort((a, c) => c.capacity - a.capacity));
+		}
+		const sinceYear = data.months[0].slice(0, 4);
+		const record = document.createElement("div");
+		record.className = "record-low";
+		record.innerHTML = "<span class=\"record-ring\"></span><span class=\"record-text\"></span>";
+		container.appendChild(record);
+		let recordTimer = 0;
+		const shortName = (n) => n.replace(/\s*\(.*?\)/g, "").replace(/ (Dam|Reservoir|Lake)$/, "").replace(/^Lake /, "").replace(/ Dam .*$/, "");
+		function showRecord(i) {
+			clearTimeout(recordTimer);
+			record.classList.remove("on");
+			const r = recordAt.get(i)?.[0];
+			record.dataset.id = r ? r.id : "";
+			if (!r) return;
+			record.querySelector(".record-text").textContent = `${shortName(r.name)} ${Math.round(r.series[i] / r.capacity * 100)}%, lowest since ${sinceYear}`;
+			// Restart the settle animation.
+			void record.offsetWidth;
+			record.classList.add("on");
+			recordTimer = setTimeout(() => record.classList.remove("on"), 4500);
+		}
+		function placeRecord() {
+			const id = record.dataset.id;
+			if (!id || !record.classList.contains("on")) return;
+			const b = basins.byId.get(id);
+			v3.set(b.cx, b.levelFor(0.3) * vScale, b.cz).project(sc.camera);
+			const off = v3.z > 1 || Math.abs(v3.x) > 1.1 || Math.abs(v3.y) > 1.1;
+			record.style.visibility = off ? "hidden" : "";
+			record.style.transform = `translate(${((v3.x + 1) / 2 * container.clientWidth).toFixed(1)}px, ${((1 - v3.y) / 2 * container.clientHeight).toFixed(1)}px)`;
+		}
+
+		// Event moments, a few seconds each and only in their month: Feb 2017, white water bursting
+		// down Oroville's spillway chute; Jan 2023, a translucent rain band sweeping north to south.
+		const EVENT_MS = 4200;
+		const eventMonths = { oroville: data.months.indexOf("2017-02"), rain: data.months.indexOf("2023-01") };
+		const oroIdx = basins.basins.findIndex((b) => b.r.id === "ORO");
+		const [ bandX0, bandN ] = world.project([ -124.6, 42.1 ]);
+		const [ bandX1, bandS ] = world.project([ -114.0, 32.4 ]);
+		const bandDepth = (bandS - bandN) * 0.14;
+		const rainMat = new THREE.ShaderMaterial({
+			vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+			fragmentShader: `
+				uniform float uA; uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
+				float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+				void main() {
+					// Soft band across, thin falling streaks within it.
+					float band = smoothstep(0.0, 0.5, vUv.y) * smoothstep(1.0, 0.5, vUv.y);
+					float col = floor(vUv.x * 320.0);
+					float streak = step(0.6, h(vec2(col, 1.0))) * smoothstep(0.5, 1.0, fract(vUv.y * 6.0 + uTime * (1.5 + h(vec2(col, 2.0))) ));
+					gl_FragColor = vec4(uColor, uA * band * (0.3 + 0.3 * streak));
+				}`,
+			uniforms: { uA: { value: 0 }, uTime: shared.uTime, uColor: { value: new THREE.Color("#5aa9e6") } },
+			transparent: true,
+			depthWrite: false,
+			side: THREE.DoubleSide,
+		});
+		// A horizontal band of rain lying over the state, crossing it from north to south.
+		const rain = new THREE.Mesh(new THREE.PlaneGeometry(bandX1 - bandX0, bandDepth), rainMat);
+		rain.rotation.x = -Math.PI / 2;
+		rain.position.set((bandX0 + bandX1) / 2, 40, bandN);
+		rain.visible = false;
+		rain.renderOrder = 4;
+		sc.scene.add(rain);
+		let fx = null;
+		function startEvent(i) {
+			fx = null;
+			rain.visible = false;
+			if (reducedMotion.matches) return;
+			if (i === eventMonths.oroville && oroIdx >= 0) fx = { name: "oroville", t0: performance.now() };
+			else if (i === eventMonths.rain) fx = { name: "rain", t0: performance.now() };
+		}
+		// Envelope 0..1 over the event: quick rise, hold, slow fade.
+		function runEvent(now) {
+			if (!fx) return 0;
+			const t = (now - fx.t0) / EVENT_MS;
+			if (t >= 1) {
+				fx = null;
+				rain.visible = false;
+				return 0;
+			}
+			const env = Math.min(1, t / 0.12) * Math.min(1, (1 - t) / 0.35);
+			if (fx.name === "oroville") cur.spill[oroIdx] = Math.max(cur.spill[oroIdx], env);
+			else {
+				rain.visible = true;
+				rain.position.z = bandN - bandDepth / 2 + (bandS - bandN + bandDepth) * t;
+				rainMat.uniforms.uA.value = env;
+			}
+			return env;
+		}
+
 		function setMonth(i) {
+			startEvent(i);
+			showRecord(i);
 			target = snapshot(i);
 			outflow.setWidths(target.outlet);
 			labels.setValues(i);
@@ -1056,6 +1166,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 					return { id: b.r.id, xz: Math.hypot(r.start[0] - f[0], r.start[2] - f[2]), dy: onWall ? 0 : Math.abs(sy - fy), px: onWall ? 0 : Math.hypot(a[0] - c[0], a[1] - c[1]), lift: sy - fy };
 				});
 			},
+			pulseCount: () => pulses.count(),
+			eventFx: () => ({ name: fx ? fx.name : null, level: fxLevel, rain: rain.visible, spill: oroIdx >= 0 ? cur.spill[oroIdx] : null }),
+			recordLow: () => ({ id: record.dataset.id, on: record.classList.contains("on"), text: record.querySelector(".record-text").textContent }),
+			recordMonths: () => [ ...recordAt.entries() ].map(([ i, rs ]) => ({ i, ids: rs.map((r) => r.id), pct: rs[0].series[i] / rs[0].capacity })),
 			outflowLine: (id) => outflow.riverPath(basins.basins.findIndex((b) => b.r.id === id)).pts,
 			riverGaps: (i) => {
 				const snap = snapshot(i);
@@ -1178,6 +1292,9 @@ export function createView3D(container, data, store, tooltip, audio) {
 			keyboardPick: () => kbId,
 			dispose() {
 				this.stop();
+				clearTimeout(recordTimer);
+				record.remove();
+				pulses.dispose();
 				unsub();
 				ro.disconnect();
 				sc.disposeEnv();

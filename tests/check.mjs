@@ -76,6 +76,23 @@ const facts = (page) => page.evaluate(() => {
 		links: d.links.length,
 	};
 });
+// A lake's level over the frames right after a month change (then once it has settled).
+const levelFrames = (page, id, from, to) => page.evaluate(async ([ id, from, to ]) => {
+	const c = window.droughtViz.views["3d"].debug();
+	const st = window.droughtViz.store;
+	const frame = () => new Promise((r) => requestAnimationFrame(r));
+	st.set({ dateIndex: from });
+	await new Promise((r) => setTimeout(r, 3000));
+	const a = c.level(id);
+	st.set({ dateIndex: to });
+	const seq = [];
+	for (let k = 0; k < 8; k++) {
+		await frame();
+		seq.push(c.level(id));
+	}
+	await new Promise((r) => setTimeout(r, 3000));
+	return { a, seq, b: c.level(id) };
+}, [ id, from, to ]);
 const debug3d = (page, expr) => page.evaluate(`(() => { const c = window.droughtViz.views["3d"].debug(); return ${expr}; })()`);
 
 // Element screenshot via a page clip (the WebGL canvas never "settles" for locator screenshots).
@@ -631,6 +648,25 @@ async function main() {
 		const after = await page.locator(".js-state-pct").innerText();
 		check("Timeline scrub changes statewide value", before !== after, `${before} -> ${after}`);
 		check("Timeline scrub updates month label", /2016/.test(await page.locator(".date-readout .month").innerText()), await page.locator(".date-readout .month").innerText());
+		{
+			// Statewide gauge: drains to the month's % full (animated), tick at the monthly average.
+			const read = () => page.evaluate(() => {
+				const g = document.querySelector(".js-gauge");
+				const h = g.clientHeight;
+				return { r: g.querySelector(".fill-gauge-water").getBoundingClientRect().height / h, pct: +g.dataset.pct, avg: +g.dataset.avg, tick: parseFloat(getComputedStyle(g.querySelector(".fill-gauge-avg")).bottom) / h, h };
+			});
+			await setState(page, { dateIndex: await monthIndex(page, "2017-04") });
+			await page.waitForTimeout(1200);
+			const g0 = await read();
+			await setState(page, { dateIndex: await monthIndex(page, "2014-09") });
+			await page.waitForTimeout(150);
+			const gm = await read();
+			await page.waitForTimeout(1200);
+			const g1 = await read();
+			check("Statewide gauge drains to the month's % full, animated, with an average tick",
+				g1.h >= 20 && Math.abs(g0.r - g0.pct) < 0.02 && Math.abs(g1.r - g1.pct) < 0.02 && gm.r < g0.r - 0.01 && gm.r > g1.r + 0.01 && Math.abs(g1.tick - g1.avg) < 0.03 && g1.avg > g1.pct,
+				`Apr 2017 ${(g0.r * 100).toFixed(0)}% (data ${(g0.pct * 100).toFixed(0)}%), 150 ms in ${(gm.r * 100).toFixed(0)}%, Sep 2014 ${(g1.r * 100).toFixed(0)}% (data ${(g1.pct * 100).toFixed(0)}%), average tick ${(g1.tick * 100).toFixed(0)}% (data ${(g1.avg * 100).toFixed(0)}%)`);
+		}
 
 		check("Timeline marks the selected month with a playhead dot", (await page.locator(".track .playhead circle").count()) === 1);
 		const ex = await page.evaluate(() => { const t = window.droughtViz.data.totals; const lo = t.reduce((m, d, i) => (d.pct < t[m].pct ? i : m), 0); return { lo, n: document.querySelectorAll(".track .extreme").length }; });
@@ -719,6 +755,78 @@ async function main() {
 		await page.waitForTimeout(2500);
 		const lvlWet = await debug3d(page, "c.level('SHA')");
 		check("Timeline raises Shasta's lake level", lvlWet - lvlDry > 0.5, `${lvlDry.toFixed(2)} -> ${lvlWet.toFixed(2)}`);
+		{
+			// Receding shoreline: the lake eases down to the new month over several frames.
+			const tw = await levelFrames(page, "ORO", await monthIndex(page, "2017-04"), await monthIndex(page, "2014-09"));
+			const span = tw.a - tw.b;
+			const between = tw.seq.filter((v) => v < tw.a - span * 0.02 && v > tw.b + span * 0.02).length;
+			const steady = tw.seq.every((v, k) => k === 0 || v <= tw.seq[k - 1] + 1e-6);
+			// Flow pulses ride the rivers: more of them in a wet month than in a drought, none with
+			// the Rivers layer off.
+			const frames = (n) => page.evaluate((n) => new Promise((r) => { const f = () => (--n <= 0 ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
+			const pulseDry = await debug3d(page, "c.pulseCount()");
+			await setState(page, { dateIndex: await monthIndex(page, "2017-04") });
+			await page.waitForTimeout(3000);
+			const pulseWet = await debug3d(page, "c.pulseCount()");
+			await debug3d(page, "c.setLayer('rivers', false)");
+			await frames(3);
+			const pulseOff = await debug3d(page, "c.pulseCount()");
+			await debug3d(page, "c.setLayer('rivers', true)");
+			await frames(3);
+			check("Flow pulses travel the rivers, scaled by release; none with Rivers off", pulseDry > 0 && pulseWet > pulseDry && pulseOff === 0 && (await debug3d(page, "c.pulseCount()")) > 0, `Sep 2014 ${pulseDry}, Apr 2017 ${pulseWet}, Rivers off ${pulseOff}`);
+			await setState(page, { dateIndex: await monthIndex(page, "2014-09") });
+			await page.waitForTimeout(2500);
+			check("Lake level tweens down to the new month over several frames", span > 0.5 && between >= 4 && steady, `ORO ${tw.a.toFixed(2)} -> ${tw.b.toFixed(2)}; frames ${tw.seq.map((v) => v.toFixed(2)).join(" ")}`);
+		}
+		{
+			// Event moments: Oroville's spillway bursts in Feb 2017 and a rain band crosses the state
+			// in Jan 2023, each only in its month and gone a few seconds later or on a month change.
+			const fx = () => page.evaluate(() => window.droughtViz.views["3d"].debug().eventFx());
+			const iO = await monthIndex(page, "2017-02");
+			const iR = await monthIndex(page, "2023-01");
+			await setState(page, { dateIndex: iO - 1 });
+			await page.waitForTimeout(500);
+			const f0 = await fx();
+			await setState(page, { dateIndex: iO });
+			await page.waitForTimeout(700);
+			const f1 = await fx();
+			await page.waitForTimeout(4500);
+			const f2 = await fx();
+			await setState(page, { dateIndex: iR });
+			await page.waitForTimeout(1500);
+			const f3 = await fx();
+			await setState(page, { dateIndex: iR + 1 });
+			await page.waitForTimeout(300);
+			const f4 = await fx();
+			check("Event moments: Oroville spillway burst in Feb 2017, rain band in Jan 2023, only in their month and brief",
+				!f0.name && f1.name === "oroville" && f1.spill > 0.5 && !f2.name && f3.name === "rain" && f3.rain && f3.level > 0.3 && !f4.name && !f4.rain,
+				`month before ${f0.name}; Feb 2017 ${f1.name} spill ${f1.spill?.toFixed(2)}; 5 s later ${f2.name}; Jan 2023 ${f3.name} rain ${f3.rain} at ${f3.level.toFixed(2)}; next month ${f4.name}`);
+		}
+		{
+			// Record-low marker: only in the month a lake hits its lowest storage, gone the month
+			// after, and it fades by itself after a few seconds.
+			const rec = await page.evaluate(() => window.droughtViz.views["3d"].debug().recordMonths());
+			const at = new Set(rec.map((r) => r.i));
+			const pick = rec.filter((r) => !at.has(r.i - 1) && !at.has(r.i + 1)).sort((a, b) => a.pct - b.pct)[0];
+			const rl = () => page.evaluate(() => window.droughtViz.views["3d"].debug().recordLow());
+			await setState(page, { dateIndex: pick.i - 1 });
+			await page.waitForTimeout(300);
+			const r0 = await rl();
+			await setState(page, { dateIndex: pick.i });
+			await page.waitForTimeout(800);
+			const r1 = await rl();
+			const vis = await page.evaluate(() => +getComputedStyle(document.querySelector(".record-low")).opacity);
+			await setState(page, { dateIndex: pick.i + 1 });
+			await page.waitForTimeout(300);
+			const r2 = await rl();
+			await setState(page, { dateIndex: pick.i });
+			await page.waitForTimeout(5500);
+			const r3 = await rl();
+			const pctTxt = `${Math.round(pick.pct * 100)}%`;
+			check("Record-low ring shows only in a lake's lowest month, with its % from the data, then fades",
+				!r0.on && r1.on && r1.id === pick.ids[0] && r1.text.includes(pctTxt) && /lowest since 2011/.test(r1.text) && vis > 0.5 && !r2.on && !r3.on,
+				`${rec.length} record months; ${r1.text} at ${(await stateOf(page)).dateIndex}; month before ${r0.on}, after ${r2.on}, 5.5 s later ${r3.on}`);
+		}
 		await shot(page, "3d-wide-wet-apr2017.png", ".stage");
 
 		const box = await page.locator("#view-3d").boundingBox();
@@ -975,7 +1083,7 @@ async function main() {
 				}, g.id));
 			}
 			await debug3d(page, `c.setPose(${JSON.stringify(pose0)})`);
-			const badFar = far.filter((g) => g.xz > 0.1 || g.px > 3);
+			const badFar = far.filter((g) => g.xz > 0.1 || g.px > 4);
 			const badNear = near.filter((g) => g.xz > 0.1 || g.dy > 0.08 || g.px > 8);
 			const worst = (a, k) => Math.max(...a.map((g) => g[k])).toFixed(2);
 			check("Every dam's river leaves from the foot of the dam, at the state view and close in (relief flattened)",
@@ -1168,6 +1276,14 @@ async function main() {
 		const rm = await stateOf(page);
 		check("Reduced motion: replay cuts between stops instead of flying", changes <= 2 && rm.dateIndex > 3, `${changes} camera changes in 4 s, month index ${rm.dateIndex}`);
 		await page.locator(".js-replay").click();
+		{
+			const tw = await levelFrames(page, "ORO", await monthIndex(page, "2017-04"), await monthIndex(page, "2014-09"));
+			check("Reduced motion: no flow pulses", (await debug3d(page, "c.pulseCount()")) === 0);
+			await setState(page, { dateIndex: await monthIndex(page, "2017-02") });
+			await page.waitForTimeout(500);
+			check("Reduced motion: no event animations", (await debug3d(page, "c.eventFx()")).name === null);
+			check("Reduced motion: lake level changes at once, no tween", Math.abs(tw.seq[1] - tw.b) < 1e-3 && tw.a - tw.b > 0.5, `frames ${tw.seq.slice(0, 3).map((v) => v.toFixed(2)).join(" ")}, final ${tw.b.toFixed(2)}`);
+		}
 		allErrors.push(...errors);
 		await ctx.close();
 

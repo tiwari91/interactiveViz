@@ -957,6 +957,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		// For tests: each strip's dam, kind, first and last centre point, lowest point and the
 		// biggest step between neighbouring centre points (a gap in the line).
 		// For tests: centre points of the main-stem ribbons.
+		// Each dam's outflow centreline (for the flow pulses).
+		outflowLines: () => strips.filter((st) => st.kind === KIND.OUTFLOW).map((st) => ({ dam: st.dam, pts: st.centre })),
 		stemPoints: () => strips.filter((st) => st.kind === KIND.MAIN).flatMap((st) => st.centre.map((p) => [ p[0], p[2] ])),
 		links: () => strips.filter((st) => st.kind !== KIND.CHUTE && st.kind !== KIND.MAIN).map((st) => {
 			let gap = 0;

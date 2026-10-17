@@ -11,7 +11,13 @@ export function createSummary(el, data, store, onPick) {
 	el.innerHTML = `
 		<div>
 			<h3 class="js-state-title"></h3>
-			<div class="big num js-state-pct"></div>
+			<div class="state-big">
+				<div class="big num js-state-pct"></div>
+				<div class="fill-gauge js-gauge" role="img">
+					<span class="fill-gauge-water"></span>
+					<span class="fill-gauge-avg"></span>
+				</div>
+			</div>
 			<div class="sub js-state-sub"></div>
 			<div class="sub js-state-avg"></div>
 			<div class="sub js-state-delta"></div>
@@ -40,6 +46,17 @@ export function createSummary(el, data, store, onPick) {
 		const prov = data.provisional[dateIndex] ? " · provisional" : "";
 		el.querySelector(".js-state-title").textContent = `${data.tracked.length} tracked reservoirs, ${fmtMonth(data.dates[dateIndex])}${prov}`;
 		el.querySelector(".js-state-pct").textContent = fmtPct(t.pct);
+		// Water-level gauge: drains and refills with the month's % full (eased in CSS), with a tick
+		// at the average % full for this calendar month; the top of the gauge is 100%.
+		const gauge = el.querySelector(".js-gauge");
+		const avgPct = t.ofAvg ? t.pct / t.ofAvg : null;
+		gauge.querySelector(".fill-gauge-water").style.transform = `scaleY(${Math.min(1, Math.max(0, t.pct)).toFixed(4)})`;
+		const tick = gauge.querySelector(".fill-gauge-avg");
+		tick.hidden = avgPct === null;
+		if (avgPct !== null) tick.style.bottom = `${(Math.min(1, avgPct) * 100).toFixed(2)}%`;
+		gauge.dataset.pct = t.pct.toFixed(4);
+		gauge.dataset.avg = avgPct === null ? "" : avgPct.toFixed(4);
+		gauge.setAttribute("aria-label", `Statewide water level: ${fmtPct(t.pct)} full${avgPct === null ? "" : `, average for the month ${fmtPct(avgPct)}`}`);
 		el.querySelector(".js-state-sub").textContent = `${fmtMAF(t.storage).replace(/ AF$/, "")} of ${fmtMAF(t.capacity).replace(/ AF$/, "")} acre-feet capacity`;
 		const mName = d3.timeFormat("%B")(data.dates[dateIndex]);
 		el.querySelector(".js-state-avg").innerHTML = t.ofAvg === null ? "" : `<strong class="${t.ofAvg < 0.8 ? "below-avg" : t.ofAvg > 1.1 ? "above-avg" : ""}">${fmtPct(t.ofAvg)} of average</strong> for ${mName}, ${data.avgYears.from}–${String(data.avgYears.to).slice(2)}`;

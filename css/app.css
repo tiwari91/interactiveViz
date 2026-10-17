@@ -205,3 +205,11 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 /* Scale bar sits bottom-right above the dock, clear of the hint text; rows without a slider use the full width. */
 .scale-bar { left: auto; right: 14px; bottom: 56px; align-items: flex-end; }
 .layer-row:not([data-layer="labels"]) .layer-name { grid-column: 1 / -1; }
+
+/* Layer names stay on one line. */
+.layer-name span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The reservoir card sits top-left over the map: move the compass to its right. */
+@media (min-width: 561px) { body[data-mode="3d"]:has(.detail-card:not([hidden])) .compass { left: 304px; } }
+/* Full screen: the map card fills the screen, map takes what the timeline leaves. */
+#map:fullscreen { overflow: auto; background: var(--bg); }
+#map:fullscreen .viz-body, body[data-mode="3d"] #map:fullscreen .viz-body { --stage-h: calc(100vh - 250px); }

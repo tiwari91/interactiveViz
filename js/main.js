@@ -227,6 +227,22 @@ async function start() {
 	});
 
 	$("#reset-view").addEventListener("click", () => views[store.get().mode].resetView());
+	// Full screen for the map card, where the browser allows it (not inside some embedded viewers).
+	const fsBtn = $("#fullscreen");
+	const mapCard = $("#map");
+	if (document.fullscreenEnabled && mapCard.requestFullscreen) {
+		fsBtn.hidden = false;
+		fsBtn.addEventListener("click", () => {
+			if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+			else mapCard.requestFullscreen().catch(() => {});
+		});
+		document.addEventListener("fullscreenchange", () => {
+			const on = document.fullscreenElement === mapCard;
+			fsBtn.textContent = on ? "Exit full screen" : "Full screen";
+			fsBtn.setAttribute("aria-label", fsBtn.textContent);
+			window.dispatchEvent(new Event("resize"));
+		});
+	}
 
 	initTheme($("#theme-toggle"), (theme) => views["3d"].setTheme(theme));
 

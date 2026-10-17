@@ -34,14 +34,19 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 	let timer = null;
 	let head = null;
 	let xOf = null;
+	let yOf = null;
 
 	function drawSpark() {
-		const w = el.querySelector(".track").clientWidth;
-		const h = 36;
+		const track = el.querySelector(".track");
+		const w = track.clientWidth;
+		// The sparkline takes the track's height above the year labels (taller on desktop,
+		// where the timeline panel shares a row with the key events).
+		const h = Math.max(36, track.clientHeight - 18);
 		// Thumb centre travels from 2px to w-2px; match it.
 		const x = d3.scaleTime().domain(d3.extent(dates)).range([ 2, w - 2 ]);
 		const y = d3.scaleLinear().domain([ 0, 1 ]).range([ h, 4 ]);
 		xOf = x;
+		yOf = y;
 		svg.selectAll("*").remove();
 		// Drought emergencies (from data/drought_periods.csv), labelled when there is room.
 		for (const p of droughtPeriods) {
@@ -114,7 +119,7 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 			this.setAttribute("x", lx);
 			this.style.display = show ? "" : "none";
 		});
-		head.select("circle").attr("cy", 36 - totals[i].pct * 32);
+		head.select("circle").attr("cy", yOf(totals[i].pct));
 	}
 
 	function render({ dateIndex, playing }) {

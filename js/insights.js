@@ -28,7 +28,7 @@ export function createKeyEvents(el, data, store, events) {
 		<ul class="event-list">${events.map((e) => `
 			<li><button type="button" class="event-btn" data-event="${e.id}" data-index="${e.i}">
 				<span class="event-icon" aria-hidden="true">${e.icon}</span>
-				<span class="event-name">${e.name}</span>
+				<span class="event-name" title="${e.name}">${e.name}</span>
 				<span class="event-time num">${fmtMonth(data.dates[e.i])}</span>
 			</button></li>`).join("")}</ul>`;
 	const btns = [ ...el.querySelectorAll(".event-btn") ];

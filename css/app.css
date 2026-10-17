@@ -129,8 +129,9 @@ html { scroll-padding-top: 64px; }
 body[data-mode="3d"] .stage-hint { left: auto; }
 
 /* ---- Bottom: timeline + key events ---- */
-.bottom-row { display: grid; grid-template-columns: minmax(0, 1fr) 280px; border-top: 1px solid var(--line); }
-.timeline-panel { padding: 10px 0 0; min-width: 0; }
+.bottom-row { display: grid; grid-template-columns: minmax(0, 1fr) 320px; border-top: 1px solid var(--line); }
+.timeline-panel { display: flex; flex-direction: column; padding: 10px 0 0; min-width: 0; }
+.timeline-panel .timeline { flex: 1; }
 .timeline-panel > .panel-title { padding: 0 16px; }
 .timeline-panel .timeline { border-top: 0; padding-top: 6px; }
 .tl-buttons { display: flex; align-items: center; gap: 4px; }
@@ -141,12 +142,14 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 .track .event-mark { fill: var(--accent); stroke: var(--surface); stroke-width: 1; pointer-events: all; cursor: pointer; }
 .hover-label { position: absolute; top: -16px; z-index: 3; transform: translateX(-50%); padding: 1px 6px; border-radius: 4px; background: var(--ink); color: var(--surface); font-size: 10px; pointer-events: none; white-space: nowrap; }
 
-.key-events { padding: 10px 14px; border-left: 1px solid var(--line); }
-.event-list { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
-.event-btn { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 5px 6px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; }
+.key-events { padding: 10px 14px 8px; border-left: 1px solid var(--line); }
+/* Compact one-line rows, so the list is about as tall as the timeline beside it. */
+.event-list { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 0; }
+.event-btn { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 24px; padding: 2px 6px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; font-size: 0.8rem; line-height: 1.2; text-align: left; cursor: pointer; }
+.event-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .event-btn:hover { background: var(--surface-2); }
 .event-btn[aria-current="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-.event-icon { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-size: 0.7rem; font-weight: 700; }
+.event-icon { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-size: 0.7rem; font-weight: 700; }
 .event-time { color: var(--ink-3); font-size: 0.75rem; }
 
 /* ---- Charts ---- */
@@ -213,3 +216,9 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 /* Full screen: the map card fills the screen, map takes what the timeline leaves. */
 #map:fullscreen { overflow: auto; background: var(--bg); }
 #map:fullscreen .viz-body, body[data-mode="3d"] #map:fullscreen .viz-body { --stage-h: calc(100vh - 250px); }
+/* Desktop: the timeline shares its row with the key events, so its sparkline grows into the
+   height the event list sets instead of leaving an empty strip under it. */
+@media (min-width: 901px) {
+	.timeline-panel .timeline { padding-bottom: 10px; }
+	.timeline-panel .track { height: 76px; }
+}

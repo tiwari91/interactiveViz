@@ -372,31 +372,46 @@ export function createView3D(container, data, store, tooltip, audio) {
 			const s = basins.surfaceAt(x, z);
 			return Math.max(0.3, s ? s.h : world.groundY(x, z)) * vScale;
 		};
+		// Top of what is drawn at a point: the ground, or a lake's water where it covers the bed.
+		// k is the vertical scale to use (the current one, or one a zoom step is about to reach).
+		const lakeIdx = new Map(basins.basins.map((b, i) => [ b.r.id, i ]));
+		const topAt = (x, z, k = vScale) => {
+			const s = basins.surfaceAt(x, z);
+			let h = s ? s.h : world.groundY(x, z);
+			if (s && lakeIdx.has(s.basinId)) h = Math.max(h, cur.levels[lakeIdx.get(s.basinId)]);
+			return Math.max(0.3, h) * k;
+		};
 		// Keep the camera above the terrain and its view of the target clear: sample the
 		// ground along the sight line and lift the camera until every sample is above it.
 		const CLEAR_F = [ 1, 0.93, 0.86, 0.78, 0.7, 0.62, 0.54, 0.46, 0.38, 0.3, 0.22 ];
 		// Highest ground in a ring round a point (not just under it): canyon rims count.
 		const RING = Array.from({ length: 12 }, (_, k) => [ Math.cos(k * Math.PI / 6), Math.sin(k * Math.PI / 6) ]);
-		function ringGround(x, z, r) {
-			let g = groundAt(x, z);
-			for (const [ cx, cz ] of RING) g = Math.max(g, groundAt(x + cx * r, z + cz * r), groundAt(x + cx * r * 0.5, z + cz * r * 0.5));
+		function ringGround(x, z, r, at = groundAt) {
+			let g = at(x, z);
+			for (const [ cx, cz ] of RING) g = Math.max(g, at(x + cx * r, z + cz * r), at(x + cx * r * 0.5, z + cz * r * 0.5));
 			return g;
 		}
-		function keepAbove() {
-			const t = sc.controls.target;
-			const p = sc.camera.position;
+		// Lowest camera height for a camera at p looking at t, with the ground (and water) at
+		// vertical scale k. Pure, so a zoom step can test a pose before taking it.
+		function needAt(p, t, k = vScale) {
+			const top = (x, z) => topAt(x, z, k);
 			const dist = p.distanceTo(t);
 			const margin = 1.5 + dist * 0.05;
 			// Close in, stay well above the local terrain: at least 40% of the distance to the
 			// target above the highest ground round the camera, so a view never sits beside cliffs.
-			let need = dist < 120 ? ringGround(p.x, p.z, Math.max(3, dist * 0.35)) + dist * 0.4 : -Infinity;
+			let need = dist < 120 ? ringGround(p.x, p.z, Math.max(3, dist * 0.35), top) + dist * 0.4 : -Infinity;
 			for (const f of CLEAR_F) {
 				const x = t.x + (p.x - t.x) * f;
 				const z = t.z + (p.z - t.z) * f;
-				let g = groundAt(x, z);
-				if (f === 1) for (const [ ox, oz ] of [ [ 2, 0 ], [ -2, 0 ], [ 0, 2 ], [ 0, -2 ] ]) g = Math.max(g, groundAt(x + ox, z + oz));
+				let g = top(x, z);
+				if (f === 1) for (const [ ox, oz ] of [ [ 2, 0 ], [ -2, 0 ], [ 0, 2 ], [ 0, -2 ] ]) g = Math.max(g, top(x + ox, z + oz));
 				need = Math.max(need, t.y + (g + margin * f - t.y) / f);
 			}
+			return need;
+		}
+		function keepAbove() {
+			const p = sc.camera.position;
+			const need = needAt(p, sc.controls.target);
 			if (need > p.y) p.y = need;
 			return need;
 		}
@@ -416,32 +431,41 @@ export function createView3D(container, data, store, tooltip, audio) {
 		};
 		// Smooth zoom. Wheel, trackpad, pinch, double-click and + / - all set a goal distance;
 		// each frame the camera eases toward it (exponential, about 75 ms, at most 12% a frame),
-		// scaling about the ground point under the pointer so that point stays put on screen.
-		// Tilt follows the eased distance, pivoting about the same point. Idle frames do nothing.
+		// scaling about the ground point under the pointer. Tilt follows the eased distance, one
+		// way per zoom direction and rate-limited. A step that would take the camera too close to
+		// the ground is shortened (never undone), so zoom comes to rest at the terrain instead
+		// of bouncing off it. After every other adjustment (relief scale, ground lift) the view
+		// slides so the anchor point lands back under the pointer. Idle frames do nothing.
 		sc.controls.enableZoom = false;
 		const sph = new THREE.Spherical();
 		const off = new THREE.Vector3();
-		const axis = new THREE.Vector3();
-		const quat = new THREE.Quaternion();
-		const zoom = { goal: 0, anchor: new THREE.Vector3(), active: false };
+		const zp = new THREE.Vector3();
+		const zt = new THREE.Vector3();
+		const za = new THREE.Vector3();
+		const zaxis = new THREE.Vector3();
+		const zquat = new THREE.Quaternion();
+		// anchor: land-local (unscaled y) ground point; px: the client pixel it is held under.
+		const zoom = { goal: 0, anchor: new THREE.Vector3(), px: [ 0, 0 ], active: false, held: false, relief: 0 };
 		const ZOOM_TAU = 0.075;
 		const ZOOM_STEP = 0.12;
+		const TILT_MAX = 0.012;
 		function groundUnder(cx, cy) {
 			const r = canvas.getBoundingClientRect();
 			ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+			sc.camera.updateMatrixWorld();
 			raycaster.setFromCamera(ndc, sc.camera);
 			const o = raycaster.ray.origin;
 			const d = raycaster.ray.direction;
 			if (d.y >= -0.01) return null;
 			const far = sc.camera.position.distanceTo(sc.controls.target) * 4;
-			const below = (t) => o.y + d.y * t <= groundAt(o.x + d.x * t, o.z + d.z * t);
+			const below = (t) => o.y + d.y * t <= topAt(o.x + d.x * t, o.z + d.z * t);
 			let prev = 0;
 			for (let n = 1; n <= 200; n++) {
 				const t = (far * n) / 200;
 				if (below(t)) {
 					let lo = prev;
 					let hi = t;
-					for (let it = 0; it < 10; it++) {
+					for (let it = 0; it < 14; it++) {
 						const mid = (lo + hi) / 2;
 						if (below(mid)) hi = mid;
 						else lo = mid;
@@ -459,45 +483,146 @@ export function createView3D(container, data, store, tooltip, audio) {
 			const goal = Math.min(sc.controls.maxDistance, Math.max(sc.controls.minDistance, base * factor));
 			if (Math.abs(Math.log(goal / base)) < 1e-4) return false;
 			const r = canvas.getBoundingClientRect();
-			const a = groundUnder(cx ?? r.left + r.width / 2, cy ?? r.top + r.height / 2);
-			zoom.anchor.copy(a ?? sc.controls.target);
+			const x = cx ?? r.left + r.width / 2;
+			const y = cy ?? r.top + r.height / 2;
+			// Repeat notches at the same pixel keep their anchor; re-picking it adds jitter.
+			if (!(zoom.active && Math.hypot(x - zoom.px[0], y - zoom.px[1]) <= 1)) {
+				const a = groundUnder(x, y);
+				if (a) {
+					zoom.anchor.set(a.x, a.y / vScale, a.z);
+					zoom.px = [ x, y ];
+				} else {
+					// No ground under the pointer (sky): zoom about the target, held at the centre.
+					const t = sc.controls.target;
+					zoom.anchor.set(t.x, t.y / vScale, t.z);
+					zoom.px = [ r.left + r.width / 2, r.top + r.height / 2 ];
+				}
+			}
+			if (!zoom.active) zoom.relief = reliefAt(d);
 			zoom.goal = goal;
 			zoom.active = true;
 			mover = null;
 			return true;
 		}
+		// The pose one zoom step of factor s would give, written to zp / zt; true if it clears the ground.
+		function zoomPose(s, step) {
+			const p = sc.camera.position;
+			const t = sc.controls.target;
+			za.set(zoom.anchor.x, zoom.anchor.y * vScale, zoom.anchor.z);
+			zp.copy(p).sub(za).multiplyScalar(s).add(za);
+			zt.copy(t).sub(za).multiplyScalar(s).add(za);
+			// Tilt toward the view for this distance, only ever one way per zoom direction.
+			off.copy(zp).sub(zt);
+			sph.setFromVector3(off);
+			const want = Math.min(sc.controls.maxPolarAngle, polarFor(sph.radius, zoom.relief));
+			let dphi = Math.max(-TILT_MAX, Math.min(TILT_MAX, (want - sph.phi) * Math.min(1, Math.abs(step) * 2.2)));
+			dphi = step < 0 ? Math.max(0, dphi) : Math.min(0, dphi);
+			dphi = Math.min(dphi, sc.controls.maxPolarAngle - sph.phi);
+			if (dphi !== 0) {
+				// Rotate the whole view about the camera's right axis through the anchor: the polar
+				// angle changes by exactly dphi and the anchor keeps its place on screen.
+				zaxis.set(off.z, 0, -off.x).normalize();
+				zquat.setFromAxisAngle(zaxis, dphi);
+				zp.sub(za).applyQuaternion(zquat).add(za);
+				zt.sub(za).applyQuaternion(zquat).add(za);
+			}
+			sph.radius = zp.distanceTo(zt);
+			// The relief scale this distance will bring.
+			const k = scaleFor(sph.radius);
+			zp.y *= k / vScale;
+			zt.y *= k / vScale;
+			if (step > 0) return true;
+			// Close over high ground, look down more to stay clear of it (as keepAbove would),
+			// but by turning about the anchor, a little a frame, so the anchor stays put.
+			za.y *= k / vScale;
+			let turned = 0;
+			for (let it = 0; it < 3; it++) {
+				const lack = needAt(zp, zt, k) - zp.y;
+				if (lack <= 1e-3) return true;
+				const hd = Math.max(1, Math.hypot(zp.x - za.x, zp.z - za.z));
+				const dphi = Math.max(-(TILT_MAX - turned), -lack / hd * 1.1);
+				if (dphi > -1e-5 || sph.phi + dphi - turned < 0.2) break;
+				off.copy(zp).sub(zt);
+				zaxis.set(off.z, 0, -off.x).normalize();
+				zquat.setFromAxisAngle(zaxis, dphi);
+				zp.sub(za).applyQuaternion(zquat).add(za);
+				zt.sub(za).applyQuaternion(zquat).add(za);
+				turned -= dphi;
+			}
+			return needAt(zp, zt, k) <= zp.y + 1e-3;
+		}
 		function stepZoom(dt) {
+			zoom.held = false;
 			if (!zoom.active) return;
 			if (replayFn || mover) {
 				zoom.active = false;
 				return;
 			}
-			const p = sc.camera.position;
-			const t = sc.controls.target;
-			const A = zoom.anchor;
-			const d = p.distanceTo(t);
+			const d = sc.camera.position.distanceTo(sc.controls.target);
 			const gap = Math.log(zoom.goal / d);
 			if (Math.abs(gap) < 2e-3) {
 				zoom.active = false;
 				return;
 			}
-			const step = Math.max(-ZOOM_STEP, Math.min(ZOOM_STEP, gap * (1 - Math.exp(-dt / ZOOM_TAU))));
-			const s = Math.exp(step);
-			p.sub(A).multiplyScalar(s).add(A);
-			t.sub(A).multiplyScalar(s).add(A);
-			// Tilt toward the view for this distance, pivoting about the anchor.
-			off.copy(p).sub(t);
-			sph.setFromVector3(off);
-			const want = Math.min(sc.controls.maxPolarAngle, polarFor(d * s, reliefAt(d * s)));
-			const dphi = (want - sph.phi) * Math.min(1, Math.abs(step) * 2.2);
-			if (Math.abs(dphi) > 1e-5) {
-				axis.set(off.z, 0, -off.x).normalize();
-				quat.setFromAxisAngle(axis, dphi);
-				const trial = off.clone().applyQuaternion(quat);
-				if (Math.acos(Math.min(1, trial.y / trial.length())) < sph.phi === dphi > 0) quat.setFromAxisAngle(axis, -dphi);
-				p.sub(A).applyQuaternion(quat).add(A);
-				t.sub(A).applyQuaternion(quat).add(A);
+			zoom.relief += (reliefAt(d) - zoom.relief) * (1 - Math.exp(-dt / 0.25));
+			let step = Math.max(-ZOOM_STEP, Math.min(ZOOM_STEP, gap * (1 - Math.exp(-dt / ZOOM_TAU))));
+			if (!zoomPose(Math.exp(step), step)) {
+				// Too close to the ground: take the largest part of the step that clears it.
+				let lo = 0;
+				let hi = step;
+				for (let it = 0; it < 7; it++) {
+					const mid = (lo + hi) / 2;
+					if (zoomPose(Math.exp(mid), mid)) lo = mid;
+					else hi = mid;
+				}
+				step = lo;
+				if (step > -2e-4) {
+					// At rest on the ground: as close as this spot allows.
+					zoom.goal = d;
+					zoom.active = false;
+					return;
+				}
+				zoomPose(Math.exp(step), step);
 			}
+			// Undo the relief rescale (fitScale applies it after the controls update).
+			const k = scaleFor(zp.distanceTo(zt));
+			zp.y *= vScale / k;
+			zt.y *= vScale / k;
+			sc.camera.position.copy(zp);
+			sc.controls.target.copy(zt);
+			zoom.held = true;
+		}
+		// Slide the view sideways so the zoom's anchor point is back under its pixel.
+		function holdAnchor() {
+			if (!zoom.held) return;
+			sc.camera.lookAt(sc.controls.target);
+			sc.camera.updateMatrixWorld();
+			const r = canvas.getBoundingClientRect();
+			ndc.set(((zoom.px[0] - r.left) / r.width) * 2 - 1, -((zoom.px[1] - r.top) / r.height) * 2 + 1);
+			raycaster.setFromCamera(ndc, sc.camera);
+			const o = raycaster.ray.origin;
+			const dir = raycaster.ray.direction;
+			const ay = zoom.anchor.y * vScale;
+			if (dir.y > -0.02 || o.y <= ay) return;
+			const h = (ay - o.y) / dir.y;
+			off.set(zoom.anchor.x - (o.x + dir.x * h), 0, zoom.anchor.z - (o.z + dir.z * h));
+			const p = sc.camera.position;
+			const t = sc.controls.target;
+			p.add(off);
+			t.add(off);
+			// Still too low (the slide or the relief change): look down more, turning about the
+			// anchor so it stays under the pointer and the distance is unchanged, not a lift.
+			za.set(zoom.anchor.x, ay, zoom.anchor.z);
+			for (let it = 0; it < 3; it++) {
+				const lack = needAt(p, t) - p.y;
+				if (lack <= 1e-3) break;
+				off.copy(p).sub(t);
+				zaxis.set(off.z, 0, -off.x).normalize();
+				zquat.setFromAxisAngle(zaxis, -lack / Math.max(1, Math.hypot(p.x - za.x, p.z - za.z)) * 1.05);
+				p.sub(za).applyQuaternion(zquat).add(za);
+				t.sub(za).applyQuaternion(zquat).add(za);
+			}
+			sc.camera.lookAt(t);
 		}
 		canvas.addEventListener("wheel", (e) => {
 			if (ui.replaying) return;
@@ -510,6 +635,22 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// At a zoom limit the wheel scrolls the page on, so nobody is trapped over the map
 			// (a pinch never scrolls or zooms the page).
 			if (moved || e.ctrlKey) e.preventDefault();
+		}, { passive: false });
+		// Safari trackpad pinch arrives as WebKit gesture events (scale), not ctrl+wheel. On iOS a
+		// touch pinch fires these too; the touch handler below zooms then, so they are skipped.
+		let gesture = 0;
+		canvas.addEventListener("gesturestart", (e) => {
+			e.preventDefault();
+			gesture = e.scale || 1;
+		}, { passive: false });
+		canvas.addEventListener("gesturechange", (e) => {
+			e.preventDefault();
+			if (gesture && e.scale > 0 && !pinch && !ui.replaying) zoomBy(gesture / e.scale, e.clientX, e.clientY);
+			gesture = e.scale || gesture;
+		}, { passive: false });
+		canvas.addEventListener("gestureend", (e) => {
+			e.preventDefault();
+			gesture = 0;
 		}, { passive: false });
 		canvas.addEventListener("dblclick", (e) => {
 			if (!ui.replaying) zoomBy(0.5, e.clientX, e.clientY);
@@ -564,10 +705,9 @@ export function createView3D(container, data, store, tooltip, audio) {
 			stepZoom(dt);
 			sc.controls.update();
 			fitScale();
-			const y0 = sc.camera.position.y;
+			holdAnchor();
 			keepAbove();
-			// Held up by the ground: stop easing further in rather than fight the lift.
-			if (zoom.active && sc.camera.position.y > y0 + 1e-3 && zoom.goal < sc.camera.position.distanceTo(sc.controls.target)) zoom.active = false;
+			sc.camera.lookAt(sc.controls.target);
 			fitNear();
 			if (shared.uLift.value > 0) {
 				// Keep the moon low in front of the camera so lakes show its reflection path.
@@ -839,6 +979,17 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// For tests: camera height above the ground beneath it, and the fly-to pose for a lake.
 			clearance: () => sc.camera.position.y - groundAt(sc.camera.position.x, sc.camera.position.z),
 			vScale: () => vScale,
+			// For tests: lowest height of the camera and its near-plane corners over the ground or water.
+			nearClear() {
+				sc.camera.updateMatrixWorld();
+				const p = sc.camera.position;
+				let m = p.y - topAt(p.x, p.z);
+				for (const [ x, y ] of [ [ -1, -1 ], [ 1, -1 ], [ -1, 1 ], [ 1, 1 ] ]) {
+					v3.set(x, y, -1).unproject(sc.camera);
+					m = Math.min(m, v3.y - topAt(v3.x, v3.z));
+				}
+				return m;
+			},
 			// For tests: the camera's height over the highest ground round it against its distance,
 			// whether the sight line to the target clears the ground, and where the target lands on screen.
 			viewCheck() {

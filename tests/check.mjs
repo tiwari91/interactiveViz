@@ -96,6 +96,126 @@ async function waitStill(page, ms = 2500) {
 	await page.waitForTimeout(ms);
 }
 
+// Zoom from close, oblique views over steep canyon lakes: every input (wheel, ctrl+wheel pinch,
+// Safari gesture events, two-finger touch) zooms the right way, and near the ground zoom never
+// bounces back and never puts the camera under ground or water.
+async function zoomChecks(page) {
+	await page.evaluate(() => window.scrollTo(0, 0));
+	const box = await page.locator("#view-3d canvas").boundingBox();
+	const at = (fx, fy) => [ box.x + box.width * fx, box.y + box.height * fy ];
+	const fly = async (id) => {
+		await debug3d(page, `c.focus("${id}")`);
+		await waitStill(page, 400);
+	};
+	const dist = async () => (await debug3d(page, "c.pose()")).dist;
+	const record = (a) => page.evaluate((a) => {
+		const c = window.droughtViz.views["3d"].debug();
+		const k0 = c.vScale();
+		window.__zr = [];
+		const f = () => {
+			const k = c.vScale();
+			const p = c.pose();
+			window.__zr.push({ d: p.dist, polar: p.polar, s: a ? c.toClient([ a[0], a[1] / k0 * k, a[2] ]) : null, k, clear: c.nearClear() });
+			window.__zrr = requestAnimationFrame(f);
+		};
+		window.__zrr = requestAnimationFrame(f);
+	}, a);
+	const stop = () => page.evaluate(() => { cancelAnimationFrame(window.__zrr); return window.__zr; });
+	const wheel = async (x, y, n, dy, gap = 16) => {
+		await page.mouse.move(x, y);
+		for (let k = 0; k < n; k++) {
+			await page.mouse.wheel(0, dy);
+			await page.waitForTimeout(gap);
+		}
+	};
+
+	// Every input zooms, both ways, from a close view in a canyon.
+	const inputs = {};
+	const [ cx, cy ] = at(0.45, 0.6);
+	const tryInput = async (name, fn) => {
+		await fly("PNF");
+		const d0 = await dist();
+		await fn(-1);
+		await waitStill(page, 200);
+		const d1 = await dist();
+		await fn(1);
+		await waitStill(page, 200);
+		const d2 = await dist();
+		inputs[name] = { ok: d1 < d0 * 0.8 && d2 > d1 * 1.25, txt: `${d0.toFixed(0)}->${d1.toFixed(0)}->${d2.toFixed(0)}` };
+	};
+	await tryInput("wheel", (dir) => wheel(cx, cy, 6, dir * 100));
+	await tryInput("ctrl+wheel", async (dir) => {
+		await page.keyboard.down("Control");
+		await wheel(cx, cy, 6, dir * 30);
+		await page.keyboard.up("Control");
+	});
+	await tryInput("gesture", (dir) => page.evaluate(([ x, y, dir ]) => {
+		const cv = document.querySelector("#view-3d canvas");
+		const send = (type, scale) => {
+			const e = new Event(type, { bubbles: true, cancelable: true });
+			Object.assign(e, { scale, clientX: x, clientY: y });
+			cv.dispatchEvent(e);
+			return e.defaultPrevented;
+		};
+		let prevented = send("gesturestart", 1);
+		return new Promise((done) => {
+			let i = 0;
+			const t = setInterval(() => {
+				i++;
+				prevented = send("gesturechange", Math.pow(dir < 0 ? 1.08 : 1 / 1.08, i)) && prevented;
+				if (i === 8) {
+					clearInterval(t);
+					send("gestureend", Math.pow(dir < 0 ? 1.08 : 1 / 1.08, i));
+					done(prevented);
+				}
+			}, 16);
+		});
+	}, [ cx, cy, dir ]));
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+	await tryInput("touch pinch", async (dir) => {
+		const pts = (s) => [ { x: cx - s, y: cy, id: 1 }, { x: cx + s, y: cy, id: 2 } ];
+		const s0 = dir < 0 ? 40 : 120;
+		const s1 = dir < 0 ? 120 : 40;
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: pts(s0) });
+		for (let i = 1; i <= 10; i++) {
+			await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: pts(s0 + (s1 - s0) * i / 10) });
+			await page.waitForTimeout(16);
+		}
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+	});
+	await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+	await cdp.detach();
+	check("Every zoom input works both ways from a close canyon view (wheel, ctrl+wheel pinch, Safari gesture, touch pinch)", Object.values(inputs).every((v) => v.ok), Object.entries(inputs).map(([ k, v ]) => `${k} ${v.txt}${v.ok ? "" : " FAIL"}`).join("; "));
+
+	// Near the ground: zooming hard in over a canyon (and over water) only ever closes in,
+	// keeps the camera and its near plane above ground and water, and comes to rest.
+	const near = [];
+	for (const [ id, fx, fy ] of [ [ "PNF", 0.6, 0.55 ], [ "ORO", 0.5, 0.5 ] ]) {
+		await fly(id);
+		await record(null);
+		const [ x, y ] = at(fx, fy);
+		await wheel(x, y, 25, -400, 40);
+		const t0 = Date.now();
+		await page.waitForFunction(() => !window.droughtViz.views["3d"].debug().moving(), null, { timeout: 5000, polling: 50 }).catch(() => {});
+		const rest = (Date.now() - t0) / 1000;
+		await page.waitForTimeout(500);
+		const log = await stop();
+		let lo = Infinity;
+		let bounce = 0;
+		for (const f of log) {
+			lo = Math.min(lo, f.d);
+			bounce = Math.max(bounce, f.d / lo - 1);
+		}
+		const tail = log.slice(-20).map((f) => f.d);
+		near.push({ id, bounce, clear: Math.min(...log.map((f) => f.clear)), rest, still: Math.max(...tail) - Math.min(...tail), d: [ log[0].d, log[log.length - 1].d ] });
+	}
+	check("Zooming in to the ground never bounces, never goes under ground or water, and comes to rest", near.every((r) => r.bounce <= 0.005 && r.clear > 0 && r.rest < 3 && r.still < 1e-3),
+		near.map((r) => `${r.id} ${r.d[0].toFixed(0)}->${r.d[1].toFixed(1)} bounce ${(100 * r.bounce).toFixed(1)}%, min clearance ${r.clear.toFixed(2)}, rest in ${r.rest.toFixed(1)} s`).join("; "));
+	await debug3d(page, "c.home()");
+	await waitStill(page, 500);
+}
+
 async function main() {
 	fs.mkdirSync(SHOTS, { recursive: true });
 	const server = await serve();
@@ -109,6 +229,11 @@ async function main() {
 	try {
 		// ---------- Default mode and WebGL fallback ----------
 		let { ctx, page, errors } = await openPage(browser, base);
+		if (process.env.ONLY === "zoom") {
+			await zoomChecks(page);
+			check("Zero console errors", errors.length === 0, errors.slice(0, 3).join(" | "));
+			return;
+		}
 		const elevMeta = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "elevation.json"), "utf8")).grids;
 		check("Elevation grids ship in the compact encoding", Object.values(elevMeta).every((g) => g.encoding === "grad-planes-v1" && fs.statSync(path.join(ROOT, "data", g.file)).size === g.rows * g.cols * 2), Object.values(elevMeta).map((g) => `${g.file} ${g.encoding}`).join(", "));
 		const walk = (d) => fs.readdirSync(path.join(ROOT, d), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${d}/${e.name}`) : e.name.endsWith(".js") ? [ `${d}/${e.name}` ] : []));
@@ -596,6 +721,7 @@ async function main() {
 			`in ${zin.from.toFixed(0)}->${zin.to.toFixed(0)} over ${zin.frames} frames, out ->${zout.to.toFixed(0)}; largest step ${(100 * Math.max(zin.step, zout.step)).toFixed(1)}%/frame; cursor point drift ${Math.max(zin.drift, zout.drift).toFixed(1)} px`);
 		await debug3d(page, "c.home()");
 		await waitStill(page, 500);
+		await zoomChecks(page);
 		// Keyboard zoom (+ and -) for people who cannot use a wheel or pinch; it tilts toward an oblique view close up.
 		const k0 = await debug3d(page, "c.pose()");
 		await page.focus("#view-3d canvas");

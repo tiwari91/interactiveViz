@@ -1020,7 +1020,43 @@ export function createView3D(container, data, store, tooltip, audio) {
 			// gap above the water, 0 once it reaches it or the lake is empty) and gaps inside a line.
 			riverLinks: () => outflow.links().map((r) => ({ ...r, id: basins.basins[r.dam].r.id })),
 			stemPoints: () => outflow.stemPoints(),
-			damInfo: (id) => { const d = dams.info.get(id); return { toePoint: d.toePoint, center: d.center, toeU: d.toeU }; },
+			damInfo: (id) => { const d = dams.info.get(id); return { toePoint: d.toePoint, center: d.center, toeU: d.toeU, faceBase: d.faceBase, spillBottom: d.spillBottom, chute: Boolean(d.chute), type: d.type }; },
+			// For tests: put the camera at a pose (relief scale follows on the next frame).
+			setPose(p) {
+				mover = null;
+				sc.controls.target.set(...p.target);
+				sc.camera.position.copy(poseToPosition(THREE, p));
+				sc.controls.update();
+			},
+			// For tests: where each dam's outflow ribbon is drawn to start, against the foot of the
+			// dam's downstream face, as the current frame renders them (relief scale, and the lift a
+			// big river gets when seen from far away): horizontal and vertical gap in world units,
+			// and the gap on screen in CSS pixels.
+			riverStartGaps() {
+				const w = container.clientWidth;
+				const h = container.clientHeight;
+				const px = (p) => {
+					v3.set(p[0], p[1], p[2]).project(sc.camera);
+					return [ (v3.x + 1) / 2 * w, (1 - v3.y) / 2 * h ];
+				};
+				return outflow.links().filter((r) => r.kind === 0).map((r) => {
+					const b = basins.basins[r.dam];
+					const info = dams.info.get(b.r.id);
+					const f = info.faceBase;
+					const camD = sc.camera.position.distanceTo(v3.set(r.start[0], r.start[1] * vScale, r.start[2]));
+					const t = Math.min(1, Math.max(0, (camD - 140) / 560));
+					const far = t * t * (3 - 2 * t) * r.weight;
+					const sy = (r.start[1] + 0.03 + camD * 0.004 * far) * vScale;
+					const fy = groundAt(f[0], f[2]);
+					const a = px([ r.start[0], sy, r.start[2] ]);
+					const c = px([ f[0], fy, f[2] ]);
+					// Up from the ground at the foot; an arch's foot can sit in a hollow below the
+					// river, which then still meets the wall (between its bottom and crest).
+					const onWall = r.start[1] >= info.wallBottom && r.start[1] <= info.crest;
+					return { id: b.r.id, xz: Math.hypot(r.start[0] - f[0], r.start[2] - f[2]), dy: onWall ? 0 : Math.abs(sy - fy), px: onWall ? 0 : Math.hypot(a[0] - c[0], a[1] - c[1]), lift: sy - fy };
+				});
+			},
+			outflowLine: (id) => outflow.riverPath(basins.basins.findIndex((b) => b.r.id === id)).pts,
 			riverGaps: (i) => {
 				const snap = snapshot(i);
 				const rows = outflow.links();

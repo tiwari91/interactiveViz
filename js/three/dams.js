@@ -163,9 +163,16 @@ export function createDams(THREE, data, basins) {
 		const down = [ -eu[0], -eu[1] ];
 		const [ mu, mv ] = axisAt(0.5);
 		const toe = section(crest - bottoms[SEGMENTS / 2])[3][0];
+		// Where the river leaves the dam: the foot of the downstream face, tucked just under it so
+		// the ribbon runs out from the concrete with no strip of bare ground between.
+		const TOE_OUT = 0.04;
 		const toePoint = (() => {
-			const [ x, z ] = bs.toWorld(mu - toe - 0.4, mv);
-			return [ x, groundAt(mu - toe - 0.4, mv) + 0.05, z ];
+			const [ x, z ] = bs.toWorld(mu - toe - TOE_OUT, mv);
+			return [ x, groundAt(mu - toe - TOE_OUT, mv) + 0.05, z ];
+		})();
+		const faceBase = (() => {
+			const [ x, z ] = bs.toWorld(mu - toe, mv);
+			return [ x, groundAt(mu - toe, mv), z ];
 		})();
 		const scale = Math.max(0.6, hw / 4);
 
@@ -256,7 +263,7 @@ export function createDams(THREE, data, basins) {
 		void outletEnd;
 		info.set(bs.r.id, {
 			type, crest, toePoint, center: bs.toWorld(mu, mv), height: hMax, scale, concrete,
-			toeU: mu - toe - 0.4, spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth, chuteClear,
+			toeU: mu - toe - TOE_OUT, faceBase, wallBottom: bottoms[SEGMENTS / 2], spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth, chuteClear,
 			lights: [ axisAt(0.02), axisAt(0.98) ].map(([ u, v ]) => {
 				const [ x, z ] = bs.toWorld(u - tc * 0.5, v);
 				return [ x, crest + 0.25, z ];

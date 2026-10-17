@@ -502,10 +502,21 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		const info = dams.info.get(b.r.id);
 		// From the downstream toe, along the canyon floor, then downhill.
 		// Arch dams bulge upstream, so start below the dam line, never in the lake.
-		const toe = info.toeU <= b.dam.u - 0.6 ? [ info.toePoint[0], info.toePoint[2] ] : b.toWorld(b.dam.u - 0.6, b.toLocal(info.toePoint[0], info.toePoint[2])[1]);
+		const foot = [ info.toePoint[0], info.toePoint[2] ];
+		const toe = info.toeU <= b.dam.u - 0.6 ? foot : b.toWorld(b.dam.u - 0.6, b.toLocal(...foot)[1]);
 		const raw0 = router.downhill(toe, [ -b.eu[0], -b.eu[1] ], 24 + b.Lu * 2.4, { avoid: b });
 		const pts = onward(raw0, b);
 		let seq = router.drape(pts);
+		// An arch bulges upstream, so the search starts below the dam line; the river itself still
+		// leaves from the foot of the wall, running straight (never below where it starts) to there.
+		if (toe !== foot && seq.length) {
+			const steps = Math.ceil(Math.hypot(toe[0] - foot[0], toe[1] - foot[1]) / 0.3);
+			for (let k = steps - 1; k >= 0; k--) {
+				const x = foot[0] + (toe[0] - foot[0]) * k / steps;
+				const z = foot[1] + (toe[1] - foot[1]) * k / steps;
+				seq.unshift([ x, Math.max(seq[0][1], ground(x, z)), z ]);
+			}
+		}
 		for (let k = 6; k < seq.length; k++) {
 			const [ x, , z ] = seq[k];
 			let hit = null;
@@ -971,7 +982,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				const cos = (a[0] * b[0] + a[1] * b[1]) / ((Math.hypot(...a) * Math.hypot(...b)) || 1);
 				turn = Math.max(turn, Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI);
 			}
-			return { dam: st.dam, kind: st.kind, start: st.centre[0], end: st.centre[st.centre.length - 1], gap, minY, inLake, turn };
+			return { dam: st.dam, kind: st.kind, start: st.centre[0], end: st.centre[st.centre.length - 1], gap, minY, inLake, turn, weight: weightOf(own) };
 		}),
 		bankPoints,
 		nearChute,

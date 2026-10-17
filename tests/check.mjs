@@ -952,6 +952,36 @@ async function main() {
 		check("Every outflow starts at its dam (drought, wet, lows)", riverGaps.checked > 100 && riverGaps.bad.dam.length === 0, `${riverGaps.checked} lake-months${riverGaps.bad.dam.length ? `; ${riverGaps.bad.dam.slice(0, 6).join(", ")}` : ""}`);
 		check("Every inflow reaches the current water (drought, wet, lows)", riverGaps.bad.water.length === 0, riverGaps.bad.water.slice(0, 6).join(", ") || "none short");
 		check("No gaps inside any river line", riverGaps.bad.line.length === 0, riverGaps.bad.line.slice(0, 6).join(", ") || "none");
+		// Each dam's outflow ribbon is drawn starting at the foot of the dam's downstream face, as
+		// rendered: at the state view (with the far-view lift on big rivers) and close in, after the
+		// relief has flattened for the near zoom.
+		{
+			const pose0 = await debug3d(page, "c.pose()");
+			await debug3d(page, "c.home()");
+			await page.waitForFunction(() => !window.droughtViz.views["3d"].debug().moving(), null, { timeout: 30000 });
+			await page.waitForTimeout(300);
+			const far = await debug3d(page, "c.riverStartGaps()");
+			const near = [];
+			for (const g of far) {
+				await page.evaluate((id) => {
+					const c = window.droughtViz.views["3d"].debug();
+					const f = c.damInfo(id).faceBase;
+					c.setPose({ target: [ f[0], f[1] * c.vScale(), f[2] ], dist: 6, polar: 1.0, az: 0.7 });
+				}, g.id);
+				await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+				near.push(await page.evaluate((id) => {
+					const c = window.droughtViz.views["3d"].debug();
+					return { ...c.riverStartGaps().find((r) => r.id === id), vs: c.vScale(), z: c.zoomFactor() };
+				}, g.id));
+			}
+			await debug3d(page, `c.setPose(${JSON.stringify(pose0)})`);
+			const badFar = far.filter((g) => g.xz > 0.1 || g.px > 3);
+			const badNear = near.filter((g) => g.xz > 0.1 || g.dy > 0.08 || g.px > 8);
+			const worst = (a, k) => Math.max(...a.map((g) => g[k])).toFixed(2);
+			check("Every dam's river leaves from the foot of the dam, at the state view and close in (relief flattened)",
+				far.length >= 30 && near.length === far.length && badFar.length === 0 && badNear.length === 0 && near.every((g) => g.vs < 0.5 && g.z > 50),
+				`${far.length} dams; state max ${worst(far, "px")} px; close (${near[0]?.z.toFixed(0)}x, relief ${near[0]?.vs.toFixed(2)}) max ${worst(near, "xz")} across, ${worst(near, "dy")} up, ${worst(near, "px")} px${[ ...badFar, ...badNear ].length ? `; off: ${[ ...badFar, ...badNear ].map((g) => g.id).join(", ")}` : ""}`);
+		}
 		// A river that ends at a main stem ends on the drawn main-stem ribbon (the same ribbon is
 		// drawn at every zoom, so this holds at the overview, mid and close zooms), and no river
 		// line hooks or doubles back on itself.

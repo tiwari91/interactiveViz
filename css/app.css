@@ -222,3 +222,20 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 	.timeline-panel .timeline { padding-bottom: 10px; }
 	.timeline-panel .track { height: 76px; }
 }
+/* Zoom menu in the map dock: the current zoom, with presets opening upward. */
+.zoom-menu { position: relative; }
+.zoom-btn { display: inline-flex; align-items: center; gap: 4px; min-width: 64px; justify-content: center; }
+.zoom-caret { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.zoom-list { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 5; min-width: 150px; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgb(0 0 0 / 16%); }
+.zoom-list[hidden] { display: none; }
+.zoom-list button { display: flex; justify-content: space-between; gap: 16px; width: 100%; padding: 6px 10px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer; }
+.zoom-list button:hover, .zoom-list button:focus-visible { background: var(--surface-2); }
+.zoom-list button[aria-current="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.zoom-list .num { color: var(--ink-3); }
+.map-dock .stage-btn { white-space: nowrap; }
+@media (max-width: 560px) {
+	.map-dock { gap: 5px; right: 8px; }
+	.map-dock .stage-btn { padding: 6px 9px; }
+	.map-dock .mode-switch button { min-width: 34px; padding: 4px 8px; }
+	.zoom-btn { min-width: 0; }
+}

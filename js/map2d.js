@@ -134,7 +134,9 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		world.attr("transform", transform);
 		tooltip.hide();
 		placeMarks();
+		zoomListener?.(transform.k);
 	});
+	let zoomListener = null;
 	svg.call(zoom).on("dblclick.zoom", null);
 
 	function screenPos(id) {
@@ -249,6 +251,16 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		},
 		resetView() {
 			svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+		},
+		// Zoom presets for the dock's zoom menu (the map's own zoom runs 1x to 8x).
+		zoomLevels: [ { name: "State", k: 1 }, { name: "Region", k: 2 }, { name: "Basin", k: 4 }, { name: "Close", k: 8 } ],
+		zoomLevel: () => transform.k,
+		setZoom(k) {
+			if (k <= 1.001) svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+			else svg.transition().duration(500).call(zoom.scaleTo, k);
+		},
+		onZoom(fn) {
+			zoomListener = fn;
 		},
 		screenPos,
 		focusReservoir() {},

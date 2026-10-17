@@ -32,6 +32,9 @@ export function createView3D(container, data, store, tooltip, audio) {
 	const stage = container.parentElement;
 	let ctx = null;
 	let ready = null;
+	// Zoom readout (the dock's zoom menu): told whenever the zoom level changes.
+	let zoomListener = null;
+	let lastZoom = 0;
 	let running = false;
 	let raf = 0;
 	const ui = {
@@ -748,6 +751,11 @@ export function createView3D(container, data, store, tooltip, audio) {
 			keepAbove();
 			sc.camera.lookAt(sc.controls.target);
 			fitNear();
+			const zf = home().dist / sc.camera.position.distanceTo(sc.controls.target);
+			if (zoomListener && Math.abs(zf - lastZoom) > lastZoom * 0.003) {
+				lastZoom = zf;
+				zoomListener(zf);
+			}
 			if (shared.uLift.value > 0) {
 				// Keep the moon low in front of the camera so lakes show its reflection path.
 				// Its elevation matches the view's pitch, so the path runs through the middle of the view.
@@ -920,6 +928,18 @@ export function createView3D(container, data, store, tooltip, audio) {
 			home() {
 				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
 				audio.whoosh();
+			},
+			// Zoom level as a multiple of the state view's distance: 1x shows the whole state.
+			zoomFactor: () => home().dist / sc.camera.position.distanceTo(sc.controls.target),
+			// A zoom preset: 1x flies home; closer levels ease in about the middle of the view with
+			// the wheel's zoom (so tilt, ground clearance and the relief scale behave the same).
+			zoomTo(k) {
+				const d = sc.camera.position.distanceTo(sc.controls.target);
+				if (k <= 1.001) {
+					mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
+					return;
+				}
+				zoomBy(home().dist / k / d);
 			},
 			// Frame the state for the compare split (wide stages only).
 			// Only from the state view: a close look at one lake stays where it is.
@@ -1177,6 +1197,17 @@ export function createView3D(container, data, store, tooltip, audio) {
 		resetView() {
 			if (ui.replaying) stopReplay();
 			if (ctx) ctx.home();
+		},
+		// Zoom presets for the dock's zoom menu, as multiples of the state view.
+		zoomLevels: [ { name: "State", k: 1 }, { name: "Region", k: 4 }, { name: "Basin", k: 12 }, { name: "Reservoir", k: 40 } ],
+		zoomLevel: () => (ctx ? ctx.zoomFactor() : 1),
+		setZoom(k) {
+			if (ui.replaying) stopReplay();
+			if (ctx) ctx.zoomTo(k);
+		},
+		onZoom(fn) {
+			zoomListener = fn;
+			lastZoom = 0;
 		},
 		setTheme() {
 			if (ctx && !ui.sky) ctx.preset(skyName());

@@ -2,6 +2,7 @@
 import { loadData } from "./data.js";
 import { createStore } from "./state.js";
 import { createTooltip } from "./tooltip.js";
+import { createZoomMenu } from "./zoomMenu.js";
 import { createTimeline } from "./timeline.js";
 import { createSummary } from "./summary.js";
 import { renderLegend } from "./legend.js";
@@ -227,6 +228,7 @@ async function start() {
 	});
 
 	$("#reset-view").addEventListener("click", () => views[store.get().mode].resetView());
+	createZoomMenu($("#zoom-menu"), views, store);
 	// Full screen for the map card, where the browser allows it (not inside some embedded viewers).
 	const fsBtn = $("#fullscreen");
 	const mapCard = $("#map");

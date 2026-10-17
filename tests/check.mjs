@@ -350,6 +350,36 @@ async function main() {
 			await page.locator("#reset-view").click();
 			await page.waitForTimeout(1800);
 		}
+		// ---------- Zoom menu in the map dock ----------
+		{
+			const zv = async () => parseFloat(await page.locator(".zoom-val").innerText());
+			const homeD = await debug3d(page, "c.pose().dist");
+			const z0 = await zv();
+			await page.locator(".zoom-btn").click();
+			const opts = await page.locator(".zoom-list [role=menuitem]").allInnerTexts();
+			await page.locator(".zoom-list [role=menuitem][data-k=\"12\"]").click();
+			await waitStill(page, 300);
+			const basin = { val: await zv(), dist: await debug3d(page, "c.pose().dist"), clear: await debug3d(page, "c.nearClear()"), menu: await page.locator(".zoom-list").isHidden(), cur: await page.locator(".zoom-list [aria-current=true]").getAttribute("data-k") };
+			await page.locator(".zoom-btn").click();
+			await page.locator(".zoom-list [role=menuitem][data-k=\"1\"]").click();
+			await waitStill(page, 300);
+			const back = await zv();
+			check("Zoom menu flies the 3D camera to a preset and shows the current zoom", Math.abs(z0 - 1) < 0.05 && opts.length === 4 && Math.abs(basin.val / 12 - 1) < 0.1 && Math.abs(homeD / basin.dist / 12 - 1) < 0.1 && basin.clear > 0 && basin.menu && basin.cur === "12" && Math.abs(back - 1) < 0.05,
+				`start ${z0}x; options ${opts.map((o) => o.replace(/\s+/g, " ")).join(" | ")}; Basin -> ${basin.val}x (distance ${basin.dist.toFixed(0)} of ${homeD.toFixed(0)}), State -> ${back}x`);
+			// The readout follows the wheel too.
+			const box = await page.locator("#view-3d canvas").boundingBox();
+			await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+			for (let k = 0; k < 4; k++) {
+				await page.mouse.wheel(0, -200);
+				await page.waitForTimeout(30);
+			}
+			await waitStill(page, 300);
+			const wz = await zv();
+			const wd = await debug3d(page, "c.pose().dist");
+			check("Zoom readout follows wheel zoom", wz > 1.5 && Math.abs(homeD / wd / wz - 1) < 0.05, `${wz}x at distance ${wd.toFixed(0)}`);
+			await page.locator("#reset-view").click();
+			await waitStill(page, 300);
+		}
 		await page.waitForTimeout(700);
 		const staleStatus = /Loading data/.test(await page.locator("body").ariaSnapshot());
 		check("Screen readers no longer find the loading status once the view is ready", !staleStatus);
@@ -369,6 +399,17 @@ async function main() {
 		// ---------- Desktop 2D ----------
 		({ ctx, page, errors } = await openPage(browser, base, { query: "?mode=2d" }));
 		check("?mode=2d opens the 2D map", (await stateOf(page)).mode === "2d");
+		{
+			await page.locator(".zoom-btn").click();
+			const opts2d = await page.locator(".zoom-list [role=menuitem]").count();
+			await page.locator(".zoom-list [role=menuitem][data-k=\"4\"]").click();
+			await page.waitForTimeout(800);
+			const k2 = await page.evaluate(() => window.droughtViz.views["2d"].zoomLevel());
+			const t2 = await page.locator(".zoom-val").innerText();
+			await page.locator("#reset-view").click();
+			await page.waitForTimeout(800);
+			check("Zoom menu zooms the 2D map too", opts2d === 4 && Math.abs(k2 - 4) < 0.01 && t2 === "4.0×" && (await page.locator(".zoom-val").innerText()) === "1.0×", `${t2}, k ${k2}`);
+		}
 		const F = await facts(page);
 		const counts = await page.evaluate(() => ({
 			counties: document.querySelectorAll(".map-2d .county").length,

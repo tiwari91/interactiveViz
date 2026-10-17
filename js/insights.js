@@ -44,7 +44,9 @@ function chart(box, title) {
 	return { svg: d3.select(box.querySelector("svg")), titleEl: box.querySelector(".js-title"), valEl: box.querySelector(".js-val") };
 }
 
-export function createCharts(el, data, store) {
+// profile(id): the 3D terrain's elevation profile of the river below that dam, or null (no
+// river drawn, or the 3D terrain not built yet); the third chart then shows the reservoir's storage.
+export function createCharts(el, data, store, profile = () => null) {
 	el.innerHTML = "<div class=\"chart\" data-chart=\"storage\"></div><div class=\"chart\" data-chart=\"avg\"></div><div class=\"chart\" data-chart=\"reservoir\"></div>";
 	const largest = data.tracked.reduce((a, r) => (r.capacity > a.capacity ? r : a));
 	const specs = [
@@ -60,6 +62,12 @@ export function createCharts(el, data, store) {
 		const w = node.clientWidth || 300;
 		const h = node.clientHeight || 96;
 		const r = pick();
+		p.profile = p.s.key === "reservoir" && store.get().selected ? profile(r.id) : null;
+		node.dataset.chartMode = p.profile ? "profile" : "series";
+		if (p.profile) {
+			drawProfile(p, r, w, h);
+			return;
+		}
 		const vals = p.s.values(r);
 		if (p.s.key === "reservoir") p.titleEl.textContent = `${r.name}, million AF`;
 		const hi = Math.max(p.s.ref ?? 0, p.s.cap ? r.capacity / 1e6 : 0, d3.max(vals) ?? 1);
@@ -94,6 +102,39 @@ export function createCharts(el, data, store) {
 		place(p);
 	}
 
+	// Elevation along the river drawn below the selected dam: distance downstream in km against
+	// the terrain's DEM height in metres, with the dam marked at the start.
+	function drawProfile(p, r, w, h) {
+		const pts = p.profile.points;
+		const L = pts[pts.length - 1].km;
+		const m0 = pts[0].m;
+		const m1 = pts[pts.length - 1].m;
+		const dam = /\bdam\b/i.test(r.name) ? r.name : `${r.name} dam`;
+		p.titleEl.textContent = `River below ${dam}, elevation m`;
+		const x = d3.scaleLinear().domain([ 0, L ]).range([ 30, w - 6 ]);
+		const y = d3.scaleLinear().domain(d3.extent(pts, (q) => q.m)).nice(3).range([ h - 16, 8 ]);
+		p.svg.selectAll("*").remove();
+		p.svg.attr("aria-label", `Elevation of the river below ${dam} over ${Math.round(L)} km, from ${Math.round(m0)} m at the dam to ${Math.round(m1)} m`);
+		const ga = p.svg.append("g").attr("class", "chart-axis");
+		y.ticks(3).forEach((t) => {
+			ga.append("line").attr("x1", 30).attr("x2", w - 6).attr("y1", y(t)).attr("y2", y(t));
+			ga.append("text").attr("x", 26).attr("y", y(t) + 3).attr("text-anchor", "end").text(d3.format(",")(t));
+		});
+		x.ticks(4).forEach((t, i, all) => {
+			ga.append("text").attr("x", x(t)).attr("y", h - 3).attr("text-anchor", "middle").text(i === all.length - 1 ? `${t} km` : t);
+		});
+		p.svg.append("path").attr("class", "chart-area").attr("d", d3.area().x((q) => x(q.km)).y0(y(y.domain()[0])).y1((q) => y(q.m))(pts));
+		p.svg.append("path").attr("class", "chart-line").attr("d", d3.line().x((q) => x(q.km)).y((q) => y(q.m))(pts));
+		const mark = p.svg.append("g").attr("class", "chart-dam").attr("transform", `translate(${x(0)},${y(m0)})`);
+		mark.append("line").attr("y1", 0).attr("y2", h - 16 - y(m0));
+		mark.append("circle").attr("r", 3.5);
+		mark.append("text").attr("x", 6).attr("y", y(m0) < 20 ? 12 : -5).text("Dam");
+		p.svg.attr("data-points", pts.length);
+		p.marker = null;
+		p.valEl.textContent = `${d3.format(",")(Math.round(m0))} → ${d3.format(",")(Math.round(m1))} m · ${Math.round(L)} km`;
+		p.valEl.title = "Ground height (NOAA ETOPO1) along the river line drawn on the 3D map, downstream from the dam";
+	}
+
 	function place(p) {
 		if (!p.marker) return;
 		const i = store.get().dateIndex;
@@ -110,4 +151,6 @@ export function createCharts(el, data, store) {
 	});
 	const ro = new ResizeObserver(() => parts.forEach(draw));
 	parts.forEach((p) => ro.observe(p.svg.node()));
+	// Called once the 3D terrain is built, when river profiles become available.
+	return { redraw: () => draw(parts[2]) };
 }

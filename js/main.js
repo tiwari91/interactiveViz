@@ -172,7 +172,7 @@ async function start() {
 	const events = keyEvents(data);
 	createTimeline($("#timeline"), data, store, events);
 	createKeyEvents($("#key-events"), data, store, events);
-	createCharts($("#analysis"), data, store);
+	const charts = createCharts($("#analysis"), data, store, (id) => views["3d"].riverProfile(id));
 	createLayers($("#layers"), views["3d"], store);
 	createReservoirCard($("#res-card"), data, store);
 	setupTabs();
@@ -216,7 +216,10 @@ async function start() {
 		}
 		try {
 			await views[mode].mount(setProgress);
-			if (first3d) setProgress(1, "Ready");
+			if (first3d) {
+				setProgress(1, "Ready");
+				charts.redraw();
+			}
 		} finally {
 			loading.classList.add("done");
 		}

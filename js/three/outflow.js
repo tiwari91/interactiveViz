@@ -863,6 +863,37 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		bankPoints,
 		nearChute,
 		router,
+		// The drawn river below a dam as world [x, z] points from the dam toe, followed on into
+		// the river it joins (another dam's outflow line), as far as the drawn lines go.
+		riverPath(di) {
+			const pts = [];
+			const via = [];
+			const seen = new Set();
+			let i = di;
+			let from = 0;
+			while (i >= 0 && !seen.has(i) && outSeq[i] && outSeq[i].length > 2) {
+				seen.add(i);
+				if (i !== di) via.push(list[i].r.id);
+				const seq = outSeq[i];
+				for (let k = from; k < seq.length; k++) pts.push([ seq[k][0], seq[k][2] ]);
+				const j = joins[i] ? list.findIndex((b) => b.r.id === joins[i]) : -1;
+				if (j < 0 || !outSeq[j]) break;
+				const [ ex, ez ] = pts[pts.length - 1];
+				let best = 0;
+				let bd = Infinity;
+				outSeq[j].forEach((p, k) => {
+					const d = Math.hypot(p[0] - ex, p[2] - ez);
+					if (d < bd) {
+						bd = d;
+						best = k;
+					}
+				});
+				i = j;
+				from = best + 1;
+			}
+			const last = endings.find((e) => e.id === list[seen.size ? [ ...seen ].pop() : di].r.id);
+			return { pts, via, ending: last ? last.ending : null };
+		},
 		// For tests: terrain samples taken so far while placing strips (a month change takes none).
 		groundSamples: () => groundSamples,
 		levelsReady: () => pending.length === 0,

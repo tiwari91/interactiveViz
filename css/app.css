@@ -239,3 +239,7 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 	.map-dock .mode-switch button { min-width: 34px; padding: 4px 8px; }
 	.zoom-btn { min-width: 0; }
 }
+/* River profile chart: the dam marked at the start of the line. */
+.chart-dam line { stroke: var(--ink); opacity: 0.35; stroke-dasharray: 2 2; }
+.chart-dam circle { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; }
+.chart-dam text { fill: var(--ink-2); font: 500 9px var(--font-mono); }

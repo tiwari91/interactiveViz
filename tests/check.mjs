@@ -345,7 +345,32 @@ async function main() {
 			await page.waitForTimeout(200);
 			const card = await page.locator("#res-card").innerText();
 			check("Selected reservoir card shows the pick's capacity and storage", /Capacity/.test(card) && /AF/.test(card) && /SHA/.test(card), card.slice(0, 80));
+			// River elevation profile below the selected dam, from the terrain's own DEM.
+			const prof = await page.evaluate(() => {
+				const v = window.droughtViz.views["3d"];
+				const dem = v.debug().demRange();
+				const svg = document.querySelector("[data-chart=reservoir] svg");
+				const shown = { mode: svg.dataset.chartMode, points: +svg.dataset.points, dam: svg.querySelectorAll(".chart-dam circle").length, title: document.querySelector("[data-chart=reservoir] .js-title").textContent };
+				const rows = [ "SHA", "ORO", "FOL", "NML", "PNF", "BER" ].map((id) => {
+					const p = v.riverProfile(id);
+					if (!p) return { id, none: true };
+					const m = p.points.map((q) => q.m);
+					const km = p.points.map((q) => q.km);
+					// Medians of five equal stretches downstream: each no higher than the one before (40 m slack).
+					const med = [ 0, 1, 2, 3, 4 ].map((k) => {
+						const s = m.slice(Math.floor(m.length * k / 5), Math.floor(m.length * (k + 1) / 5)).sort((a, b) => a - b);
+						return s[s.length >> 1];
+					});
+					return { id, n: m.length, km: km[km.length - 1], start: m[0], end: m[m.length - 1], lo: Math.min(...m), hi: Math.max(...m), med, kmUp: km.every((d, i) => !i || d > km[i - 1]) };
+				});
+				return { dem, shown, rows, sha: v.riverProfile("SHA")?.points.length };
+			});
+			const sane = (r) => !r.none && r.n >= 20 && r.km >= 20 && r.km < 400 && r.kmUp && r.lo >= prof.dem[0] && r.hi <= prof.dem[1] && r.start > r.end + 30 && r.med.every((v, i) => !i || v <= r.med[i - 1] + 40);
+			check("River profile below the selected dam: DEM heights in metres falling downstream, dam marked", prof.shown.mode === "profile" && prof.shown.points === prof.sha && prof.shown.dam === 1 && /River below Shasta/.test(prof.shown.title) && prof.rows.every(sane),
+				`${prof.shown.title}; DEM ${prof.dem[0]}..${prof.dem[1]} m; ` + prof.rows.map((r) => r.none ? `${r.id} none` : `${r.id} ${r.start.toFixed(0)}->${r.end.toFixed(0)} m over ${r.km.toFixed(0)} km, stretch medians ${r.med.map((v) => v.toFixed(0)).join("/")}${sane(r) ? "" : " FAIL"}`).join("; "));
 			await setState(page, { selected: null });
+			await page.waitForTimeout(200);
+			check("With no reservoir selected the third chart falls back to storage", await page.evaluate(() => document.querySelector("[data-chart=reservoir] svg").dataset.chartMode === "series"));
 			await page.evaluate(() => window.droughtViz.store.set({ dateIndex: window.droughtViz.data.months.indexOf("2014-09") }));
 			await page.locator("#reset-view").click();
 			await page.waitForTimeout(1800);

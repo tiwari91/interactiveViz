@@ -929,6 +929,36 @@ export function createView3D(container, data, store, tooltip, audio) {
 				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
 				audio.whoosh();
 			},
+			// Elevation profile of the river drawn below a dam: distance downstream (km) and the
+			// terrain's own DEM height (metres, ETOPO1 as the 3D ground uses it) at each point of
+			// the line. Null when the dam has no drawn river.
+			riverProfile(id) {
+				const di = lakeIdx.get(id);
+				if (di === undefined) return null;
+				const { pts, via, ending } = outflow.riverPath(di);
+				if (pts.length < 4) return null;
+				let km = 0;
+				const points = pts.map((p, k) => {
+					if (k) km += Math.hypot(p[0] - pts[k - 1][0], p[1] - pts[k - 1][1]) / world.unitsPerKm;
+					const [ lon, lat ] = world.unproject(p[0], p[1]);
+					return { km, m: world.metresAt(lon, lat) };
+				});
+				// The DEM's cells are about 1.8 km wide, coarser than a canyon floor: where the drawn
+				// line ends no lower than it starts, the grid cannot resolve this river, so no profile.
+				if (points[points.length - 1].m >= points[0].m) return null;
+				return { id, points, via, ending };
+			},
+			// For tests: lowest and highest height in the DEM grid, metres.
+			demRange() {
+				const z = world.elev.data;
+				let lo = Infinity;
+				let hi = -Infinity;
+				for (let i = 0; i < z.length; i++) {
+					if (z[i] < lo) lo = z[i];
+					if (z[i] > hi) hi = z[i];
+				}
+				return [ lo, hi ];
+			},
 			// Zoom level as a multiple of the state view's distance: 1x shows the whole state.
 			zoomFactor: () => home().dist / sc.camera.position.distanceTo(sc.controls.target),
 			// A zoom preset: 1x flies home; closer levels ease in about the middle of the view with
@@ -1201,6 +1231,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		// Zoom presets for the dock's zoom menu, as multiples of the state view.
 		zoomLevels: [ { name: "State", k: 1 }, { name: "Region", k: 4 }, { name: "Basin", k: 12 }, { name: "Reservoir", k: 40 } ],
 		zoomLevel: () => (ctx ? ctx.zoomFactor() : 1),
+		riverProfile: (id) => (ctx ? ctx.riverProfile(id) : null),
 		setZoom(k) {
 			if (ui.replaying) stopReplay();
 			if (ctx) ctx.zoomTo(k);

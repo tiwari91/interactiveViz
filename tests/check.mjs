@@ -963,6 +963,11 @@ async function main() {
 		})()`);
 		check("Rivers that reach a main stem end on the drawn main-stem ribbon", stemJoin.stems >= 8 && stemJoin.ribbon > 500 && stemJoin.off.length === 0, `${stemJoin.stems} joins, ${stemJoin.ribbon} ribbon points${stemJoin.off.length ? `; off the ribbon: ${stemJoin.off.join(", ")}` : ""}`);
 		check("No river line turns back on itself (no hooks over 120 degrees)", stemJoin.hooks.length === 0, stemJoin.hooks.join(", ") || "none");
+		// Close up, no ribbon stops square in the middle of a field: every end meets another river,
+		// a lake or the sea, or narrows away to nothing (a river fading into the valley floor).
+		const ribEnds = await debug3d(page, "c.ribbonEnds()");
+		const cut = ribEnds.filter((e) => e.near > 1 && !e.lake && !e.sea && !e.tapered);
+		check("No river ribbon ends cut off: each end joins a river, a lake or the sea, or tapers away", ribEnds.length > 60 && cut.length === 0, `${ribEnds.length} ends, ${ribEnds.filter((e) => e.near <= 1).length} joined, ${ribEnds.filter((e) => e.tapered).length} tapered${cut.length ? `; cut off: ${cut.map((e) => `${e.name} ${e.which} ${e.near}`).join(", ")}` : ""}`);
 		const longOut = await debug3d(page, "c.outflow().filter((o) => o.length >= 8 || o.joins).length");
 		const nOut = await debug3d(page, "c.outflow().length");
 		check("Most outflows run well downstream", longOut >= 28, `${longOut} of ${nOut} longer than 8 units or joining a bigger river`);

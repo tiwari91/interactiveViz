@@ -1015,6 +1015,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			outflow: () => outflow.state().map((o, i) => ({ ...o, spill: cur.spill[i], pct: target.release[i].pct })),
 			verifyWater: () => outflow.verify(),
 			riverEndings: () => outflow.endings,
+			ribbonEnds: () => outflow.ribbonEnds().map((e) => ({ ...e, ll: world.unproject(e.x, e.z).map((v) => +v.toFixed(3)) })),
 			// For tests, at a month: outflow start to dam toe, inflow to the current water (vertical
 			// gap above the water, 0 once it reaches it or the lake is empty) and gaps inside a line.
 			riverLinks: () => outflow.links().map((r) => ({ ...r, id: basins.basins[r.dam].r.id })),

@@ -134,7 +134,7 @@ const RIBBON_FRAG = `
 		// From afar: a clean blue line so the river network reads on the state view (dimmer at night).
 		col = mix(col, uWater * mix(1.6, 0.9, uNight) + vec3(0.03, 0.07, 0.11), vFar * 0.75);
 		float edge = 1.0 - smoothstep(0.55, 1.0, side) * (1.0 - wet * 0.3);
-		float ends = vKind < 0.5 ? smoothstep(0.0, 12.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : vKind > 2.5 ? smoothstep(0.0, 4.0, vAlong) : 1.0;
+		float ends = vKind < 0.5 ? smoothstep(0.0, 12.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : vKind > 2.5 ? smoothstep(0.0, 1.0, vAlong) : 1.0;
 		float a = edge * ends * mainFade * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.8, 0.98, wet);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
 		gl_FragColor = vec4(mix(col, uFogColor, fog), a);
@@ -546,6 +546,37 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		const sc = scales[di];
 		const seq = outSeq[di];
 		if (seq.length > 2) {
+			// A river that stops just short of a main stem runs on onto it, so the two ribbons meet:
+			// from the point of its last stretch closest to the stem, and never turning back.
+			let onto = null;
+			if (!joins[di] && nearStem(seq[seq.length - 1][0], seq[seq.length - 1][2], 1.6)) {
+				let bestK = seq.length - 1;
+				let bestD = Infinity;
+				for (let k = seq.length - 1; k >= Math.max(3, seq.length - 12); k--) {
+					const q = nearStem(seq[k][0], seq[k][2], 2.5);
+					const d = q ? Math.hypot(q[0] - seq[k][0], q[1] - seq[k][2]) : Infinity;
+					if (d < bestD - 0.02) {
+						bestD = d;
+						bestK = k;
+					}
+				}
+				seq.length = bestK + 1;
+				const t = seq[bestK];
+				const h = seq[bestK - 3];
+				const q = nearStem(t[0], t[2], 2.5);
+				const dx = t[0] - h[0];
+				const dz = t[2] - h[2];
+				if (q && (q[0] - t[0]) * dx + (q[1] - t[2]) * dz >= -0.26 * Math.hypot(q[0] - t[0], q[1] - t[2]) * Math.hypot(dx, dz)) onto = q;
+			}
+			const tail = seq[seq.length - 1];
+			if (onto && Math.hypot(onto[0] - tail[0], onto[1] - tail[2]) > 0.3) {
+				const n = Math.ceil(Math.hypot(onto[0] - tail[0], onto[1] - tail[2]) / 0.4);
+				for (let k = 1; k <= n; k++) {
+					const x = tail[0] + (onto[0] - tail[0]) * k / n;
+					const z = tail[2] + (onto[1] - tail[2]) * k / n;
+					seq.push([ x, ground(x, z), z ]);
+				}
+			}
 			// How the river ends: at another dam's river, a main stem, a lake, or fading out on
 			// flat valley ground. Only the last fades; the others run on into what they meet.
 			const [ ex, , ez ] = seq[seq.length - 1];
@@ -561,9 +592,9 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			// Narrow at the outlet, wide tailrace, then a natural river width.
 			// A river that fades out (sinking into the valley floor) dwindles over its last stretch.
 			const total = st.length;
-			const dwindle = ending === "fade" ? (d) => 0.3 + 0.7 * smooth(0, 14, total - d) : () => 1;
+			const dwindle = ending === "fade" ? (d) => 0.06 + 0.94 * smooth(0, 14, total - d) : () => 1;
 			const shape = (i, d) => sc * (0.55 + 0.45 * smooth(0, 3, d)) * (1 - 0.5 * smooth(5, 16, d)) * dwindle(d);
-			strips.push({ ...st, kind: KIND.OUTFLOW, dam: di, centre: seq, shape, sample: ground });
+			strips.push({ ...st, kind: KIND.OUTFLOW, dam: di, taper: [ false, ending === "fade" ], centre: seq, shape, sample: ground });
 			lengths[di] = st.length;
 			const end = seq[seq.length - 1];
 			const next = list.find((o) => o !== b && o.sOf(...o.toLocal(end[0], end[2])) < 1.4);
@@ -592,6 +623,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	// into the Sacramento or San Joaquin instead of meeting a line that has faded out. Each
 	// carries the release of the big dam above it; on the valley floor it never fades.
 	const damIndex = new Map(list.map((b, i) => [ b.r.id, i ]));
+	const mainRuns = [];
 	for (const line of stems) {
 		const di = damIndex.get(STEM_DAM[line.name] ?? "SHA");
 		if (di === undefined) continue;
@@ -613,8 +645,85 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		}
 		if (run.length) runs.push(run);
 		const wide = line.name in STEM_DAM ? 0.85 : 0.6;
-		for (const seq of runs) {
-			if (seq.length < 3) continue;
+		for (const seq of runs) if (seq.length >= 3) mainRuns.push({ line, di, wide, seq, taper: [ false, false ] });
+	}
+	// The waypoints are approximate, so a tributary can end (or a Delta channel start) a few
+	// kilometres short of the river it meets. Close any such gap with a short reach to the nearest
+	// point of the other ribbon; an end with no ribbon near it (a river whose dam is not drawn)
+	// narrows to nothing instead of stopping square.
+	const REACH = 9;
+	// Rivers join rivers (or a dam's outflow); a Delta channel joins those first and another
+	// channel only when no river is near, so two channels that start at one junction never
+	// just hook onto each other, adrift from the river they leave.
+	const outflowLines = strips.filter((st) => st.kind === KIND.OUTFLOW).map((st) => st.centre);
+	const isRiver = (r) => r.line.name in STEM_DAM;
+	const others = (self, any) => [ ...mainRuns.filter((r) => r !== self && (any || isRiver(r))).map((r) => r.seq), ...outflowLines ];
+	for (const r of mainRuns) {
+		for (const atEnd of [ false, true ]) {
+			const end = atEnd ? r.seq[r.seq.length - 1] : r.seq[0];
+			if (lakeAt(end[0], end[2], null, 1.6) || atSea(end[0], end[2])) continue;
+			let pool = others(r, false);
+			// Nearest point of another river that the line can reach without turning back on itself
+			// (the reach leaves within about 105 degrees of the line's own heading at that point).
+			const nearest = (p, i) => {
+				const j = Math.max(0, Math.min(r.seq.length - 1, i + (atEnd ? -3 : 3)));
+				const hx = p[0] - r.seq[j][0];
+				const hz = p[2] - r.seq[j][2];
+				const hl = Math.hypot(hx, hz) || 1;
+				let best = null;
+				let bd = Infinity;
+				for (const seq of pool) {
+					for (const q of seq) {
+						const d = Math.hypot(q[0] - p[0], q[2] - p[2]);
+						if (d > 0.5 && ((q[0] - p[0]) * hx + (q[2] - p[2]) * hz) / (d * hl) < -0.26) continue;
+						if (d < bd) {
+							bd = d;
+							best = q;
+						}
+					}
+				}
+				return [ bd, best ];
+			};
+			// Where along its last (or first) stretch the line comes closest to another river: a
+			// waypoint end that overshoots past the junction is cut back there, so the join never
+			// doubles back into a hook.
+			const span = Math.min(40, Math.floor(r.seq.length / 3));
+			let pick = { i: atEnd ? r.seq.length - 1 : 0, d: Infinity, q: null };
+			for (let k = 0; k <= span; k++) {
+				const i = atEnd ? r.seq.length - 1 - k : k;
+				const [ d, q ] = nearest(r.seq[i], i);
+				if (d < pick.d - 0.05) pick = { i, d, q };
+			}
+			if (pick.d > REACH && !isRiver(r)) {
+				pool = others(r, true);
+				pick = { i: atEnd ? r.seq.length - 1 : 0, d: Infinity, q: null };
+				for (let k = 0; k <= span; k++) {
+					const i = atEnd ? r.seq.length - 1 - k : k;
+					const [ d, q ] = nearest(r.seq[i], i);
+					if (d < pick.d - 0.05) pick = { i, d, q };
+				}
+			}
+			if (pick.d > REACH) {
+				r.taper[atEnd ? 1 : 0] = true;
+				continue;
+			}
+			if (atEnd) r.seq.length = pick.i + 1;
+			else r.seq.splice(0, pick.i);
+			if (pick.d <= 0.5) continue;
+			const p = r.seq[atEnd ? r.seq.length - 1 : 0];
+			const n = Math.ceil(pick.d / 0.5);
+			const link = [];
+			for (let k = 1; k <= n; k++) {
+				const x = p[0] + (pick.q[0] - p[0]) * k / n;
+				const z = p[2] + (pick.q[2] - p[2]) * k / n;
+				link.push([ x, ground2(x, z) + router.OFFSET, z ]);
+			}
+			if (atEnd) r.seq.push(...link);
+			else r.seq.unshift(...link.reverse());
+		}
+	}
+	for (const { line, di, wide, seq, taper } of mainRuns) {
+		{
 			// The ribbon carries the main stem from close up to the state view (where a cheap line
 			// takes over), so a river below a dam always has the main stem it runs into. Narrower where the ground slopes
 			// steeply across it, so it never bridges a valley side.
@@ -624,7 +733,11 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				const cross = Math.abs(ground2(p[0] + sx * 1.5, p[2] + sz * 1.5) - ground2(p[0] - sx * 1.5, p[2] - sz * 1.5)) / 3;
 				return Math.max(0.45, 1 - cross * 1.6);
 			});
-			strips.push({ ...st, kind: KIND.MAIN, dam: di, centre: seq, shape: (i) => wide * narrow[i], sample: ground });
+			const along = [ 0 ];
+			for (let i = 1; i < seq.length; i++) along.push(along[i - 1] + Math.hypot(seq[i][0] - seq[i - 1][0], seq[i][2] - seq[i - 1][2]));
+			const total = along[along.length - 1];
+			const ends = (i) => (taper[0] ? smooth(0, 6, along[i]) : 1) * (taper[1] ? smooth(0, 6, total - along[i]) : 1);
+			strips.push({ ...st, kind: KIND.MAIN, dam: di, name: line.name, taper, centre: seq, shape: (i) => wide * narrow[i] * (0.04 + 0.96 * ends(i)), sample: ground });
 		}
 	}
 
@@ -863,6 +976,30 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		bankPoints,
 		nearChute,
 		router,
+		// For tests: each end of every outflow and main-stem ribbon, and how far it is from any
+		// other ribbon (a free end far from everything, not in a lake or at sea, looks cut off).
+		ribbonEnds() {
+			const rib = strips.filter((st) => st.kind === KIND.OUTFLOW || st.kind === KIND.MAIN);
+			const res = [];
+			rib.forEach((st, si) => {
+				for (const [ which, p, tapered ] of [ [ "start", st.centre[0], st.taper[0] ], [ "end", st.centre[st.centre.length - 1], st.taper[1] ] ]) {
+					let near = Infinity;
+					let to = null;
+					rib.forEach((o, oi) => {
+						if (oi === si) return;
+						for (const q of o.centre) {
+							const d = Math.hypot(q[0] - p[0], q[2] - p[2]);
+							if (d < near) {
+								near = d;
+								to = o.name ?? list[o.dam].r.id;
+							}
+						}
+					});
+					res.push({ kind: st.kind === KIND.MAIN ? "main" : "outflow", name: st.name ?? list[st.dam].r.id, which, x: +p[0].toFixed(2), y: +p[1].toFixed(2), z: +p[2].toFixed(2), near: +near.toFixed(2), to, tapered, lake: Boolean(lakeAt(p[0], p[2], null, 1.6)), sea: atSea(p[0], p[2]) });
+				}
+			});
+			return res;
+		},
 		// The drawn river below a dam as world [x, z] points from the dam toe, followed on into
 		// the river it joins (another dam's outflow line), as far as the drawn lines go.
 		riverPath(di) {

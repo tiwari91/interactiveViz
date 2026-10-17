@@ -1,41 +1,81 @@
-/* Workspace shell: slim top bar, map + sidebar, timeline + key events, chart row.
-   Warm sandy palette with one orange accent; dark mode keeps the same structure. */
+/* Survey-sheet shell: title strip, layers on the left of the map, a full-width timeline with its
+   key events flagged on it, and line plots ruled underneath. Pale blue-grey survey paper, navy
+   ink and one teal for water; amber and red only ever mean drought. Dark is a navy night chart. */
 :root {
-	--bg: #efe8da;
-	--surface: #fbf8f1;
-	--surface-2: #ebe3d3;
-	--line: #dbd0bc;
-	--ink-3: #5c6067;
-	--accent: #b5520f;
+	--bg: #edf1f3;
+	--surface: #f7f9fa;
+	--surface-2: #e2e8ec;
+	--line: #c6d1d8;
+	--rule: #20344d;
+	--ink: #12233a;
+	--ink-2: #364860;
+	--ink-3: #52637a;
+	--accent: #0d7068;
 	--accent-ink: #ffffff;
-	--focus: #b5520f;
-	--radius: 10px;
-	--font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-	--font-display: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+	--focus: #0d7068;
+	--warm: #b45309;
+	--grid: rgb(32 70 110 / 6%);
+	--stream: #2a7f9e;
+	--land: #dfe6ea;
+	--land-edge: #9aabb8;
+	--land-side: #c3cfd7;
+	--county: #c9d3da;
+	--glass: #61788d;
+	--shadow: 0 1px 2px rgb(18 35 58 / 8%), 0 6px 18px rgb(18 35 58 / 10%);
+	--radius: 3px;
+	--font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+	--font-display: "Source Serif 4", "Source Serif Pro", Georgia, serif;
+	--font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme="light"]) {
-		--bg: #121417;
-		--surface: #191c20;
-		--surface-2: #22262b;
-		--line: #2f343a;
-		--ink-3: #959aa1;
-		--accent: #f0954f;
-		--accent-ink: #1a1007;
-		--focus: #f0954f;
+		--bg: #0b1626;
+		--surface: #0f1d31;
+		--surface-2: #16273d;
+		--line: #253a52;
+		--rule: #6f87a3;
+		--ink: #e2eaf2;
+		--ink-2: #afbfcf;
+		--ink-3: #8a9db1;
+		--accent: #3cc0ae;
+		--accent-ink: #04201c;
+		--focus: #6fd8ca;
+		--warm: #f0a43a;
+		--grid: rgb(120 160 200 / 7%);
+		--stream: #5cc4d6;
+		--land: #1b2b40;
+		--land-edge: #4b6380;
+		--land-side: #13213a;
+		--county: #2a3e57;
+		--glass: #9fb7cc;
+		--shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 30%);
+		color-scheme: dark;
 	}
 }
 
 :root[data-theme="dark"] {
-	--bg: #121417;
-	--surface: #191c20;
-	--surface-2: #22262b;
-	--line: #2f343a;
-	--ink-3: #959aa1;
-	--accent: #f0954f;
-	--accent-ink: #1a1007;
-	--focus: #f0954f;
+	--bg: #0b1626;
+	--surface: #0f1d31;
+	--surface-2: #16273d;
+	--line: #253a52;
+	--rule: #6f87a3;
+	--ink: #e2eaf2;
+	--ink-2: #afbfcf;
+	--ink-3: #8a9db1;
+	--accent: #3cc0ae;
+	--accent-ink: #04201c;
+	--focus: #6fd8ca;
+	--warm: #f0a43a;
+	--grid: rgb(120 160 200 / 7%);
+	--stream: #5cc4d6;
+	--land: #1b2b40;
+	--land-edge: #4b6380;
+	--land-side: #13213a;
+	--county: #2a3e57;
+	--glass: #9fb7cc;
+	--shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 30%);
+	color-scheme: dark;
 }
 
 body { background: var(--bg); font-family: var(--font-body); }
@@ -58,8 +98,6 @@ body { background: var(--bg); font-family: var(--font-body); }
 
 .top-meta { display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid var(--line); min-width: 0; }
 
-.top-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--ink-2); font-size: 0.8rem; white-space: nowrap; }
-.top-chip .icon { width: 15px; height: 15px; stroke-width: 1.7; }
 
 .top-tabs { display: flex; gap: 2px; margin-left: auto; padding: 3px; border-radius: 8px; background: var(--surface-2); }
 .top-tabs a { padding: 5px 12px; border-radius: 6px; color: var(--ink-2); font-size: 0.82rem; font-weight: 500; text-decoration: none; }
@@ -78,11 +116,12 @@ html { scroll-padding-top: 64px; }
 /* ---- Workspace ---- */
 .viz-card { border-radius: var(--radius); box-shadow: 0 1px 2px rgb(40 30 10 / 6%); }
 .toolbar { padding: 8px 14px; }
-.viz-body { grid-template-columns: minmax(0, 1fr) 320px; }
+.viz-body { grid-template-columns: 300px minmax(0, 1fr); }
+.viz-body > .sidebar { order: -1; }
 
 .panel-title { margin: 0; color: var(--ink-3); font: 600 0.7rem/1.3 var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; }
 
-.sidebar { border-left: 1px solid var(--line); background: var(--surface); overflow-y: auto; scrollbar-width: thin; }
+.sidebar { border-right: 1px solid var(--line); background: var(--surface); overflow-y: auto; scrollbar-width: thin; }
 .side-panel { border-bottom: 1px solid var(--line); }
 .side-panel > summary { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; cursor: pointer; list-style: none; }
 .side-panel > summary::-webkit-details-marker { display: none; }
@@ -98,8 +137,6 @@ html { scroll-padding-top: 64px; }
 .layer-row { display: grid; grid-template-columns: minmax(0, 1fr) 88px 36px; align-items: center; gap: 8px; min-height: 30px; font-size: 0.82rem; color: var(--ink); }
 .layer-name { grid-column: 1; display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .layer-name input { accent-color: var(--accent); margin: 0; }
-.layer-swatch { width: 22px; height: 16px; flex: none; border-radius: 3px; border: 1px solid var(--line); }
-.layer-row.off .layer-swatch, .layer-row.off .layer-name span:last-child { opacity: 0.45; }
 .layer-opacity { width: 100%; accent-color: var(--accent); }
 .layer-val { color: var(--ink-3); font-size: 0.75rem; text-align: right; }
 .layer-note { margin: 4px 0 0; color: var(--ink-3); font-size: 0.72rem; }
@@ -129,7 +166,7 @@ html { scroll-padding-top: 64px; }
 body[data-mode="3d"] .stage-hint { left: auto; }
 
 /* ---- Bottom: timeline + key events ---- */
-.bottom-row { display: grid; grid-template-columns: minmax(0, 1fr) 320px; border-top: 1px solid var(--line); }
+.bottom-row { display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--line); }
 .timeline-panel { display: flex; flex-direction: column; padding: 10px 0 0; min-width: 0; }
 .timeline-panel .timeline { flex: 1; }
 .timeline-panel > .panel-title { padding: 0 16px; }
@@ -142,15 +179,6 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 .track .event-mark { fill: var(--accent); stroke: var(--surface); stroke-width: 1; pointer-events: all; cursor: pointer; }
 .hover-label { position: absolute; top: -16px; z-index: 3; transform: translateX(-50%); padding: 1px 6px; border-radius: 4px; background: var(--ink); color: var(--surface); font-size: 10px; pointer-events: none; white-space: nowrap; }
 
-.key-events { padding: 10px 14px 8px; border-left: 1px solid var(--line); }
-/* Compact one-line rows, so the list is about as tall as the timeline beside it. */
-.event-list { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 0; }
-.event-btn { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 24px; padding: 2px 6px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; font-size: 0.8rem; line-height: 1.2; text-align: left; cursor: pointer; }
-.event-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.event-btn:hover { background: var(--surface-2); }
-.event-btn[aria-current="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-.event-icon { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-size: 0.7rem; font-weight: 700; }
-.event-time { color: var(--ink-3); font-size: 0.75rem; }
 
 /* ---- Charts ---- */
 .charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
@@ -161,7 +189,6 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 .chart-svg { display: block; width: 100%; height: 110px; overflow: visible; }
 .chart-axis line { stroke: var(--line); }
 .chart-axis text { fill: var(--ink-3); font: 400 9px var(--font-mono); }
-.chart-area { fill: var(--accent); opacity: 0.13; }
 .chart-line { fill: none; stroke: var(--accent); stroke-width: 1.4; }
 .chart-ref { stroke: var(--ink-3); stroke-dasharray: 3 3; opacity: 0.8; }
 .chart-marker line { stroke: var(--ink); opacity: 0.5; }
@@ -172,16 +199,14 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 }
 
 @media (max-width: 1100px) {
-	.top-meta .top-chip:first-child { display: none; }
 }
 
 @media (max-width: 900px) {
 	.viz-body { grid-template-columns: 1fr; }
 	/* Phone/tablet: the sidebar sits under the map as collapsible panels. */
-	.sidebar { border-left: 0; border-top: 1px solid var(--line); border-radius: 14px 14px 0 0; }
+	.viz-body > .sidebar { order: 0; border-right: 0; border-top: 1px solid var(--line); }
 	.sidebar .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 	.bottom-row { grid-template-columns: 1fr; }
-	.key-events { border-left: 0; border-top: 1px solid var(--line); }
 	.charts { grid-template-columns: 1fr; }
 }
 
@@ -216,11 +241,10 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 /* Full screen: the map card fills the screen, map takes what the timeline leaves. */
 #map:fullscreen { overflow: auto; background: var(--bg); }
 #map:fullscreen .viz-body, body[data-mode="3d"] #map:fullscreen .viz-body { --stage-h: calc(100vh - 250px); }
-/* Desktop: the timeline shares its row with the key events, so its sparkline grows into the
-   height the event list sets instead of leaving an empty strip under it. */
+/* Desktop: the timeline spans the card; its key-event flags ride above the track. */
 @media (min-width: 901px) {
 	.timeline-panel .timeline { padding-bottom: 10px; }
-	.timeline-panel .track { height: 76px; }
+	.timeline-panel .track { height: 60px; }
 }
 /* Zoom menu in the map dock: the current zoom, with presets opening upward. */
 .zoom-menu { position: relative; }
@@ -243,3 +267,92 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 .chart-dam line { stroke: var(--ink); opacity: 0.35; stroke-dasharray: 2 2; }
 .chart-dam circle { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; }
 .chart-dam text { fill: var(--ink-2); font: 500 9px var(--font-mono); }
+
+/* ================= Survey identity ================= */
+/* Paper: a faint survey grid under everything. */
+body {
+	background-color: var(--bg);
+	background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+	background-size: 24px 24px;
+}
+h1, h2, .detail-title { font-family: var(--font-display); font-weight: 600; letter-spacing: 0; }
+.intro h1 { font-weight: 600; letter-spacing: -0.005em; }
+.eyebrow { color: var(--accent); }
+
+/* Title strip: plain text, a ruled line under it, no chips. */
+.site-header { background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(6px); border-bottom: 1.5px solid var(--rule); }
+.brand { font: 600 1.08rem/1.2 var(--font-display); letter-spacing: 0; }
+.top-meta { display: block; margin: 0; padding-left: 14px; border-left: 1px solid var(--line); color: var(--ink-2); font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-meta .sep { margin: 0 4px; color: var(--ink-3); }
+.top-tabs { gap: 18px; padding: 0; border-radius: 0; background: none; }
+.top-tabs a { padding: 4px 0; border-radius: 0; border-bottom: 2px solid transparent; font-size: 0.84rem; }
+.top-tabs a[aria-current="true"] { background: none; box-shadow: none; color: var(--ink); border-bottom-color: var(--accent); }
+.theme-toggle, .sound-toggle, .header-actions .theme-toggle { border-radius: var(--radius); background: transparent; border-color: var(--line); }
+
+/* The sheet: a thin navy frame, square corners. */
+.viz-card { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); box-shadow: none; }
+.panel-title { color: var(--ink); font: 600 0.92rem/1.3 var(--font-display); letter-spacing: 0; text-transform: none; }
+.timeline-panel > .panel-title { display: none; }
+.side-panel > summary { padding: 9px 14px 7px; }
+.side-panel > summary::after { color: var(--ink-3); font-family: var(--font-body); }
+
+/* Layers: line icons in the ink colour, teal when on. */
+.layer-icon { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--accent); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.layer-row.off .layer-icon { stroke: var(--ink-3); opacity: 0.55; }
+.layer-row.off .layer-name span:last-child { opacity: 0.5; }
+.layer-opacity { height: 14px; }
+
+/* Squarer outlined controls. */
+.stage-btn, .step-btn, .speed-btn, .zoom-btn, .map-dock .mode-switch, .map-dock .mode-switch button, .chip, .detail-listen { border-radius: var(--radius) !important; }
+.map-dock .mode-switch { padding: 0; gap: 0; border-color: var(--rule); }
+.map-dock .mode-switch button { border-radius: 0 !important; }
+.map-dock .mode-switch button[aria-pressed="true"] { background: var(--rule); color: var(--surface); }
+.map-dock .stage-btn { background: var(--surface); border: 1px solid var(--rule); color: var(--ink); box-shadow: none; }
+.map-dock .stage-btn:hover { background: var(--surface-2); }
+.play-btn { width: 36px; height: 36px; border-radius: var(--radius); border: 1.5px solid var(--accent); background: transparent; color: var(--accent); }
+.play-btn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.speed-btn { border-radius: var(--radius); }
+.zoom-list { border-radius: var(--radius); }
+.zoom-list button { border-radius: 2px; }
+.pill { border-radius: 2px; }
+.sound-pop { border-radius: var(--radius); }
+
+/* Timeline: full width, flags for the key events standing on the track. */
+.timeline-panel { padding-top: 4px; }
+.track { margin-top: 38px; }
+.track .spark-area { fill: var(--accent); opacity: 0.1; }
+.track .spark-line { stroke: var(--accent); }
+.track .event-mark { fill: var(--rule); stroke: none; }
+.event-flags { position: absolute; left: 0; right: 0; bottom: 100%; height: 38px; z-index: 4; pointer-events: none; }
+.event-flag { --row: 0; position: absolute; bottom: 2px; display: inline-flex; align-items: center; gap: 5px; height: 17px; padding: 0 6px; border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: 0 2px 2px 0; background: var(--surface); color: var(--ink); font: 500 0.7rem/1 var(--font-body); white-space: nowrap; cursor: pointer; pointer-events: auto; }
+.event-flag[data-row="1"] { --row: 1; bottom: 20px; }
+.event-flag[data-side="left"] { transform: translateX(-100%); border-left: 1px solid var(--line); border-right: 2px solid var(--accent); border-radius: 2px 0 0 2px; }
+/* The staff: from the flag down to the track. */
+.event-flag::before { content: ""; position: absolute; left: -2px; top: 100%; width: 1px; height: calc(var(--row) * 18px + 2px); background: var(--accent); }
+.event-flag[data-side="left"]::before { left: auto; right: -2px; }
+.event-flag .event-year { display: none; color: var(--ink-3); }
+.event-flag:hover { background: var(--surface-2); }
+.event-flag[aria-current="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.event-flag:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+@media (max-width: 760px) {
+	.event-flag .event-name { display: none; }
+	.event-flag .event-year { display: inline; }
+	.event-flag[aria-current="true"] .event-year { color: inherit; }
+}
+
+/* Charts: survey line plots under a rule, divided by hairlines; no cards, no fills. */
+.charts { gap: 0; margin-top: 14px; border-top: 1.5px solid var(--rule); border-bottom: 1px solid var(--line); }
+.chart { padding: 10px 16px 8px; background: none; border: 0; border-radius: 0; }
+.chart + .chart { border-left: 1px solid var(--line); }
+.chart-axis line { stroke: var(--line); stroke-dasharray: 1 3; }
+.chart-line { stroke: var(--accent); stroke-width: 1.6; }
+.chart-ref { stroke: var(--ink-3); stroke-dasharray: 4 3; }
+.chart-marker line { stroke: var(--rule); opacity: 0.6; }
+.chart-marker circle, .chart-dam circle { fill: var(--surface); stroke: var(--accent); stroke-width: 1.6; }
+@media (max-width: 900px) {
+	.chart + .chart { border-left: 0; border-top: 1px solid var(--line); }
+}
+
+/* Record-low ring on the map: navy-on-teal survey mark. */
+.record-ring { border: 1.5px solid var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rule) 22%, transparent); }
+.record-text { border-radius: 2px; border-left: 2px solid var(--accent); }

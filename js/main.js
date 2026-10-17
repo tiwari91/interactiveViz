@@ -12,7 +12,7 @@ import { createView3D } from "./view3d.js";
 import { createDetailCard } from "./detailCard.js";
 import { createAudio } from "./audio/engine.js";
 import { createLayers, createReservoirCard } from "./panels.js";
-import { keyEvents, createKeyEvents, createCharts } from "./insights.js";
+import { keyEvents, createCharts } from "./insights.js";
 import { initSoundControls } from "./audio/controls.js";
 
 // On a phone the legend folds away behind "Legend", so the map is near the top of the screen;
@@ -171,7 +171,6 @@ async function start() {
 
 	const events = keyEvents(data);
 	createTimeline($("#timeline"), data, store, events);
-	createKeyEvents($("#key-events"), data, store, events);
 	const charts = createCharts($("#analysis"), data, store, (id) => views["3d"].riverProfile(id));
 	createLayers($("#layers"), views["3d"], store);
 	createReservoirCard($("#res-card"), data, store);

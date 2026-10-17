@@ -8,7 +8,7 @@
 	<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650&family=IBM+Plex+Mono:wght@400;500&display=swap">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 	<link rel="stylesheet" href="css/base.css">
 	<link rel="stylesheet" href="css/layout.css">
 	<link rel="stylesheet" href="css/viz.css">
@@ -107,10 +107,7 @@
 			<img class="brand-logo" src="assets/logo.svg" alt="" width="36" height="36">
 			<span class="brand-text">California Drought Impact</span>
 		</a>
-		<div class="top-meta">
-			<span class="top-chip"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21Z"/><circle cx="12" cy="9.8" r="2.2"/></svg>California reservoirs</span>
-			<span class="top-chip"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg><span data-count="range"></span></span>
-		</div>
+		<p class="top-meta">California reservoirs <span class="sep" aria-hidden="true">/</span> <span class="num" data-count="range"></span></p>
 		<nav class="top-tabs" aria-label="Sections">
 			<a href="#map" data-tab="map" aria-current="true">Map</a>
 			<a href="#analysis" data-tab="analysis">Analysis</a>
@@ -181,7 +178,6 @@
 					<h3 class="panel-title">Timeline</h3>
 					<div class="timeline" id="timeline"></div>
 				</div>
-				<div class="key-events" id="key-events"></div>
 			</div>
 		</section>
 

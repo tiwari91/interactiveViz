@@ -19,6 +19,7 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 			<button type="button" class="step-btn" data-step="1" aria-label="Next month"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5H18v14h-2.5zM4 5v14l11-7z"/></svg></button>
 		</div>
 		<div class="track">
+			<div class="event-flags" role="group" aria-label="Key events">${events.map((e) => `<button type="button" class="event-btn event-flag" data-event="${e.id}" data-index="${e.i}" aria-label="${e.name}, ${fmtMonthLong(dates[e.i])}, ${e.detail}. Jump to this month." title="${e.name}, ${fmtMonth(dates[e.i])}"><span class="event-name">${e.short || e.name}</span><span class="event-year num">${dates[e.i].getFullYear()}</span></button>`).join("")}</div>
 			<span class="hover-label num" hidden></span>
 			<svg aria-hidden="true"></svg>
 			<input type="range" min="0" max="${dates.length - 1}" step="1" aria-label="Month">
@@ -30,6 +31,8 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 	const speedBtn = el.querySelector(".speed-btn");
 	const svg = d3.select(el.querySelector(".track svg"));
 	const monthEl = el.querySelector(".month");
+	const flags = [ ...el.querySelectorAll(".event-flag") ];
+	flags.forEach((b) => b.addEventListener("click", () => store.set({ dateIndex: +b.dataset.index, playing: false })));
 	const metaEl = el.querySelector(".meta");
 	let timer = null;
 	let head = null;
@@ -79,7 +82,7 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 		// High sits above its dot; Low sits below so it clears the drought-band labels along the top.
 		mark.append("text").attr("class", "extreme-label").attr("y", ([ k ]) => (k === "Low" ? 12 : -7)).attr("text-anchor", "middle")
 			.text(([ k, i ]) => `${k} ${fmtPct(totals[i].pct)}`);
-		// Key events (insights.js): small orange markers on the baseline; click to jump.
+		// Key events (insights.js): small notches on the baseline under each flag; click to jump.
 		svg.selectAll(".event-mark").data(events).join("path").attr("class", "event-mark")
 			.attr("d", "M0 -7 L4.5 0 L-4.5 0 Z").attr("transform", (e) => `translate(${x(dates[e.i])},${h})`)
 			.on("click", (_, e) => store.set({ dateIndex: e.i, playing: false }))
@@ -88,6 +91,7 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 		head = svg.append("g").attr("class", "playhead");
 		head.append("line").attr("y1", 0).attr("y2", h);
 		head.append("circle").attr("r", 4.5);
+		placeFlags(x, w);
 		const years = d3.timeYear.range(d3.timeYear.ceil(dates[0]), dates[dates.length - 1]);
 		placeHead(store.get().dateIndex);
 		// A tick for every year; labels thin out to every 2 or 5 years on narrow screens.
@@ -98,6 +102,36 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 		ticks.append("line").attr("y1", h).attr("y2", h + 4);
 		ticks.filter((d) => d.getFullYear() % every === 0)
 			.append("text").attr("y", h + 15).attr("text-anchor", "middle").text(d3.timeFormat("%Y"));
+	}
+
+	// Flags above the track, one per key event: a stem at the event's month and a label to its
+	// right or left, on one of two rows. Every combination is tried and the one with no label
+	// overlapping another label or a stem (fewest raised flags, labels to the right) wins.
+	function placeFlags(x, w) {
+		const fl = flags.map((b) => ({ b, px: x(dates[+b.dataset.index]), w: b.offsetWidth }));
+		if (!fl.length) return;
+		const boxOf = (f, side) => (side ? [ f.px - f.w, f.px ] : [ f.px, f.px + f.w ]);
+		let best = null;
+		for (let c = 0; c < 4 ** fl.length; c++) {
+			const pick = fl.map((f, k) => { const o = Math.floor(c / 4 ** k) % 4; return { f, row: o >> 1, side: o & 1, box: boxOf(f, o & 1) }; });
+			let bad = 0;
+			pick.forEach((a, i) => {
+				if (a.box[0] < 0 || a.box[1] > w) bad += 3;
+				pick.forEach((b, j) => {
+					if (i === j) return;
+					if (a.row === b.row && i < j && a.box[0] < b.box[1] + 6 && b.box[0] < a.box[1] + 6) bad += 2;
+					// A raised flag's stem runs down through the lower row.
+					if (b.row > a.row && b.f.px > a.box[0] - 3 && b.f.px < a.box[1] + 3) bad += 1;
+				});
+			});
+			const cost = bad * 100 + pick.reduce((n, a) => n + a.row * 3 + a.side, 0);
+			if (!best || cost < best.cost) best = { cost, pick };
+		}
+		for (const a of best.pick) {
+			a.f.b.style.left = `${a.f.px}px`;
+			a.f.b.dataset.row = a.row;
+			a.f.b.dataset.side = a.side ? "left" : "right";
+		}
 	}
 
 	function placeHead(i) {
@@ -124,6 +158,7 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 
 	function render({ dateIndex, playing }) {
 		placeHead(dateIndex);
+		flags.forEach((b) => b.setAttribute("aria-current", String(+b.dataset.index === dateIndex)));
 		input.value = dateIndex;
 		const t = totals[dateIndex];
 		const label = fmtMonthLong(dates[dateIndex]);

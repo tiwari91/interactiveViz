@@ -5,13 +5,26 @@ import { DAM_TYPES, damTypeOf } from "./three/damTypes.js";
 
 // Each layer switches real scene objects in view3d.js (setLayer). Only the labels layer has
 // an opacity slider: it is the one layer whose opacity can change without new shaders.
+// Small line icons in the survey-drawing style, drawn with currentColor.
+const ICON = {
+	terrain: "<path d=\"M2 19l6-9 4 5 3-4 7 8z\"/><path d=\"M6.5 12.5l1.5-2.5 1.6 2\"/>",
+	reservoirs: "<path d=\"M2 9c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2\"/><path d=\"M2 14c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2\"/><path d=\"M2 19c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2\"/>",
+	rivers: "<path d=\"M7 2c0 4 5 4 5 8s-6 4-6 8 3 4 3 4\"/><path d=\"M13 2c0 4 5 4 5 8s-6 4-6 8 3 4 3 4\"/>",
+	forest: "<path d=\"M12 2l6 9h-3.5l4.5 7H5l4.5-7H6z\"/><path d=\"M12 18v4\"/>",
+	dams: "<path d=\"M3 6h18\"/><path d=\"M6 6l-2 15h16L18 6\"/><path d=\"M9 11h6M8.5 15.5h7\"/>",
+	labels: "<path d=\"M3 12V4h8l10 10-8 8z\"/><circle cx=\"7.5\" cy=\"8.5\" r=\"1.5\"/>",
+};
+const icon = (id) => `<svg class="layer-icon" viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>`;
+
+// Each layer switches real scene objects in view3d.js (setLayer). Only the labels layer has
+// an opacity slider: it is the one layer whose opacity can change without new shaders.
 export const LAYERS = [
-	{ id: "terrain", name: "Terrain (3D)", swatch: "linear-gradient(135deg,#c9b48f,#8a7a5c)" },
-	{ id: "reservoirs", name: "Reservoir levels", swatch: "linear-gradient(135deg,#4f9fd1,#1d5fa3)" },
-	{ id: "rivers", name: "Rivers & outflows", swatch: "linear-gradient(90deg,#9cc9e8,#2f86c4)" },
-	{ id: "forest", name: "Riverside trees", swatch: "linear-gradient(135deg,#7f9a5a,#3f5a32)" },
-	{ id: "dams", name: "Dams & spillways", swatch: "linear-gradient(135deg,#d8d2c4,#9a9283)" },
-	{ id: "labels", name: "Labels", swatch: "linear-gradient(135deg,#fffdf8,#c2410c)", opacity: true },
+	{ id: "terrain", name: "Terrain (3D)" },
+	{ id: "reservoirs", name: "Reservoir levels" },
+	{ id: "rivers", name: "Rivers & outflows" },
+	{ id: "forest", name: "Riverside trees" },
+	{ id: "dams", name: "Dams & spillways" },
+	{ id: "labels", name: "Labels", opacity: true },
 ];
 
 export function createLayers(el, view3d, store) {
@@ -20,7 +33,7 @@ export function createLayers(el, view3d, store) {
 			${LAYERS.map((l) => `
 				<li class="layer-row" data-layer="${l.id}">
 					<label class="layer-name"><input type="checkbox" checked data-layer-toggle="${l.id}">
-						<span class="layer-swatch" style="background:${l.swatch}"></span><span>${l.name}</span></label>
+						${icon(l.id)}<span>${l.name}</span></label>
 					${l.opacity ? `<input type="range" class="layer-opacity" min="0" max="100" value="100" aria-label="${l.name} opacity"><span class="layer-val num">100%</span>` : ""}
 				</li>`).join("")}
 		</ul>

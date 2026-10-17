@@ -708,13 +708,23 @@ async function main() {
 		await page.locator(".speed-btn").click();
 		const fit = await page.evaluate(() => { const r = document.querySelector(".timeline").getBoundingClientRect(); return { b: r.bottom, vh: innerHeight, vw: innerWidth }; });
 		check("Map, summary and timeline fit the first screen on desktop", fit.vw < 1000 || fit.b <= fit.vh, `timeline bottom ${Math.round(fit.b)} of ${fit.vh}`);
-		// The timeline and the key events share a row: neither leaves an empty strip under it.
+		// Key events are flags on the timeline itself: the timeline spans the card, each flag's staff
+		// stands on its month, and no two flag labels overlap.
 		const row = await page.evaluate(() => {
 			const r = (q) => document.querySelector(q).getBoundingClientRect();
-			const names = [ ...document.querySelectorAll(".event-name") ];
-			return { panel: r(".timeline-panel").height, events: r(".key-events").height, spark: r(".timeline-panel .track svg").height, tlGap: r(".timeline-panel").bottom - r(".timeline-panel .timeline").bottom, listGap: r(".key-events").bottom - r(".event-list").bottom, cut: names.filter((n) => n.scrollWidth > n.clientWidth).length, vw: innerWidth };
+			const tr = r(".timeline-panel .track");
+			const d = window.droughtViz.data.dates;
+			const x = (i) => tr.left + 2 + (tr.width - 4) * (d[i] - d[0]) / (d[d.length - 1] - d[0]);
+			const flags = [ ...document.querySelectorAll(".event-flag") ].map((b) => {
+				const br = b.getBoundingClientRect();
+				const staff = b.dataset.side === "left" ? br.right : br.left;
+				return { off: Math.abs(staff - x(+b.dataset.index)), box: [ br.left, br.right, br.top, br.bottom ] };
+			});
+			const overlap = flags.some((a, i) => flags.some((b, j) => j > i && a.box[0] < b.box[1] && b.box[0] < a.box[1] && a.box[2] < b.box[3] && b.box[2] < a.box[3]));
+			const inside = flags.every((f) => f.box[0] >= tr.left - 1 && f.box[1] <= tr.right + 1);
+			return { span: r(".timeline-panel").width / r("#map").width, list: document.querySelectorAll("#key-events, .event-list").length, off: Math.max(...flags.map((f) => f.off)), overlap, inside, n: flags.length, spark: r(".timeline-panel .track svg").height, vw: innerWidth };
 		});
-		check("Timeline and key events balance: no empty strip under either, event names whole", row.vw < 1000 || (Math.abs(row.panel - row.events) <= 2 && row.tlGap <= 2 && row.listGap <= 12 && row.spark >= 40 && row.cut === 0), JSON.stringify(row));
+		check("Key events are flags on a full-width timeline, at their months, not overlapping", row.n === 4 && row.list === 0 && row.span > 0.98 && row.off <= 3 && !row.overlap && row.inside && row.spark >= 36, JSON.stringify(row));
 
 		await page.locator(".map-2d .res[aria-label^=\"Oroville\"]").click({ force: true });
 		await page.waitForTimeout(300);

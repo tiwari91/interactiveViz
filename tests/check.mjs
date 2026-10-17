@@ -319,7 +319,9 @@ async function main() {
 		const preloaded = new Set([ ...html.matchAll(/rel="modulepreload" href="([^"]+)"/g) ].map((m) => m[1]));
 		const mods = walk("js");
 		check("Every module is preloaded from the page head (no import waterfall), and nothing stale", mods.every((m) => preloaded.has(m)) && preloaded.size === mods.length, `${preloaded.size} preloads, ${mods.length} modules; missing ${mods.filter((m) => !preloaded.has(m)).join(", ") || "none"}`);
-		check("Default view is 3D", (await stateOf(page)).mode === "3d" && (await page.locator("#view-3d canvas").count()) === 1);
+		const topImgs = await page.evaluate(() => [ ...document.querySelectorAll(".site-header img") ].map((i) => ({ src: i.getAttribute("src"), ok: i.complete && i.naturalWidth > 0 })));
+		check("Top bar images all load (naturalWidth > 0)", topImgs.length > 0 && topImgs.every((i) => i.ok), topImgs.map((i) => `${i.src} ${i.ok ? "ok" : "BROKEN"}`).join(", "));
+		check("Default view is 3D",(await stateOf(page)).mode === "3d" && (await page.locator("#view-3d canvas").count()) === 1);
 		check("Loading overlay clears after 3D builds", await page.locator("#loading.done").count() === 1);
 		// ---------- Workspace: layers, step, key events, charts, scale bar ----------
 		{
@@ -876,6 +878,10 @@ async function main() {
 		check("Rivers below the big dams run narrower in the drought", bigDams.every((id) => wDry[id] < wWet[id]), bigDams.map((id) => `${id} ${wDry[id].toFixed(2)}→${wWet[id].toFixed(2)}`).join(", "));
 		const clear = await debug3d(page, "c.chuteClearance()");
 		check("Spillway chutes sit above the ground across their width", clear.length > 10 && Math.min(...clear) > 0, `${clear.length} chutes, min clearance ${Math.min(...clear).toFixed(2)}`);
+		const chuteMeet = (ends) => ends.filter((e) => !(e.gap < 0.3 && e.dy < 0.3));
+		const chuteFmt = (ends) => { const w = ends.reduce((a, e) => (e.gap > a.gap ? e : a), ends[0]); return `${ends.length} chutes at relief ${ends[0].vScale.toFixed(2)}, worst ${w.id} gap ${w.gap.toFixed(2)} dy ${w.dy.toFixed(2)}`; };
+		const chuteState = await debug3d(page, "c.chuteEnds()");
+		check("Spillway chute water runs on to meet the river ribbon (state view)", chuteState.length > 10 && chuteMeet(chuteState).length === 0, chuteMeet(chuteState).map((e) => `${e.id} ${e.gap.toFixed(2)}/${e.dy.toFixed(2)}`).join(", ") || chuteFmt(chuteState));
 
 		// Fly-to: the camera stays above the ground with the dam in view, for the big lakes.
 		const flyIds = [ "SHA", "ORO", "CLE", "NML", "DNP", "BER", "ALM", "FOL", "PNF", "ISB", "MIL" ];
@@ -888,6 +894,8 @@ async function main() {
 			if (!(r.clear > 1 && r.dam && r.dist < 60)) flyBad.push(`${id} clear ${r.clear.toFixed(1)} dam ${r.dam} dist ${r.dist.toFixed(0)}`);
 		}
 		check("Fly-to keeps the camera above ground, close, with the dam in view", flyBad.length === 0, flyBad.join("; ") || `${flyIds.length} lakes`);
+		const chuteClose = await debug3d(page, "c.chuteEnds()");
+		check("Spillway chute water meets the river ribbon zoomed in (after the relief rescale)", chuteClose[0].vScale < chuteState[0].vScale && chuteMeet(chuteClose).length === 0, chuteMeet(chuteClose).map((e) => `${e.id} ${e.gap.toFixed(2)}/${e.dy.toFixed(2)}`).join(", ") || chuteFmt(chuteClose));
 		// Zoomed right in over the steepest reservoirs: the camera stays well above the local
 		// terrain (40% of its distance), sees the target past every wall, and the target sits in
 		// the open part of the view, not under the detail card.

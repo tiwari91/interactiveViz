@@ -1272,6 +1272,29 @@ export function createView3D(container, data, store, tooltip, audio) {
 				return v3.z < 1 && Math.abs(v3.x) < 0.9 && Math.abs(v3.y) < 0.9;
 			},
 			// For tests: lowest height of each spillway chute floor above the ground under its full width.
+			// For tests: where each spillway chute's water ends against the nearest outflow ribbon
+			// centre point, at the current relief scale: horizontal gap, vertical gap, and the
+			// biggest rise along the chute's run over the ground.
+			chuteEnds: () => {
+				const rivers = outflow.outflowLines().map((l) => l.pts);
+				return basins.basins.filter((b) => dams.info.get(b.r.id).chute).map((b) => {
+					const line = dams.info.get(b.r.id).chuteLine;
+					const e = line[line.length - 1];
+					let gap = Infinity;
+					let dy = Infinity;
+					for (const pts of rivers) for (const p of pts) {
+						const d = Math.hypot(p[0] - e[0], p[2] - e[2]);
+						if (d < gap) {
+							gap = d;
+							dy = Math.abs(p[1] - e[1]) * vScale;
+						}
+					}
+					const chuteEnd = dams.info.get(b.r.id).chute.length;
+					let rise = 0;
+					for (let i = chuteEnd; i < line.length; i++) rise = Math.max(rise, line[i][1] - line[chuteEnd - 1][1]);
+					return { id: b.r.id, gap, dy, vScale, rise: rise * vScale, run: line.length - chuteEnd, end: [ e[0], e[2] ], foot: [ line[chuteEnd - 1][0], line[chuteEnd - 1][2] ] };
+				});
+			},
 			chuteClearance: () => [ ...dams.info.values() ].filter((d) => d.chute).map((d) => d.chuteClear),
 			setLayer(name, on) {
 				if (name === "labels") container.classList.toggle("labels-off", !on);

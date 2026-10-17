@@ -624,9 +624,59 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		}
 
 		// Spillway chute (embankment dams): white water on the chute floor itself.
+		// The chute's water runs on from the stilling basin over the ground to the dam's own river
+		// (or the nearest river below), so it never ends in a field.
 		if (info.chute) {
-			const st = stripGeometry(info.chute, out, { dam: di, kind: KIND.CHUTE });
-			strips.push({ ...st, kind: KIND.CHUTE, dam: di, centre: info.chute, shape: () => info.chuteWidth, sample: (x, z, y) => y });
+			const line = info.chute.slice();
+			const tail = line[line.length - 1];
+			// Target: the river point that is near and reachable without climbing over a rise
+			// (the climb along the straight run is penalised heavily).
+			const climb = (p) => {
+				const len = Math.hypot(p[0] - tail[0], p[2] - tail[2]);
+				const steps = Math.max(1, Math.ceil(len / 0.5));
+				let top = -Infinity;
+				for (let k = 1; k < steps; k++) top = Math.max(top, ground2(tail[0] + (p[0] - tail[0]) * k / steps, tail[2] + (p[2] - tail[2]) * k / steps));
+				return Math.max(0, top - Math.max(tail[1] - 0.17, p[1]));
+			};
+			const cands = [];
+			for (const [ si, sq ] of outSeq.entries()) {
+				if (!sq || sq.length < 3) continue;
+				for (const p of sq) {
+					const d = Math.hypot(p[0] - tail[0], p[2] - tail[2]) + (si === di ? 0 : 2);
+					if (d < 16) cands.push([ d, p ]);
+				}
+			}
+			cands.sort((a, b) => a[0] - b[0]);
+			let q = null;
+			let qd = Infinity;
+			// Prefer a target ahead of the chute, so the water bends on rather than doubling back.
+			const prev = line[Math.max(0, line.length - 4)];
+			const hx = tail[0] - prev[0];
+			const hz = tail[2] - prev[2];
+			const hl = Math.hypot(hx, hz) || 1;
+			for (const [ d, p ] of cands.slice(0, 160)) {
+				const dl = Math.hypot(p[0] - tail[0], p[2] - tail[2]) || 1;
+				const cos = ((p[0] - tail[0]) * hx + (p[2] - tail[2]) * hz) / (dl * hl);
+				const score = d * (1 + 0.9 * (1 - cos)) + 12 * climb(p);
+				if (score < qd) {
+					qd = score;
+					q = p;
+				}
+			}
+			if (q) {
+				const len = Math.hypot(q[0] - tail[0], q[2] - tail[2]);
+				const steps = Math.max(1, Math.ceil(len / 0.3));
+				for (let k = 1; k <= steps; k++) {
+					const x = tail[0] + (q[0] - tail[0]) * k / steps;
+					const z = tail[2] + (q[2] - tail[2]) * k / steps;
+					line.push([ x, ground(x, z), z ]);
+				}
+			}
+			info.chuteLine = line;
+			info.chuteMeets = q ? [ q[0], q[1], q[2] ] : null;
+			const st = stripGeometry(line, out, { dam: di, kind: KIND.CHUTE });
+			// On the concrete the floor height stands; past it the water lies on the ground.
+			strips.push({ ...st, kind: KIND.CHUTE, dam: di, centre: line, shape: () => info.chuteWidth, sample: (x, z, y) => Math.max(y, ground(x, z)) });
 		}
 	});
 
@@ -865,7 +915,6 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	let groundSamples = 0;
 	const pending = [];
 	for (const st of strips) {
-		if (st.kind === KIND.CHUTE) continue;
 		const sample = st.sample;
 		st.sample = (x, z, y) => {
 			groundSamples++;
@@ -875,7 +924,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	}
 	function fillLevels(st) {
 		st.ys = LEVELS.map((rel) => {
-			const k = widthFor(st.kind, rel) * BANK;
+			const k = widthFor(st.kind, rel) * (st.kind === KIND.CHUTE ? 1 : BANK);
 			const tmp = new Float32Array(st.rows * ACROSS.length * 3);
 			placeStrip({ ...st, start: 0 }, st.centre, (i, d) => st.shape(i, d) * k, st.sample, tmp);
 			const ys = new Float32Array(st.rows * ACROSS.length);

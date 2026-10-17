@@ -323,10 +323,10 @@ body:has(.detail-card:not([hidden])) .stage-hint { display: none; }
 .compare-split.stacked .compare-right { top: calc(var(--split) + 14px); }
 
 /* Record-low marker: a quiet ring that settles on a lake in its lowest month, then fades. */
-.record-low { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity 0.6s ease; z-index: 2; }
-.record-low.on { opacity: 1; }
+.record-low { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity 0.9s ease; z-index: 2; }
+.record-low.on { opacity: 1; transition-duration: 0.2s; }
 .record-ring { position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 .record-low.on .record-ring { animation: record-settle 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 @keyframes record-settle { from { transform: scale(1.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.record-text { position: absolute; left: 32px; top: -11px; white-space: nowrap; padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--ink); font: 500 0.72rem/1.4 var(--font-mono); box-shadow: 0 1px 3px rgb(0 0 0 / 0.15); }
+.record-text { position: absolute; left: 20px; top: 28px; white-space: nowrap; padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--ink); font: 500 0.72rem/1.4 var(--font-mono); box-shadow: 0 1px 3px rgb(0 0 0 / 0.15); }
 @media (prefers-reduced-motion: reduce) { .record-low.on .record-ring { animation: none; } }

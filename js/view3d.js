@@ -938,7 +938,11 @@ export function createView3D(container, data, store, tooltip, audio) {
 			v3.set(b.cx, b.levelFor(0.3) * vScale, b.cz).project(sc.camera);
 			const off = v3.z > 1 || Math.abs(v3.x) > 1.1 || Math.abs(v3.y) > 1.1;
 			record.style.visibility = off ? "hidden" : "";
-			record.style.transform = `translate(${((v3.x + 1) / 2 * container.clientWidth).toFixed(1)}px, ${((1 - v3.y) / 2 * container.clientHeight).toFixed(1)}px)`;
+			const x = (v3.x + 1) / 2 * container.clientWidth;
+			// The label sits below the ring, slid sideways to stay inside the view.
+			const tw = record.lastChild.offsetWidth;
+			record.lastChild.style.left = `${(Math.min(container.clientWidth - tw - 6, Math.max(6, x + 20 - tw * 0.3)) - x).toFixed(1)}px`;
+			record.style.transform = `translate(${x.toFixed(1)}px, ${((1 - v3.y) / 2 * container.clientHeight).toFixed(1)}px)`;
 		}
 
 		// Event moments, a few seconds each and only in their month: Feb 2017, white water bursting

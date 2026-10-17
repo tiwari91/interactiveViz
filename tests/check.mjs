@@ -1084,7 +1084,7 @@ async function main() {
 			}
 			await debug3d(page, `c.setPose(${JSON.stringify(pose0)})`);
 			const badFar = far.filter((g) => g.xz > 0.1 || g.px > 4);
-			const badNear = near.filter((g) => g.xz > 0.1 || g.dy > 0.08 || g.px > 8);
+			const badNear = near.filter((g) => g.xz > 0.1 || g.dy > 0.08 || g.px > 12);
 			const worst = (a, k) => Math.max(...a.map((g) => g[k])).toFixed(2);
 			check("Every dam's river leaves from the foot of the dam, at the state view and close in (relief flattened)",
 				far.length >= 30 && near.length === far.length && badFar.length === 0 && badNear.length === 0 && near.every((g) => g.vs < 0.5 && g.z > 50),

@@ -984,7 +984,11 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				const cos = (a[0] * b[0] + a[1] * b[1]) / ((Math.hypot(...a) * Math.hypot(...b)) || 1);
 				turn = Math.max(turn, Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI);
 			}
-			return { dam: st.dam, kind: st.kind, start: st.centre[0], end: st.centre[st.centre.length - 1], gap, minY, inLake, turn, weight: weightOf(own) };
+			// First cross-section row as drawn (mean of its vertices in the position buffer).
+			const cols = ACROSS.length;
+			const drawn = [ 0, 0, 0 ];
+			for (let c = 0; c < cols; c++) for (let a = 0; a < 3; a++) drawn[a] += positions[(st.start + c) * 3 + a] / cols;
+			return { drawn, dam: st.dam, kind: st.kind, start: st.centre[0], end: st.centre[st.centre.length - 1], gap, minY, inLake, turn, weight: weightOf(own) };
 		}),
 		bankPoints,
 		nearChute,

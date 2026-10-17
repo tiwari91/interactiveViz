@@ -963,7 +963,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 					float band = smoothstep(0.0, 0.5, vUv.y) * smoothstep(1.0, 0.5, vUv.y);
 					float col = floor(vUv.x * 320.0);
 					float streak = step(0.6, h(vec2(col, 1.0))) * smoothstep(0.5, 1.0, fract(vUv.y * 6.0 + uTime * (1.5 + h(vec2(col, 2.0))) ));
-					gl_FragColor = vec4(uColor, uA * band * (0.3 + 0.3 * streak));
+					gl_FragColor = vec4(uColor, uA * band * (0.42 + 0.3 * streak));
 				}`,
 			uniforms: { uA: { value: 0 }, uTime: shared.uTime, uColor: { value: new THREE.Color("#5aa9e6") } },
 			transparent: true,
@@ -1155,19 +1155,17 @@ export function createView3D(container, data, store, tooltip, audio) {
 				};
 				return outflow.links().filter((r) => r.kind === 0).map((r) => {
 					const b = basins.basins[r.dam];
-					const info = dams.info.get(b.r.id);
-					const f = info.faceBase;
-					const camD = sc.camera.position.distanceTo(v3.set(r.start[0], r.start[1] * vScale, r.start[2]));
+					const f = dams.info.get(b.r.id).faceBase;
+					// The first row of the ribbon as drawn (vertex buffer), with the shader's lift.
+					const s0 = r.drawn;
+					const camD = sc.camera.position.distanceTo(v3.set(s0[0], s0[1] * vScale, s0[2]));
 					const t = Math.min(1, Math.max(0, (camD - 140) / 560));
 					const far = t * t * (3 - 2 * t) * r.weight;
-					const sy = (r.start[1] + 0.03 + camD * 0.004 * far) * vScale;
+					const sy = (s0[1] + 0.03 + camD * 0.004 * far) * vScale;
 					const fy = groundAt(f[0], f[2]);
-					const a = px([ r.start[0], sy, r.start[2] ]);
+					const a = px([ s0[0], sy, s0[2] ]);
 					const c = px([ f[0], fy, f[2] ]);
-					// Up from the ground at the foot; an arch's foot can sit in a hollow below the
-					// river, which then still meets the wall (between its bottom and crest).
-					const onWall = r.start[1] >= info.wallBottom && r.start[1] <= info.crest;
-					return { id: b.r.id, xz: Math.hypot(r.start[0] - f[0], r.start[2] - f[2]), dy: onWall ? 0 : Math.abs(sy - fy), px: onWall ? 0 : Math.hypot(a[0] - c[0], a[1] - c[1]), lift: sy - fy };
+					return { id: b.r.id, xz: Math.hypot(s0[0] - f[0], s0[2] - f[2]), dy: Math.abs(sy - fy), px: Math.hypot(a[0] - c[0], a[1] - c[1]) };
 				});
 			},
 			pulseCount: () => pulses.count(),

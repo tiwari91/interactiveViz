@@ -263,7 +263,7 @@ export function createDams(THREE, data, basins) {
 		void outletEnd;
 		info.set(bs.r.id, {
 			type, crest, toePoint, center: bs.toWorld(mu, mv), height: hMax, scale, concrete,
-			toeU: mu - toe - TOE_OUT, faceBase, wallBottom: bottoms[SEGMENTS / 2], spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth, chuteClear,
+			toeU: mu - toe - TOE_OUT, faceBase, spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth, chuteClear,
 			lights: [ axisAt(0.02), axisAt(0.98) ].map(([ u, v ]) => {
 				const [ x, z ] = bs.toWorld(u - tc * 0.5, v);
 				return [ x, crest + 0.25, z ];

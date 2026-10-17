@@ -828,6 +828,24 @@ async function main() {
 			check("Record-low ring shows only in a lake's lowest month, with its % from the data, then fades",
 				!r0.on && r1.on && r1.id === pick.ids[0] && r1.text.includes(pctTxt) && /lowest since 2011/.test(r1.text) && vis > 0.5 && !r2.on && !r3.on,
 				`${rec.length} record months; ${r1.text} at ${(await stateOf(page)).dateIndex}; month before ${r0.on}, after ${r2.on}, 5.5 s later ${r3.on}`);
+			check("Record-low label never covers a lake name (it moves, or the name steps back)", r1.clash.length === 0, `${r1.clash.join(", ") || "no clash"}, ${r1.dimmed} dimmed`);
+			// During the replay at 1x a month lasts a fraction of a second: the ring stays its own
+			// few seconds while later months play on, then fades by itself.
+			// A record month with no other record in the next two years, so nothing replaces it.
+			const lone = rec.find((r) => !rec.some((o) => o !== r && o.i >= r.i - 1 && o.i <= r.i + 24)) ?? pick;
+			await setState(page, { dateIndex: lone.i - 1 });
+			await page.waitForTimeout(300);
+			await page.evaluate(() => window.droughtViz.store.set({ playing: true }));
+			await page.waitForFunction((i) => window.droughtViz.store.get().dateIndex >= i, lone.i, { timeout: 15000, polling: 20 });
+			await page.waitForTimeout(2500);
+			const p1 = await rl();
+			const moved = (await stateOf(page)).dateIndex - lone.i;
+			await page.waitForTimeout(3000);
+			const p2 = await rl();
+			await page.evaluate(() => window.droughtViz.store.set({ playing: false }));
+			check("Record-low ring stays its full few seconds while the replay plays on, then fades", p1.on && p1.id === lone.ids[0] && moved >= 3 && !p2.on && p1.clash.length === 0, `2.5 s in: ${p1.on} (${p1.id}), ${moved} months later; 5.5 s in: ${p2.on}; clash ${p1.clash.join(", ") || "none"}`);
+			const rc = await debug3d(page, "c.rainContrast()");
+			check("Rain band reads against the dry valley, with paler streaks", rc.band >= 1.4 && rc.streak >= 2, `band ${rc.band.toFixed(2)}:1 over the valley tan, streaks ${rc.streak.toFixed(2)}:1 over the band`);
 		}
 		await shot(page, "3d-wide-wet-apr2017.png", ".stage");
 

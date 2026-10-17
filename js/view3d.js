@@ -901,7 +901,9 @@ export function createView3D(container, data, store, tooltip, audio) {
 		}
 
 		// Record-low marker: in the month a lake reaches its lowest storage in the data, a quiet ring
-		// settles on it with its % full; it fades after a few seconds or when the month changes.
+		// settles on it with its % full. It stays its full few seconds on its own timer, also while
+		// the replay plays on through later months (one at a time: a newer record replaces it); a
+		// month picked by hand clears it.
 		const recordAt = new Map();
 		for (const b of basins.basins) {
 			const r = b.r;
@@ -919,18 +921,32 @@ export function createView3D(container, data, store, tooltip, audio) {
 		container.appendChild(record);
 		let recordTimer = 0;
 		const shortName = (n) => n.replace(/\s*\(.*?\)/g, "").replace(/ (Dam|Reservoir|Lake)$/, "").replace(/^Lake /, "").replace(/ Dam .*$/, "");
-		function showRecord(i) {
+		function hideRecord() {
 			clearTimeout(recordTimer);
 			record.classList.remove("on");
+			undimLabels();
+		}
+		function showRecord(i) {
 			const r = recordAt.get(i)?.[0];
-			record.dataset.id = r ? r.id : "";
-			if (!r) return;
+			if (!r) {
+				if (!store.get().playing) hideRecord();
+				return;
+			}
+			hideRecord();
+			record.dataset.id = r.id;
 			record.querySelector(".record-text").textContent = `${shortName(r.name)} ${Math.round(r.series[i] / r.capacity * 100)}%, lowest since ${sinceYear}`;
 			// Restart the settle animation.
 			void record.offsetWidth;
 			record.classList.add("on");
-			recordTimer = setTimeout(() => record.classList.remove("on"), 4500);
+			recordTimer = setTimeout(hideRecord, 4500);
 		}
+		// Lake names the record label could not get clear of are dimmed while it shows.
+		let dimmed = [];
+		function undimLabels() {
+			for (const el of dimmed) el.classList.remove("under-record");
+			dimmed = [];
+		}
+		const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 		function placeRecord() {
 			const id = record.dataset.id;
 			if (!id || !record.classList.contains("on")) return;
@@ -940,9 +956,38 @@ export function createView3D(container, data, store, tooltip, audio) {
 			record.style.visibility = off ? "hidden" : "";
 			const x = (v3.x + 1) / 2 * container.clientWidth;
 			// The label sits below the ring, slid sideways to stay inside the view.
-			const tw = record.lastChild.offsetWidth;
-			record.lastChild.style.left = `${(Math.min(container.clientWidth - tw - 6, Math.max(6, x + 20 - tw * 0.3)) - x).toFixed(1)}px`;
-			record.style.transform = `translate(${x.toFixed(1)}px, ${((1 - v3.y) / 2 * container.clientHeight).toFixed(1)}px)`;
+			// The label sits below the ring, or above or to the left of it when that keeps it clear
+			// of the lake names; slid sideways to stay inside the view.
+			const y = (1 - v3.y) / 2 * container.clientHeight;
+			const text = record.lastChild;
+			const tw = text.offsetWidth;
+			const th = text.offsetHeight;
+			const cw = container.clientWidth;
+			const clampX = (lx) => Math.min(cw - tw - 6, Math.max(6, lx));
+			const spots = [ [ clampX(x + 20 - tw * 0.3), y + 28 ], [ clampX(x + 20 - tw * 0.3), y - 28 - th ], [ clampX(x - 30 - tw), y + 28 ], [ clampX(x + 30), y - 28 - th ] ];
+			const cr = container.getBoundingClientRect();
+			const names = [ ...labels.layer.querySelectorAll(".lbl-text:not(.far)") ].filter((el) => el.closest(".lbl").style.display !== "none").map((el) => {
+				const r = el.getBoundingClientRect();
+				return { el, left: r.left - cr.left - 3, right: r.right - cr.left + 3, top: r.top - cr.top - 3, bottom: r.bottom - cr.top + 3 };
+			});
+			const hits = ([ lx, ly ]) => names.filter((n) => overlaps(n, { left: lx, right: lx + tw, top: ly, bottom: ly + th }));
+			let best = spots[0];
+			let bestHits = hits(best);
+			for (const sp of spots.slice(1)) {
+				if (!bestHits.length) break;
+				const h2 = hits(sp);
+				if (h2.length < bestHits.length) {
+					best = sp;
+					bestHits = h2;
+				}
+			}
+			text.style.left = `${(best[0] - x).toFixed(1)}px`;
+			text.style.top = `${(best[1] - y).toFixed(1)}px`;
+			const under = bestHits.map((n) => n.el);
+			for (const el of dimmed) if (!under.includes(el)) el.classList.remove("under-record");
+			for (const el of under) el.classList.add("under-record");
+			dimmed = under;
+			record.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
 		}
 
 		// Event moments, a few seconds each and only in their month: Feb 2017, white water bursting
@@ -956,16 +1001,21 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const rainMat = new THREE.ShaderMaterial({
 			vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
 			fragmentShader: `
-				uniform float uA; uniform float uTime; uniform vec3 uColor; varying vec2 vUv;
+				uniform float uA; uniform float uTime; uniform vec3 uColor; uniform vec3 uStreak; varying vec2 vUv;
 				float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 				void main() {
-					// Soft band across, thin falling streaks within it.
-					float band = smoothstep(0.0, 0.5, vUv.y) * smoothstep(1.0, 0.5, vUv.y);
-					float col = floor(vUv.x * 320.0);
-					float streak = step(0.6, h(vec2(col, 1.0))) * smoothstep(0.5, 1.0, fract(vUv.y * 6.0 + uTime * (1.5 + h(vec2(col, 2.0))) ));
-					gl_FragColor = vec4(uColor, uA * band * (0.42 + 0.3 * streak));
+					// A storm-blue band, darker than the tan valley and the Sierra so it reads over both,
+					// with pale wind-slanted streaks falling within it; ragged soft edges.
+					float edge = 0.08 * (h(vec2(floor(vUv.x * 60.0), 3.0)) - 0.5);
+					float band = smoothstep(0.0, 0.42, vUv.y + edge) * smoothstep(1.0, 0.58, vUv.y - edge);
+					float sx = vUv.x * 360.0 + vUv.y * 9.0;
+					float col = floor(sx);
+					float thin = smoothstep(0.5, 0.15, abs(fract(sx) - 0.5));
+					float streak = step(0.55, h(vec2(col, 1.0))) * thin * smoothstep(0.55, 1.0, fract(vUv.y * 7.0 + uTime * (1.4 + h(vec2(col, 2.0)))));
+					vec3 c = mix(uColor, uStreak, streak);
+					gl_FragColor = vec4(c, uA * band * (0.55 + 0.35 * streak));
 				}`,
-			uniforms: { uA: { value: 0 }, uTime: shared.uTime, uColor: { value: new THREE.Color("#5aa9e6") } },
+			uniforms: { uA: { value: 0 }, uTime: shared.uTime, uColor: { value: new THREE.Color("#2b5d8c") }, uStreak: { value: new THREE.Color("#e4f1fb") } },
 			transparent: true,
 			depthWrite: false,
 			side: THREE.DoubleSide,
@@ -1169,8 +1219,26 @@ export function createView3D(container, data, store, tooltip, audio) {
 				});
 			},
 			pulseCount: () => pulses.count(),
+			// For tests: the rain band's colour (core alpha at full strength) composited over the
+			// valley floor's tan, and the contrast against the bare tan (WCAG luminance ratio).
+			rainContrast: () => {
+				const lum = (c) => {
+					const f = (v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+					return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+				};
+				const tan = new THREE.Color(0xa8926a); // terrain.js valleyDry
+				const over = tan.clone().lerp(rainMat.uniforms.uColor.value, 0.55);
+				const streak = over.clone().lerp(rainMat.uniforms.uStreak.value, 0.9);
+				const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+				return { band: ratio(over, tan), streak: ratio(streak, over) };
+			},
 			eventFx: () => ({ name: fx ? fx.name : null, level: fxLevel, rain: rain.visible, spill: oroIdx >= 0 ? cur.spill[oroIdx] : null }),
-			recordLow: () => ({ id: record.dataset.id, on: record.classList.contains("on"), text: record.querySelector(".record-text").textContent }),
+			recordLow: () => {
+				// Lake names the label overlaps without being dimmed (should be none).
+				const t = record.lastChild.getBoundingClientRect();
+				const clash = record.classList.contains("on") ? [ ...labels.layer.querySelectorAll(".lbl-text:not(.far)") ].filter((el) => !el.classList.contains("under-record") && el.closest(".lbl").style.display !== "none" && overlaps(el.getBoundingClientRect(), t)).map((el) => el.textContent) : [];
+				return { id: record.dataset.id, on: record.classList.contains("on"), text: record.querySelector(".record-text").textContent, clash, dimmed: dimmed.length };
+			},
 			recordMonths: () => [ ...recordAt.entries() ].map(([ i, rs ]) => ({ i, ids: rs.map((r) => r.id), pct: rs[0].series[i] / rs[0].capacity })),
 			outflowLine: (id) => outflow.riverPath(basins.basins.findIndex((b) => b.r.id === id)).pts,
 			riverGaps: (i) => {

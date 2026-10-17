@@ -329,4 +329,6 @@ body:has(.detail-card:not([hidden])) .stage-hint { display: none; }
 .record-low.on .record-ring { animation: record-settle 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
 @keyframes record-settle { from { transform: scale(1.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .record-text { position: absolute; left: 20px; top: 28px; white-space: nowrap; padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--ink); font: 500 0.72rem/1.4 var(--font-mono); box-shadow: 0 1px 3px rgb(0 0 0 / 0.15); }
-@media (prefers-reduced-motion: reduce) { .record-low.on .record-ring { animation: none; } }
+/* A lake name under the record-low label steps back while the label shows. */
+.lbl-text.under-record { opacity: 0.18; transition: opacity 0.3s ease; }
+@media (prefers-reduced-motion: reduce) { .record-low.on .record-ring { animation: none; } .lbl-text.under-record { transition: none; } }

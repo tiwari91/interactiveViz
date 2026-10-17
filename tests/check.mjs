@@ -96,13 +96,16 @@ async function waitStill(page, ms = 2500) {
 	await page.waitForTimeout(ms);
 }
 
-// Zoom from close, oblique views over steep canyon lakes: every input (wheel, ctrl+wheel pinch,
-// Safari gesture events, two-finger touch) zooms the right way, and near the ground zoom never
-// bounces back and never puts the camera under ground or water.
+// Zoom input and exactness, from close, oblique views over steep canyon lakes: every input
+// (wheel, ctrl+wheel pinch, Safari gesture events, two-finger touch) zooms the right way; the
+// ground point under the pointer stays under it every frame; tilt moves one way per leg without
+// jumps; near the ground zoom never bounces back and never puts the camera under ground or water.
 async function zoomChecks(page) {
 	await page.evaluate(() => window.scrollTo(0, 0));
 	const box = await page.locator("#view-3d canvas").boundingBox();
-	const at = (fx, fy) => [ box.x + box.width * fx, box.y + box.height * fy ];
+	// Whole pixels: mouse events report integer clientX/Y, so a fractional pointer would put the
+	// app's anchor up to half a pixel away from the test's, and zooming magnifies that gap.
+	const at = (fx, fy) => [ Math.round(box.x + box.width * fx), Math.round(box.y + box.height * fy) ];
 	const fly = async (id) => {
 		await debug3d(page, `c.focus("${id}")`);
 		await waitStill(page, 400);
@@ -188,7 +191,65 @@ async function zoomChecks(page) {
 	await cdp.detach();
 	check("Every zoom input works both ways from a close canyon view (wheel, ctrl+wheel pinch, Safari gesture, touch pinch)", Object.values(inputs).every((v) => v.ok), Object.entries(inputs).map(([ k, v ]) => `${k} ${v.txt}${v.ok ? "" : " FAIL"}`).join("; "));
 
-	// Near the ground: zooming hard in over a canyon (and over water) only ever closes in,
+	// (a) The ground point under an off-centre pointer stays under it, every frame and at rest.
+	const drifts = [];
+	for (const [ id, n, dy, fx, fy ] of [ [ "PNF", 8, -100, 0.3, 0.62 ], [ "ORO", 16, -200, 0.68, 0.58 ] ]) {
+		await fly(id);
+		const [ x, y ] = at(fx, fy);
+		const a = await debug3d(page, `c.groundUnder(${x}, ${y})`);
+		if (!a) {
+			drifts.push({ id, miss: true });
+			continue;
+		}
+		await record(a);
+		await wheel(x, y, n, dy);
+		await waitStill(page, 300);
+		const log = await stop();
+		let max = 0;
+		for (const f of log) max = Math.max(max, Math.hypot(f.s[0] - x, f.s[1] - y));
+		const last = log[log.length - 1];
+		const ks = log.map((f) => f.k);
+		drifts.push({ id, max, rest: Math.hypot(last.s[0] - x, last.s[1] - y), relief: Math.max(...ks) / Math.min(...ks), d: [ log[0].d, last.d ] });
+	}
+	check("Zoom holds the ground point under the pointer every frame, also while the relief flattens", drifts.every((r) => !r.miss && r.max <= 2 && r.rest <= 2) && drifts.some((r) => r.relief > 1.1),
+		drifts.map((r) => r.miss ? `${r.id} no ground` : `${r.id} ${r.d[0].toFixed(0)}->${r.d[1].toFixed(0)} max ${r.max.toFixed(1)} px, at rest ${r.rest.toFixed(1)} px, relief x${r.relief.toFixed(2)}`).join("; "));
+
+	// (b) Tilt changes smoothly and one way per leg through a full zoom in and back out, also on a
+	// slow machine: with 60 ms frames each zoom step is several times larger, which must not
+	// turn into larger tilt jumps.
+	const tiltRun = async (slow) => {
+		await fly("PNF");
+		await record(null);
+		if (slow) await page.evaluate(() => { const f = () => { const t = performance.now(); while (performance.now() - t < 60); window.__busy = requestAnimationFrame(f); }; window.__busy = requestAnimationFrame(f); });
+		const [ tx, ty ] = at(0.55, 0.55);
+		await wheel(tx, ty, 12, -200);
+		await waitStill(page, 200);
+		const inLen = (await page.evaluate(() => window.__zr.length));
+		await wheel(tx, ty, 12, 200);
+		await waitStill(page, 200);
+		if (slow) await page.evaluate(() => cancelAnimationFrame(window.__busy));
+		const tl = await stop();
+		// Over high ground zooming in may look down more (to stay clear) or tilt toward the horizon,
+		// but each leg turns at most once: no back-and-forth swinging.
+		let jump = 0;
+		let jumpAt = "";
+		const turns = [ 0, 0 ];
+		const sign = [ 0, 0 ];
+		for (let i = 1; i < tl.length; i++) {
+			const dp = tl[i].polar - tl[i - 1].polar;
+			if (Math.abs(dp) > jump) jumpAt = `${i < inLen ? "in" : "out"} frame ${i < inLen ? i : i - inLen} of ${i < inLen ? inLen : tl.length - inLen}`;
+			jump = Math.max(jump, Math.abs(dp));
+			const leg = i < inLen ? 0 : 1;
+			if (Math.abs(dp) < 1e-3) continue;
+			if (sign[leg] && Math.sign(dp) !== sign[leg]) turns[leg]++;
+			sign[leg] = Math.sign(dp);
+		}
+		return { ok: jump <= 0.02 && Math.max(...turns) <= 1, txt: `${slow ? "60 ms frames" : "full rate"}: largest tilt step ${jump.toFixed(4)} rad/frame (${jumpAt}), reversals in ${turns[0]} out ${turns[1]}; polar ${tl[0].polar.toFixed(2)} -> ${tl[inLen - 1].polar.toFixed(2)} -> ${tl[tl.length - 1].polar.toFixed(2)}` };
+	};
+	const tilts = [ await tiltRun(false), await tiltRun(true) ];
+	check("Zoom tilt is smooth and never swings back and forth (in, then out), also at a low frame rate", tilts.every((r) => r.ok), tilts.map((r) => r.txt).join("; "));
+
+	// (c) Near the ground: zooming hard in over a canyon (and over water) only ever closes in,
 	// keeps the camera and its near plane above ground and water, and comes to rest.
 	const near = [];
 	for (const [ id, fx, fy ] of [ [ "PNF", 0.6, 0.55 ], [ "ORO", 0.5, 0.5 ] ]) {

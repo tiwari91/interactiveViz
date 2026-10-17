@@ -463,7 +463,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const zaxis = new THREE.Vector3();
 		const zquat = new THREE.Quaternion();
 		// anchor: land-local (unscaled y) ground point; px: the client pixel it is held under.
-		const zoom = { goal: 0, anchor: new THREE.Vector3(), px: [ 0, 0 ], active: false, held: false, relief: 0 };
+		const zoom = { goal: 0, anchor: new THREE.Vector3(), px: [ 0, 0 ], active: false, held: false, relief: 0, k: 1 };
 		const ZOOM_TAU = 0.075;
 		const ZOOM_STEP = 0.12;
 		const TILT_MAX = 0.012;
@@ -526,6 +526,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		function zoomPose(s, step) {
 			const p = sc.camera.position;
 			const t = sc.controls.target;
+			const phi0 = Math.acos(Math.max(-1, Math.min(1, (p.y - t.y) / Math.max(1e-9, p.distanceTo(t)))));
 			za.set(zoom.anchor.x, zoom.anchor.y * vScale, zoom.anchor.z);
 			zp.copy(p).sub(za).multiplyScalar(s).add(za);
 			zt.copy(t).sub(za).multiplyScalar(s).add(za);
@@ -547,16 +548,20 @@ export function createView3D(container, data, store, tooltip, audio) {
 			sph.radius = zp.distanceTo(zt);
 			// The relief scale this distance will bring.
 			const k = scaleFor(sph.radius);
+			zoom.k = k;
 			zp.y *= k / vScale;
 			zt.y *= k / vScale;
-			if (step > 0) return true;
+			za.y *= k / vScale;
+			if (step > 0) {
+				capTilt(phi0);
+				return true;
+			}
 			// Close over high ground, look down more to stay clear of it (as keepAbove would),
 			// but by turning about the anchor, a little a frame, so the anchor stays put.
-			za.y *= k / vScale;
 			let turned = 0;
 			for (let it = 0; it < 3; it++) {
 				const lack = needAt(zp, zt, k) - zp.y;
-				if (lack <= 1e-3) return true;
+				if (lack <= 1e-3) break;
 				const hd = Math.max(1, Math.hypot(zp.x - za.x, zp.z - za.z));
 				const dphi = Math.max(-(TILT_MAX - turned), -lack / hd * 1.1);
 				if (dphi > -1e-5 || sph.phi + dphi - turned < 0.2) break;
@@ -567,7 +572,23 @@ export function createView3D(container, data, store, tooltip, audio) {
 				zt.sub(za).applyQuaternion(zquat).add(za);
 				turned -= dphi;
 			}
+			// A long frame (large step) must not tilt more than a frame's worth.
+			capTilt(phi0);
 			return needAt(zp, zt, k) <= zp.y + 1e-3;
+		}
+		// Everything one zoom step does to the tilt (the eased tilt, the clearance turn and the
+		// relief rescale, which steepens or flattens the sight line) adds up to at most TILT_MAX
+		// a frame: any excess is turned back about the anchor, so the anchor keeps its place.
+		// A step that then sits too low is shortened by the caller, so a slow frame cannot jump.
+		function capTilt(phi0) {
+			off.copy(zp).sub(zt);
+			const phi = Math.acos(Math.max(-1, Math.min(1, off.y / Math.max(1e-9, off.length()))));
+			const excess = phi - phi0 - Math.max(-TILT_MAX, Math.min(TILT_MAX, phi - phi0));
+			if (Math.abs(excess) < 1e-6) return;
+			zaxis.set(off.z, 0, -off.x).normalize();
+			zquat.setFromAxisAngle(zaxis, -excess);
+			zp.sub(za).applyQuaternion(zquat).add(za);
+			zt.sub(za).applyQuaternion(zquat).add(za);
 		}
 		function stepZoom(dt) {
 			zoom.held = false;
@@ -603,7 +624,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				zoomPose(Math.exp(step), step);
 			}
 			// Undo the relief rescale (fitScale applies it after the controls update).
-			const k = scaleFor(zp.distanceTo(zt));
+			const k = zoom.k;
 			zp.y *= vScale / k;
 			zt.y *= vScale / k;
 			sc.camera.position.copy(zp);

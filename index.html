@@ -8,11 +8,12 @@
 	<link rel="icon" href="assets/logo.svg" type="image/svg+xml">
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650&family=IBM+Plex+Mono:wght@400;500&display=swap">
 	<link rel="stylesheet" href="css/base.css">
 	<link rel="stylesheet" href="css/layout.css">
 	<link rel="stylesheet" href="css/viz.css">
 	<link rel="stylesheet" href="css/three.css">
+	<link rel="stylesheet" href="css/app.css">
 	<script>
 		// Apply the saved theme before first paint to avoid a flash.
 		try {
@@ -23,6 +24,8 @@
 	<!-- Start every module and data file at once: otherwise each level of imports, then the
 	     data, then three.js and the elevation grids, waits for the one before it. -->
 	<link rel="modulepreload" href="js/main.js">
+	<link rel="modulepreload" href="js/insights.js">
+	<link rel="modulepreload" href="js/panels.js">
 	<link rel="modulepreload" href="js/audio/controls.js">
 	<link rel="modulepreload" href="js/audio/damVoices.js">
 	<link rel="modulepreload" href="js/audio/engine.js">
@@ -102,6 +105,15 @@
 			<img class="brand-logo" src="assets/logo.svg" alt="" width="36" height="36">
 			<span class="brand-text">California Drought Impact</span>
 		</a>
+		<div class="top-meta">
+			<span class="top-chip"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21Z"/><circle cx="12" cy="9.8" r="2.2"/></svg>California reservoirs</span>
+			<span class="top-chip"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/></svg><span data-count="range"></span></span>
+		</div>
+		<nav class="top-tabs" aria-label="Sections">
+			<a href="#map" data-tab="map" aria-current="true">Map</a>
+			<a href="#analysis" data-tab="analysis">Analysis</a>
+			<a href="#notes" data-tab="notes">Notes</a>
+		</nav>
 		<div class="header-actions">
 		<div class="sound" id="sound"></div>
 		<button class="theme-toggle" type="button" id="theme-toggle" aria-label="Switch to dark theme">
@@ -127,12 +139,8 @@
 			<button type="button" class="lede-toggle" aria-controls="lede" aria-expanded="false">Read more</button>
 		</section>
 
-		<section class="viz-card" aria-label="Reservoir visualization">
+		<section class="viz-card" id="map" aria-label="Reservoir visualization">
 			<div class="toolbar">
-				<div class="mode-switch" role="group" aria-label="View mode">
-					<button type="button" data-mode="2d" aria-pressed="true">2D map</button>
-					<button type="button" data-mode="3d" aria-pressed="false">3D</button>
-				</div>
 				<details class="legend-wrap" id="legendWrap" open>
 					<summary>Legend</summary>
 					<div class="legend" id="legend" aria-label="Legend"></div>
@@ -143,7 +151,13 @@
 				<div class="stage" id="stage">
 					<div class="view view-2d" id="view-2d"></div>
 					<div class="view view-3d" id="view-3d" hidden></div>
-					<button type="button" class="stage-btn" id="reset-view" aria-label="Reset view">Reset view</button>
+					<div class="map-dock">
+						<div class="mode-switch" role="group" aria-label="View mode">
+							<button type="button" data-mode="2d" aria-pressed="true">2D</button>
+							<button type="button" data-mode="3d" aria-pressed="false">3D</button>
+						</div>
+						<button type="button" class="stage-btn" id="reset-view" aria-label="Reset view">Reset view</button>
+					</div>
 					<p class="stage-hint" id="stage-hint"></p>
 					<div class="tooltip" id="tooltip" role="status" aria-live="polite" hidden></div>
 					<div class="loading" id="loading" role="status" aria-live="polite">
@@ -155,13 +169,34 @@
 					</div>
 				</div>
 
-				<aside class="summary" id="summary" aria-label="Statewide summary"></aside>
+				<aside class="sidebar" aria-label="Layers and details">
+					<details class="side-panel" open>
+						<summary class="panel-title">Layers</summary>
+						<div class="layers" id="layers"></div>
+					</details>
+					<details class="side-panel" open>
+						<summary class="panel-title">Selected reservoir</summary>
+						<div class="res-card" id="res-card"></div>
+					</details>
+					<details class="side-panel" open>
+						<summary class="panel-title">Statewide this month</summary>
+						<div class="summary" id="summary" aria-label="Statewide summary"></div>
+					</details>
+				</aside>
 			</div>
 
-			<div class="timeline" id="timeline"></div>
+			<div class="bottom-row">
+				<div class="timeline-panel">
+					<h3 class="panel-title">Timeline</h3>
+					<div class="timeline" id="timeline"></div>
+				</div>
+				<div class="key-events" id="key-events"></div>
+			</div>
 		</section>
 
-		<section class="about">
+		<section class="charts" id="analysis" aria-label="Analysis charts"></section>
+
+		<section class="about" id="notes">
 			<div>
 				<h2>About the project</h2>
 				<p>

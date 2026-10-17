@@ -8,13 +8,18 @@ const PAUSE = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 4h4.
 const STEP_MS = (n) => Math.max(160, Math.min(420, 45000 / n));
 const SPEEDS = [ 1, 2, 4 ];
 
-export function createTimeline(el, { dates, totals, droughtPeriods, provisional }, store) {
+export function createTimeline(el, { dates, totals, droughtPeriods, provisional }, store, events = []) {
 	const baseMs = STEP_MS(dates.length);
 	let speed = 1;
 	const provFrom = provisional.indexOf(true);
 	el.innerHTML = `
-		<button type="button" class="play-btn" aria-label="Play timeline">${PLAY}</button>
+		<div class="tl-buttons">
+			<button type="button" class="step-btn" data-step="-1" aria-label="Previous month"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2.5v14H6zM20 5v14L9 12z"/></svg></button>
+			<button type="button" class="play-btn" aria-label="Play timeline">${PLAY}</button>
+			<button type="button" class="step-btn" data-step="1" aria-label="Next month"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5H18v14h-2.5zM4 5v14l11-7z"/></svg></button>
+		</div>
 		<div class="track">
+			<span class="hover-label num" hidden></span>
 			<svg aria-hidden="true"></svg>
 			<input type="range" min="0" max="${dates.length - 1}" step="1" aria-label="Month">
 		</div>
@@ -69,6 +74,11 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 		// High sits above its dot; Low sits below so it clears the drought-band labels along the top.
 		mark.append("text").attr("class", "extreme-label").attr("y", ([ k ]) => (k === "Low" ? 12 : -7)).attr("text-anchor", "middle")
 			.text(([ k, i ]) => `${k} ${fmtPct(totals[i].pct)}`);
+		// Key events (insights.js): small orange markers on the baseline; click to jump.
+		svg.selectAll(".event-mark").data(events).join("path").attr("class", "event-mark")
+			.attr("d", "M0 -7 L4.5 0 L-4.5 0 Z").attr("transform", (e) => `translate(${x(dates[e.i])},${h})`)
+			.on("click", (_, e) => store.set({ dateIndex: e.i, playing: false }))
+			.append("title").text((e) => `${e.name}, ${fmtMonthLong(dates[e.i])}. Click to jump.`);
 		// The selected month: a line and a dot riding the storage curve.
 		head = svg.append("g").attr("class", "playhead");
 		head.append("line").attr("y1", 0).attr("y2", h);
@@ -157,6 +167,23 @@ export function createTimeline(el, { dates, totals, droughtPeriods, provisional 
 			store.set({ playing: !store.get().playing });
 		}
 	});
+	el.querySelectorAll(".step-btn").forEach((b) => b.addEventListener("click", () => {
+		const next = Math.min(dates.length - 1, Math.max(0, store.get().dateIndex + Number(b.dataset.step)));
+		store.set({ dateIndex: next, playing: false });
+	}));
+	// Hover: the month under the pointer, above the track.
+	const hoverEl = el.querySelector(".hover-label");
+	const track = el.querySelector(".track");
+	track.addEventListener("pointermove", (e) => {
+		if (!xOf || e.pointerType === "touch") return;
+		const r = track.getBoundingClientRect();
+		const d = xOf.invert(e.clientX - r.left);
+		const i = Math.min(dates.length - 1, Math.max(0, d3.bisectCenter(dates, d)));
+		hoverEl.hidden = false;
+		hoverEl.textContent = fmtMonth(dates[i]);
+		hoverEl.style.left = `${Math.min(r.width - 30, Math.max(30, xOf(dates[i])))}px`;
+	});
+	track.addEventListener("pointerleave", () => (hoverEl.hidden = true));
 	input.addEventListener("input", () => store.set({ dateIndex: +input.value, playing: false }));
 
 	store.subscribe((s, changed) => {

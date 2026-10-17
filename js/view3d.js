@@ -116,6 +116,13 @@ export function createView3D(container, data, store, tooltip, audio) {
 		compass.setAttribute("aria-hidden", "true");
 		compass.innerHTML = "<svg viewBox=\"-14 -14 28 28\" width=\"28\" height=\"28\"><path d=\"M0 -10 L4 1 L0 -1.5 L-4 1 Z\"/><text y=\"10\" text-anchor=\"middle\">N</text></svg>";
 		container.appendChild(compass);
+		// Scale bar: kilometres per pixel at the orbit target, from the camera distance and fov.
+		const scaleBar = document.createElement("div");
+		scaleBar.className = "scale-bar";
+		scaleBar.setAttribute("aria-hidden", "true");
+		scaleBar.innerHTML = "<span class=\"scale-line\"></span><span class=\"scale-text\"></span>";
+		container.appendChild(scaleBar);
+		let scaleKey = "";
 		const north = [ new THREE.Vector3(), new THREE.Vector3() ];
 		let northDeg = null;
 		const snapshot = createSnapshots(data, basins, dams.foam.spots);
@@ -125,7 +132,18 @@ export function createView3D(container, data, store, tooltip, audio) {
 		// overview keeps its relief exaggeration so the Sierra reads, a close view comes down to
 		// near true scale so foothills are not sheer cliffs. CPU heights are scaled by vScale.
 		const land = new THREE.Group();
-		land.add(terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, riparian.group, mainRivers.mesh);
+		// Riparian trees hide themselves by camera height, so the Layers toggle uses a wrapper.
+		const forest = new THREE.Group();
+		forest.add(riparian.group);
+		land.add(terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, forest, mainRivers.mesh);
+		// Layers panel: each name switches real scene objects (or the DOM label layer).
+		const layerObjs = {
+			terrain: [ terrain.group ],
+			reservoirs: [ lakes.mesh ],
+			rivers: [ outflow.group, mainRivers.mesh ],
+			forest: [ forest ],
+			dams: [ dams.mesh, dams.foam.mesh ],
+		};
 		sc.scene.add(sky.mesh, land);
 		let vScale = 1;
 		const NEAR_EXAG = 1.6;
@@ -791,6 +809,20 @@ export function createView3D(container, data, store, tooltip, audio) {
 				northDeg = deg;
 				compass.firstChild.style.transform = `rotate(${deg}deg)`;
 			}
+			{
+				const dist = sc.camera.position.distanceTo(sc.controls.target);
+				const pxPerUnit = h / (2 * dist * Math.tan((sc.camera.fov * Math.PI) / 360));
+				const kmPerPx = 1 / (world.unitsPerKm * pxPerUnit);
+				const raw = kmPerPx * 90;
+				const pow = 10 ** Math.floor(Math.log10(raw));
+				const nice = [ 1, 2, 5, 10 ].map((k) => k * pow).filter((v) => v <= raw).pop() ?? pow;
+				const key = `${nice}|${Math.round(nice / kmPerPx)}`;
+				if (key !== scaleKey) {
+					scaleKey = key;
+					scaleBar.firstChild.style.width = `${Math.round(nice / kmPerPx)}px`;
+					scaleBar.lastChild.textContent = `${nice >= 1 ? nice : nice.toFixed(1)} km`;
+				}
+			}
 			// Compare: each half carries its own month's dots and names, clipped to that half.
 			const reachScale = home().dist / homePose(1.6).dist;
 			if (ui.comparing) {
@@ -1017,6 +1049,12 @@ export function createView3D(container, data, store, tooltip, audio) {
 			},
 			// For tests: lowest height of each spillway chute floor above the ground under its full width.
 			chuteClearance: () => [ ...dams.info.values() ].filter((d) => d.chute).map((d) => d.chuteClear),
+			setLayer(name, on) {
+				if (name === "labels") container.classList.toggle("labels-off", !on);
+				else (layerObjs[name] || []).forEach((o) => (o.visible = on));
+			},
+			layerOn: (name) => (name === "labels" ? !container.classList.contains("labels-off") : (layerObjs[name] || [])[0]?.visible ?? false),
+			scaleText: () => scaleBar.lastChild.textContent,
 			linksVisible: () => links.visibleCount(),
 			setLinks: (v) => links.setShowAll(v),
 			pose: () => poseOf(THREE, sc.camera, sc.controls),
@@ -1096,10 +1134,12 @@ export function createView3D(container, data, store, tooltip, audio) {
 		else if (!container.hidden) ctx.start();
 	});
 
+	const layerPrefs = {};
 	const api = {
 		async mount(progress = () => {}) {
 			if (!ready) ready = init(progress).then((c) => (ctx = c));
 			await ready;
+			if (ctx) Object.entries(layerPrefs).forEach(([ k, v ]) => ctx.setLayer(k, v));
 			controls.show(true);
 			syncControls();
 			if (ctx) ctx.start();
@@ -1127,6 +1167,14 @@ export function createView3D(container, data, store, tooltip, audio) {
 		focusReservoir(r) {
 			// Selecting through the store already flies the camera; only refocus a re-pick.
 			if (ctx && store.get().selected === r.id) ctx.focus(r.id);
+		},
+		// Layers panel. Choices made before the scene is built are applied once it is.
+		setLayer(name, on) {
+			layerPrefs[name] = on;
+			if (ctx) ctx.setLayer(name, on);
+		},
+		setLabelOpacity(v) {
+			container.style.setProperty("--label-opacity", String(v));
 		},
 		debug: () => ctx,
 		onProgress: () => {},

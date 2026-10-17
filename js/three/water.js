@@ -13,7 +13,9 @@ const VERT = `
 		attribute float aHighlight;
 		attribute float aRow;
 		attribute float aFull;
+		attribute vec2 aArch;
 	#endif
+	varying vec2 vArch;
 	varying float vRow;
 	varying float vFull;
 	void main() {
@@ -24,7 +26,9 @@ const VERT = `
 			vHi = aHighlight;
 			vRow = aRow;
 			vFull = aFull;
+			vArch = aArch;
 		#else
+			vArch = vec2(0.0, 1.0);
 			vHi = 0.0;
 			vRow = -1.0;
 			vFull = 0.0;
@@ -60,6 +64,7 @@ const FRAG = `
 	uniform sampler2D uBed;
 	uniform float uRows;
 	uniform float uBedScale;
+	varying vec2 vArch;
 	uniform vec3 uSand;
 	uniform vec3 uFoamCol;
 	varying float vRow;
@@ -84,6 +89,9 @@ const FRAG = `
 			float un = mix(-0.82, 1.45, vUv.x);
 			float vn = (vUv.y - 0.5) * 2.9;
 			if (length(vec2(un, vn)) > 1.32) discard;
+			// Never below the dam: an arch wall bows upstream, and the lake ends at its face.
+			float ta = (vUv.y - 0.5) / vArch.y;
+			if (vUv.x < vArch.x * max(0.0, 1.0 - ta * ta)) discard;
 		}
 		// Water depth from the lake's bed map (depth below full pool): soft shoreline and
 		// shallow-to-deep colour.
@@ -207,6 +215,9 @@ export function createLakes(THREE, basins, shared) {
 	geom.setAttribute("aHighlight", new THREE.InstancedBufferAttribute(new Float32Array(list.length), 1));
 	geom.setAttribute("aRow", new THREE.InstancedBufferAttribute(new Float32Array(list.map((_, k) => k)), 1));
 	geom.setAttribute("aFull", new THREE.InstancedBufferAttribute(new Float32Array(list.map((b) => b.P)), 1));
+	// Arch clip in the plane's uv: bow depth along u, and the wall's half-width across v.
+	const span = (b) => b.Lu * 1.45 - b.u0;
+	geom.setAttribute("aArch", new THREE.InstancedBufferAttribute(new Float32Array(list.flatMap((b) => [ b.dam.bulge * b.dam.halfWidth / span(b), b.dam.halfWidth / (2.9 * b.Lv) ])), 2));
 	const bed = bedAtlas(THREE, basins);
 	const mat = makeMaterial(THREE, shared, {
 		uScale: { value: 0.9 },

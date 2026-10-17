@@ -3,6 +3,7 @@
 // dam. The bowl's volume table turns "% of capacity" into a water level, so a
 // low reservoir shows a shrunken lake and an exposed shoreline.
 import { fbm, hash2 } from "./world.js";
+import { bulgeOf } from "./damTypes.js";
 
 const LAKE_DIRECTION = { ISB: [ 0.05, 0.04 ], COY: [ 0.02, 0.03 ] };
 const DAM_U = 0.82; // dam sits this many half-lengths downstream of the lake centre
@@ -147,6 +148,10 @@ function makeBasin(r, maxCap, world) {
 	const u0 = -DAM_U * Lu;
 	const extent = { u: [ -1.95 * Lu - 7, 2.15 * Lu ], v: [ -2.3 * Lv, 2.3 * Lv ] };
 	let damHalf = Lv * 0.4; // refined below once the bowl is known
+	// The dam's upstream face: an arch bows into the lake, so the lake (bowl and water) ends on
+	// that curve, never under or below the wall.
+	const bulge = bulgeOf(r);
+	const uDam = (v) => u0 + bulge * damHalf * Math.max(0, 1 - (v / damHalf) ** 2);
 
 	// Lakes in low, open country (e.g. Diamond Valley, Perris) sit in a shallow saucer that
 	// eases into the ground around it; canyon lakes keep their steep-sided bowl.
@@ -175,7 +180,8 @@ function makeBasin(r, maxCap, world) {
 	function carve(u, v, orig) {
 		let h;
 		let zone;
-		if (u >= u0) {
+		const ud = uDam(v);
+		if (u >= ud) {
 			const s = sOf(u, v);
 			if (s < 1) {
 				const g = 0.55 + 0.45 * Math.min(1, Math.max(0, (0.9 * Lu - u) / (0.9 * Lu - u0)));
@@ -192,7 +198,8 @@ function makeBasin(r, maxCap, world) {
 				zone = "outside";
 			}
 		} else {
-			const d = u0 - u;
+			// Under an arch's bow (between u0 and its face) the canyon floor runs on level.
+			const d = Math.max(0, u0 - u);
 			// Canyon below the dam: never higher than a line falling away from the dam,
 			// and following the natural valley once that is lower.
 			// ...but never below the natural valley where the canyon leaves the carved patch, so
@@ -264,7 +271,7 @@ function makeBasin(r, maxCap, world) {
 		for (let j = 0; j <= N; j++) {
 			const u = u0 + ((Lu * 1.35 - u0) * i) / N;
 			const v = -Lv * 1.35 + (2.7 * Lv * j) / N;
-			if (sOf(u, v) >= 1) continue;
+			if (sOf(u, v) >= 1 || u < uDam(v)) continue;
 			const [ x, z ] = toWorld(u, v);
 			floors.push(carve(u, v, world.groundY(x, z)).h);
 		}
@@ -308,6 +315,7 @@ function makeBasin(r, maxCap, world) {
 		}
 	}
 	damHalf = vEdge * 1.12 + 0.3;
-	basin.dam = { u: u0, halfWidth: damHalf, crest: P + 0.35 };
+	basin.dam = { u: u0, halfWidth: damHalf, crest: P + 0.35, bulge };
+	basin.damU = uDam;
 	return basin;
 }

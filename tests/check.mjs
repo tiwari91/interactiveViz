@@ -878,6 +878,9 @@ async function main() {
 		check("Rivers below the big dams run narrower in the drought", bigDams.every((id) => wDry[id] < wWet[id]), bigDams.map((id) => `${id} ${wDry[id].toFixed(2)}→${wWet[id].toFixed(2)}`).join(", "));
 		const clear = await debug3d(page, "c.chuteClearance()");
 		check("Spillway chutes sit above the ground across their width", clear.length > 10 && Math.min(...clear) > 0, `${clear.length} chutes, min clearance ${Math.min(...clear).toFixed(2)}`);
+		const below = await debug3d(page, "c.lakeBelowDam()");
+		const belowBad = below.filter((d) => d.bowl || d.wet);
+		check("No lake carving or water downstream of any dam's face (arch walls included)", below.length > 30 && belowBad.length === 0, belowBad.map((d) => `${d.id} bowl ${d.bowl} wet ${d.wet}`).join(", ") || `${below.length} dams, ${below.filter((d) => d.bulge > 0.1).length} arches`);
 		const chuteMeet = (ends) => ends.filter((e) => !(e.gap < 0.3 && e.dy < 0.3));
 		const chuteFmt = (ends) => { const w = ends.reduce((a, e) => (e.gap > a.gap ? e : a), ends[0]); return `${ends.length} chutes at relief ${ends[0].vScale.toFixed(2)}, worst ${w.id} gap ${w.gap.toFixed(2)} dy ${w.dy.toFixed(2)}`; };
 		const chuteState = await debug3d(page, "c.chuteEnds()");

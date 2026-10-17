@@ -1,7 +1,7 @@
 // Dam models, merged into one vertex-coloured mesh: curved concrete arch and
 // gravity walls or trapezoidal earth/rockfill embankments, a crest road, spillway
 // (gated crest or abutment chute), a powerhouse, and instanced white-water foam.
-import { damTypeOf, isConcrete, structureOf } from "./damTypes.js";
+import { bulgeOf, damTypeOf, isConcrete, structureOf } from "./damTypes.js";
 import { hash2 } from "./world.js";
 
 const SEGMENTS = 28;
@@ -60,7 +60,7 @@ export function createDams(THREE, data, basins) {
 		const type = structureOf(damTypeOf(bs.r));
 		const concrete = isConcrete(type);
 		const hw = bs.dam.halfWidth;
-		const bulge = { arch: 0.38, "gravity-arch": 0.18, gravity: 0.03 }[type] ?? 0.06;
+		const bulge = bulgeOf(bs.r);
 		const crest = bs.dam.crest;
 		const seed = bs.r.id.charCodeAt(0) * 31 + bs.r.id.charCodeAt(1);
 

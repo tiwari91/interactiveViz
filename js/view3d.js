@@ -1295,6 +1295,33 @@ export function createView3D(container, data, store, tooltip, audio) {
 					return { id: b.r.id, gap, dy, vScale, rise: rise * vScale, run: line.length - chuteEnd, end: [ e[0], e[2] ], foot: [ line[chuteEnd - 1][0], line[chuteEnd - 1][2] ] };
 				});
 			},
+			// For tests: points just downstream of each dam's upstream face, across the wall:
+			// how many lie in the lake's carved bowl, and how many would show lake water (the
+			// water shader's arch clip, mirrored here, and the lake level above the ground).
+			lakeBelowDam: () => basins.basins.map((b, i) => {
+				let bowl = 0;
+				let wet = 0;
+				let n = 0;
+				const hw = b.dam.halfWidth;
+				const span = b.Lu * 1.45 - b.u0;
+				for (let t = 0.05; t < 1; t += 0.05) {
+					const v = (t * 2 - 1) * hw;
+					for (const back of [ 0.08, 0.3, 0.8 ]) {
+						const u = b.damU(v) - back;
+						const [ x, z ] = b.toWorld(u, v);
+						const sfc = basins.surfaceAt(x, z);
+						n++;
+						// The lake's own carve (another lake just below, e.g. Courtright into Wishon, is fine).
+						const own = b.heightAtLocal(u, v, sfc ? sfc.h : 0);
+						if (own && own.zone === "bowl") bowl++;
+						const ux = (u - b.u0) / span;
+						const ta = (v / (2.9 * b.Lv)) / (hw / (2.9 * b.Lv));
+						const clipped = ux < 0 || ux < b.dam.bulge * hw / span * Math.max(0, 1 - ta * ta);
+						if (!clipped && sfc && cur.levels[i] > sfc.h) wet++;
+					}
+				}
+				return { id: b.r.id, bulge: b.dam.bulge, n, bowl, wet };
+			}),
 			chuteClearance: () => [ ...dams.info.values() ].filter((d) => d.chute).map((d) => d.chuteClear),
 			setLayer(name, on) {
 				if (name === "labels") container.classList.toggle("labels-off", !on);

@@ -27,4 +27,8 @@ export function damTypeOf(r) {
 // structure (Clear Lake: the concrete Cache Creek Dam) rather than an impounding dam.
 export const structureOf = (type) => (type === "natural" ? "gravity" : type);
 
+// How far a curved wall bows upstream at its middle, as a fraction of its half-width.
+const BULGE = { arch: 0.38, "gravity-arch": 0.18, gravity: 0.03 };
+export const bulgeOf = (r) => BULGE[structureOf(damTypeOf(r))] ?? 0.06;
+
 export const isConcrete = (type) => type === "arch" || type === "gravity" || type === "gravity-arch";

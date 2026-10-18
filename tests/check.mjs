@@ -294,6 +294,48 @@ async function zoomChecks(page) {
 	await waitStill(page, 500);
 }
 
+// Snowpack layer: processed CDEC data on the page, the summary figure, the 3D snow cover and
+// its toggle, and meltwater pulses only in the melt months.
+async function snowChecks(page) {
+	const J = JSON.parse(fs.readFileSync(path.join(ROOT, "data", "snowpack_monthly.json"), "utf8"));
+	const ym = (m) => +m.slice(0, 4) * 12 + +m.slice(5, 7) - 1;
+	const page0 = await page.evaluate(() => { const d = window.droughtViz.data; return { months: d.months, snow: d.snow }; });
+	check("Snowpack data loaded: one value (or a gap) per month, monthly from October 2011",
+		page0.snow.loaded && J.months[0] === "2011-10" && J.months.every((m, i) => i === 0 || ym(m) === ym(J.months[i - 1]) + 1) && [ "statewide", "north", "central", "south" ].every((k) => page0.snow[k].length === page0.months.length && J[k].length === J.months.length),
+		`${J.months.length} months in the JSON, ${J.months[0]}..${J.months[J.months.length - 1]}, ${J.statewide.filter((v) => v === null).length} gaps`);
+	const samples = [];
+	for (const m of [ "2015-04", "2019-03", "2023-04" ]) {
+		const i = await monthIndex(page, m);
+		await setState(page, { dateIndex: i });
+		const shown = await page.locator(".js-snow").innerText();
+		const want = J.statewide[J.months.indexOf(m)];
+		samples.push({ m, want, page: page0.snow.statewide[i], shown, ok: page0.snow.statewide[i] === want && shown === `${Math.round(want)}%` });
+	}
+	check("Statewide snowpack % matches the processed JSON for sample months (data and summary card)", samples.every((x) => x.ok), samples.map((x) => `${x.m} ${x.want} -> ${x.shown}`).join("; "));
+	const on = () => page.evaluate(() => window.droughtViz.views["3d"].debug().layerOn("snow"));
+	await page.evaluate(() => document.querySelector("[data-layer-toggle=\"snow\"]").click());
+	const off = await on();
+	await page.evaluate(() => document.querySelector("[data-layer-toggle=\"snow\"]").click());
+	check("Layers: the Snowpack toggle hides and shows the 3D snow", off === false && (await on()) === true);
+	const cover = async (m) => {
+		await setState(page, { dateIndex: await monthIndex(page, m) });
+		await page.waitForTimeout(3500);
+		return debug3d(page, "c.snowCover()");
+	};
+	const wet = await cover("2023-04");
+	const dry = await cover("2015-04");
+	check("Snow cover in April 2023 (wet) is much larger than in April 2015 (dry)", wet.share > 0.3 && wet.share > dry.share * 3 && wet.lines[1] < dry.lines[1], `Apr 2023 ${(wet.share * 100).toFixed(1)}% of snow-capable ground (lines ${wet.lines.map(Math.round).join("/")} m), Apr 2015 ${(dry.share * 100).toFixed(1)}% (${dry.lines.map(Math.round).join("/")} m)`);
+	const meltIn = async (m) => {
+		await setState(page, { dateIndex: await monthIndex(page, m) });
+		await page.waitForTimeout(700);
+		return { m, count: await debug3d(page, "c.meltCount()"), rel: Math.max(...(await debug3d(page, "c.meltRel()"))) };
+	};
+	const melts = [ await meltIn("2023-05"), await meltIn("2019-06"), await meltIn("2023-01"), await meltIn("2022-10"), await meltIn("2023-08") ];
+	const lines = await debug3d(page, "c.meltLines()");
+	check("Meltwater pulses run down the mountain inflows only in melt months (Apr-Jul)", melts[0].count > 0 && melts[1].count > 0 && melts.slice(2).every((x) => x.count === 0 && x.rel === 0) && lines.length >= 10 && lines.filter((l) => l.y0 > l.y1).length >= lines.length * 0.8,
+		`${melts.map((x) => `${x.m}: ${x.count}`).join(", ")}; ${lines.length} inflows, ${lines.filter((l) => l.y0 > l.y1).length} run downhill`);
+}
+
 async function main() {
 	fs.mkdirSync(SHOTS, { recursive: true });
 	const server = await serve();
@@ -307,6 +349,11 @@ async function main() {
 	try {
 		// ---------- Default mode and WebGL fallback ----------
 		let { ctx, page, errors } = await openPage(browser, base);
+		if (process.env.ONLY === "layers") {
+			await snowChecks(page);
+			check("Zero console errors", errors.length === 0, errors.slice(0, 3).join(" | "));
+			return;
+		}
 		if (process.env.ONLY === "zoom") {
 			await zoomChecks(page);
 			check("Zero console errors", errors.length === 0, errors.slice(0, 3).join(" | "));
@@ -346,14 +393,28 @@ async function main() {
 			check("Step button advances one month", (await stateOf(page)).dateIndex === 41);
 			await page.evaluate((q) => document.querySelector(q).click(), ".step-btn[data-step=\"-1\"]");
 			check("Step back button goes back one month", (await stateOf(page)).dateIndex === 40);
-			const ev = await page.evaluate(() => [ ...document.querySelectorAll(".event-btn") ].map((b) => ({ i: +b.dataset.index, m: window.droughtViz.data.months[+b.dataset.index] })));
-			check("Key events sit at the right months", ev.length === 4 && ev[0].m >= "2014-01" && ev[0].m <= "2015-12" && ev[1].m === "2017-02" && ev[2].m >= "2021-01" && ev[2].m <= "2022-12" && ev[3].m === "2023-01", JSON.stringify(ev));
-			check("Timeline draws a marker per key event", (await page.locator(".track .event-mark").count()) === ev.length);
+			const evAll = await page.evaluate(() => [ ...document.querySelectorAll(".event-btn") ].map((b) => ({ id: b.dataset.event, i: +b.dataset.index, m: window.droughtViz.data.months[+b.dataset.index] })));
+			const ev = [ "low-2015", "oroville", "low-2022", "ar-2023" ].map((id) => evAll.find((e) => e.id === id) ?? {});
+			check("Key events sit at the right months", ev[0].m >= "2014-01" && ev[0].m <= "2015-12" && ev[1].m === "2017-02" && ev[2].m >= "2021-01" && ev[2].m <= "2022-12" && ev[3].m === "2023-01", JSON.stringify(evAll));
+			// Snowpack flags come from the processed JSON: the lowest April under 15%, the highest month over 150%.
+			const snowEv = await page.evaluate(() => {
+				const d = window.droughtViz.data;
+				const sp = d.snow.statewide;
+				let lo = -1;
+				let hi = -1;
+				sp.forEach((v, i) => { if (v === null) return; if (d.calMonth[i] === 3 && (lo < 0 || v < sp[lo])) lo = i; if (hi < 0 || v > sp[hi]) hi = i; });
+				return { lo: d.months[lo], loV: sp[lo], hi: d.months[hi], hiV: sp[hi] };
+			});
+			const sl = evAll.find((e) => e.id === "snow-low");
+			const sh = evAll.find((e) => e.id === "snow-high");
+			check("Snowpack low and high are flagged on the timeline at the data's months", (snowEv.loV < 15 ? sl?.m === snowEv.lo : !sl) && (snowEv.hiV > 150 ? sh?.m === snowEv.hi : !sh) && sl?.m === "2015-04" && sh?.m.startsWith("2023"), JSON.stringify(snowEv));
+			check("Timeline draws a marker per key event", (await page.locator(".track .event-mark").count()) === evAll.length);
 			await page.evaluate((q) => document.querySelector(q).click(), ".event-btn[data-event=\"oroville\"]");
 			check("A key event jumps the timeline to its month", (await stateOf(page)).dateIndex === ev[1].i);
 			const pts = await page.evaluate(() => [ ...document.querySelectorAll(".chart-svg") ].map((el) => +el.dataset.points));
-			const want = await page.evaluate(() => { const d = window.droughtViz.data; const big = d.tracked.reduce((a, r) => (r.capacity > a.capacity ? r : a)); return [ d.dates.length, d.totals.filter((t) => t.ofAvg !== null).length, big.series.filter((v) => v !== null).length ]; });
-			check("Charts plot one point per month of data", JSON.stringify(pts) === JSON.stringify(want), `${pts} vs ${want}`);
+			const want = await page.evaluate(() => { const d = window.droughtViz.data; const big = d.tracked.reduce((a, r) => (r.capacity > a.capacity ? r : a)); return [ d.dates.length, d.totals.filter((t) => t.ofAvg !== null).length, big.series.filter((v) => v !== null).length, d.snow.statewide.filter((v) => v !== null).length ]; });
+			check("Charts plot one point per month of data (snowpack: one per month with data)", JSON.stringify(pts) === JSON.stringify(want), `${pts} vs ${want}`);
+			await snowChecks(page);
 			await setState(page, { dateIndex: 0, playing: true });
 			await page.waitForTimeout(900);
 			const pl = await stateOf(page);
@@ -724,7 +785,7 @@ async function main() {
 			const inside = flags.every((f) => f.box[0] >= tr.left - 1 && f.box[1] <= tr.right + 1);
 			return { span: r(".timeline-panel").width / r("#map").width, list: document.querySelectorAll("#key-events, .event-list").length, off: Math.max(...flags.map((f) => f.off)), overlap, inside, n: flags.length, spark: r(".timeline-panel .track svg").height, vw: innerWidth };
 		});
-		check("Key events are flags on a full-width timeline, at their months, not overlapping", row.n === 4 && row.list === 0 && row.span > 0.98 && row.off <= 3 && !row.overlap && row.inside && row.spark >= 36, JSON.stringify(row));
+		check("Key events are flags on a full-width timeline, at their months, not overlapping", row.n >= 4 && row.list === 0 && row.span > 0.98 && row.off <= 3 && !row.overlap && row.inside && row.spark >= 36, JSON.stringify(row));
 
 		await page.locator(".map-2d .res[aria-label^=\"Oroville\"]").click({ force: true });
 		await page.waitForTimeout(300);
@@ -1318,6 +1379,9 @@ async function main() {
 		{
 			const tw = await levelFrames(page, "ORO", await monthIndex(page, "2017-04"), await monthIndex(page, "2014-09"));
 			check("Reduced motion: no flow pulses", (await debug3d(page, "c.pulseCount()")) === 0);
+			await setState(page, { dateIndex: await monthIndex(page, "2023-05") });
+			await page.waitForTimeout(500);
+			check("Reduced motion: no meltwater pulses", (await debug3d(page, "c.meltCount()")) === 0);
 			await setState(page, { dateIndex: await monthIndex(page, "2017-02") });
 			await page.waitForTimeout(500);
 			check("Reduced motion: no event animations", (await debug3d(page, "c.eventFx()")).name === null);

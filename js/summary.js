@@ -27,6 +27,11 @@ export function createSummary(el, data, store, onPick) {
 			<div class="big num js-low"></div>
 			<div class="sub js-low-sub"></div>
 		</div>
+		<div class="snow-stat">
+			<h3>Snowpack</h3>
+			<div class="big num js-snow"></div>
+			<div class="sub js-snow-sub"></div>
+		</div>
 		<p class="summary-note span-all js-note"></p>
 		<div class="span-all">
 			<h3>Largest reservoirs</h3>
@@ -66,6 +71,11 @@ export function createSummary(el, data, store, onPick) {
 			dEl.textContent = `${Math.abs(diff) < 0.05 ? "No change" : `${diff > 0 ? "Up" : "Down"} ${Math.abs(diff).toFixed(1)} points`} since ${fmtMonth(data.dates[dateIndex - 1])}`;
 			dEl.className = `sub js-state-delta ${diff > 0.05 ? "up" : diff < -0.05 ? "down" : ""}`;
 		} else dEl.textContent = "";
+		// Snowpack: statewide % of the April 1 average on the 1st of the month (CDEC snow pillows).
+		const sp = data.snow.statewide[dateIndex];
+		el.querySelector(".js-snow").textContent = sp === null ? "No data" : `${Math.round(sp)}%`;
+		el.querySelector(".js-snow").classList.toggle("no-data", sp === null);
+		el.querySelector(".js-snow-sub").textContent = sp === null ? `no snow reading for ${mName}` : `of April 1 average, ${d3.timeFormat("%b")(data.dates[dateIndex])} 1`;
 		el.querySelector(".js-low").textContent = t.low;
 		el.querySelector(".js-low-sub").textContent = `of ${t.reporting} reporting this month`;
 		const notes = [ `Excludes flood-control basins (${excluded.join(", ")}), which are kept empty by design.` ];

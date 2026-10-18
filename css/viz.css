@@ -420,3 +420,10 @@
 }
 
 .js-state-delta { margin-top: 2px; }
+
+/* Snowpack wash on the 2D map's mountain counties (opacity set per month in map2d.js). */
+.snow-2d .snow-area { fill: #ffffff; fill-opacity: 0; stroke: none; pointer-events: none; transition: fill-opacity 0.4s ease; }
+:root[data-theme="dark"] .snow-2d .snow-area { fill: #dfe9f2; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .snow-2d .snow-area { fill: #dfe9f2; } }
+@media (prefers-reduced-motion: reduce) { .snow-2d .snow-area { transition: none; } }
+.summary .snow-stat .big.no-data { font-size: 1.1rem; color: var(--ink-3); }

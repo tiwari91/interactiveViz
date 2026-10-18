@@ -18,6 +18,7 @@ import { flyTo, poseOf, poseToPosition, replayPath } from "./three/camera.js";
 import { createControls3D } from "./three/controls3d.js";
 import { getQuality, saveQuality } from "./three/quality.js";
 import { createPulses } from "./three/pulses.js";
+import { createSnow } from "./three/snow.js";
 import { currentTheme } from "./theme.js";
 
 const d3 = window.d3;
@@ -99,6 +100,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		await step(0.55, "Building terrain…");
 		const terrain = createTerrain(THREE, data, world, basins, ui.quality);
 		terrain.detail.anisotropy = sc.renderer.capabilities.getMaxAnisotropy();
+		const snow = createSnow(THREE, terrain.grid);
 		await step(0.8, "Placing dams and rivers…");
 		const shared = waterUniforms(THREE);
 		const lakes = createLakes(THREE, basins, shared);
@@ -108,6 +110,28 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const outflow = createOutflow(THREE, basins, dams, world, shared, ui.quality);
 		const pulses = createPulses(THREE, outflow.outflowLines(), { perLine: ui.quality === "low" ? 4 : 8 });
 		outflow.group.add(pulses.points);
+		// Meltwater: in the melt months (April to July) pale pulses run down each mountain
+		// reservoir's inflow river, as many and as fast as its section's snowpack fell that month.
+		const SECTION_OF = (lat) => (lat >= 39.35 ? "north" : lat >= 37.55 ? "central" : "south");
+		const meltLines = outflow.inflowLines().filter((l) => {
+			const r = basins.basins[l.dam].r;
+			const p = l.pts[0];
+			return r.lat >= 35.4 && world.metresAt(...world.unproject(p[0], p[2])) >= 350;
+		});
+		const meltDams = new Set(meltLines.map((l) => l.dam));
+		const melt = createPulses(THREE, meltLines, { perLine: ui.quality === "low" ? 4 : 7 });
+		melt.points.material.uniforms.uColor.value.set("#f2fbff");
+		let meltRel = basins.basins.map(() => 0);
+		// Snow lost over month i (1st of the month to the 1st of the next) in a section, 0..1.
+		const meltAt = (i) => basins.basins.map((b, di) => {
+			const cm = data.calMonth[i];
+			if (!meltDams.has(di) || cm < 3 || cm > 6 || i + 1 >= data.months.length) return 0;
+			const series = data.snow[SECTION_OF(b.r.lat)];
+			const a = series[i];
+			const z = series[i + 1];
+			if (a === null || z === null) return 0;
+			return Math.min(1, Math.max(0, a - z) / 70);
+		});
 		const mainRivers = createMainRivers(THREE, world, outflow.router, shared, basins);
 		const riparian = createRiparian(THREE, outflow, outflow.router, basins, world, ui.quality);
 		await step(0.95, "Filling lakes…");
@@ -141,7 +165,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		// Riparian trees hide themselves by camera height, so the Layers toggle uses a wrapper.
 		const forest = new THREE.Group();
 		forest.add(riparian.group);
-		land.add(terrain.group, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, forest, mainRivers.mesh);
+		land.add(terrain.group, snow.mesh, melt.points, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, forest, mainRivers.mesh);
 		// Layers panel: each name switches real scene objects (or the DOM label layer).
 		const layerObjs = {
 			terrain: [ terrain.group ],
@@ -149,6 +173,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			rivers: [ outflow.group, mainRivers.mesh ],
 			forest: [ forest ],
 			dams: [ dams.mesh, dams.foam.mesh ],
+			snow: [ snow.mesh ],
 		};
 		sc.scene.add(sky.mesh, land);
 		let vScale = 1;
@@ -198,6 +223,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			dams.foam.uniforms.uNight.value = nightV;
 			shared.uLift.value = nightV;
 			terrain.setNight(nightV);
+			snow.setNight(nightV);
 			mainRivers.setNight(nightV);
 			return p;
 		};
@@ -782,6 +808,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			}
 			fxLevel = runEvent(now);
 			pulses.update(dt, cur.outlet, outflow.group.visible && !reducedMotion.matches);
+			snow.update(reducedMotion.matches ? 1 : k * 0.7);
+			melt.update(dt, meltRel, snow.mesh.visible && !reducedMotion.matches);
 			placeRecord();
 			cur.dryness += (target.dryness - cur.dryness) * k * 0.6;
 			cur.gold += (target.gold - cur.gold) * k * 0.6;
@@ -1058,6 +1086,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			startEvent(i);
 			showRecord(i);
 			target = snapshot(i);
+			snow.setTarget([ data.snow.north[i], data.snow.central[i], data.snow.south[i] ]);
+			meltRel = meltAt(i);
 			outflow.setWidths(target.outlet);
 			labels.setValues(i);
 		}
@@ -1219,6 +1249,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 				});
 			},
 			pulseCount: () => pulses.count(),
+			snowCover: () => snow.cover(),
+			meltCount: () => melt.count(),
+			meltRel: () => [ ...meltRel ],
+			meltLines: () => meltLines.map((l) => ({ dam: basins.basins[l.dam].r.id, y0: l.pts[0][1], y1: l.pts[l.pts.length - 1][1] })),
 			// For tests: the rain band's colour (core alpha at full strength) composited over the
 			// valley floor's tan, and the contrast against the bare tan (WCAG luminance ratio).
 			rainContrast: () => {
@@ -1415,6 +1449,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 				clearTimeout(recordTimer);
 				record.remove();
 				pulses.dispose();
+				melt.dispose();
+				snow.dispose();
 				unsub();
 				ro.disconnect();
 				sc.disposeEnv();

@@ -45,7 +45,7 @@ function fillGaps(series) {
 }
 
 export async function loadData(base = "data/") {
-	const [ topo, sites, meta, links, storage, flows, droughts ] = await Promise.all([
+	const [ topo, sites, meta, links, storage, flows, droughts, snowRaw ] = await Promise.all([
 		d3.json(`${base}ca.json`),
 		d3.csv(`${base}reservoir_filtered_data.csv`),
 		d3.csv(`${base}reservoir_meta.csv`),
@@ -53,6 +53,7 @@ export async function loadData(base = "data/") {
 		d3.csv(`${base}reservoir_storage_monthly.csv`),
 		d3.csv(`${base}river_flow_monthly.csv`),
 		d3.csv(`${base}drought_periods.csv`),
+		d3.json(`${base}snowpack_monthly.json`).catch(() => null),
 	]);
 
 	const months = Array.from(new Set(storage.map((d) => d.date))).sort();
@@ -183,13 +184,27 @@ export async function loadData(base = "data/") {
 		return { storage: storageSum, capacity: capacitySum, pct: capacitySum ? storageSum / capacitySum : 0, low, reporting, filled, ofAvg: avgSum ? avgStorage / avgSum : null };
 	});
 
+	// Snowpack, % of April 1 average (scripts/fetch_snow.py), lined up with the storage months.
+	// A month the JSON has no value for stays null ("no data"); nothing is filled in.
+	const snow = { statewide: [], north: [], central: [], south: [], stations: snowRaw?.stations ?? null, loaded: Boolean(snowRaw) };
+	{
+		const at = new Map((snowRaw?.months ?? []).map((m, k) => [ m, k ]));
+		for (const key of [ "statewide", "north", "central", "south" ]) {
+			snow[key] = months.map((m) => {
+				const k = at.get(m);
+				const v = k === undefined ? null : snowRaw[key][k];
+				return v === null || v === undefined ? null : v;
+			});
+		}
+	}
+
 	const counties = topojson.feature(topo, topo.objects.counties);
 	const outline = topojson.merge(topo, topo.objects.counties.geometries);
 	const countyMesh = topojson.mesh(topo, topo.objects.counties, (a, b) => a !== b);
 
 	return {
 		months, dates, calMonth, avgYears, reservoirs, byId, tracked, floodControl, noData, provisional, droughtPeriods,
-		gauges: [ ...gauges.values() ], links: linkList, totals, counties, outline, countyMesh,
+		gauges: [ ...gauges.values() ], links: linkList, totals, snow, counties, outline, countyMesh,
 	};
 }
 
@@ -220,3 +235,4 @@ export function valueNote(r, i) {
 	if (r.flags[i] === "e") return "CDEC flags this value as estimated.";
 	return "";
 }
+

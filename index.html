@@ -55,6 +55,7 @@
 	<link rel="modulepreload" href="js/three/riparian.js">
 	<link rel="modulepreload" href="js/three/scene.js">
 	<link rel="modulepreload" href="js/three/sky.js">
+	<link rel="modulepreload" href="js/three/snow.js">
 	<link rel="modulepreload" href="js/three/snapshot.js">
 	<link rel="modulepreload" href="js/three/terrain.js">
 	<link rel="modulepreload" href="js/three/water.js">
@@ -70,6 +71,7 @@
 	<link rel="preload" href="data/reservoir_storage_monthly.csv" as="fetch" crossorigin>
 	<link rel="preload" href="data/river_flow_monthly.csv" as="fetch" crossorigin>
 	<link rel="preload" href="data/drought_periods.csv" as="fetch" crossorigin>
+	<link rel="preload" href="data/snowpack_monthly.json" as="fetch" crossorigin>
 	<script>
 		// In 3D (the default), also start three.js and the elevation grids for this quality.
 		(() => {
@@ -231,12 +233,18 @@
 					The totals cover <span data-count="tracked"></span> storage reservoirs: <span data-count="flood-names"></span>
 					are flood-control basins, kept empty by design, and CDEC has no readings for <span data-count="no-data-names"></span>.
 				</p>
+				<p>
+					Snowpack is the California Cooperative Snow Surveys' snow-pillow network on CDEC (sensor 3, snow water
+					equivalent): the reading on the 1st of each month at the stations CDEC lists for its North, Central and
+					South Sierra sections, summed and divided by the sum of those stations' April 1 averages. A month with too
+					few stations reporting shows "No data". The 3D snowline follows each section's figure; it is drawn, not mapped.
+				</p>
 			</div>
 		</section>
 	</main>
 
 	<footer class="site-footer">
-		<span class="credit">Data: California Data Exchange Center (CDEC), monthly reservoir storage and river flow; relief from NOAA ETOPO1.</span>
+		<span class="credit">Data: California Data Exchange Center (CDEC), monthly reservoir storage, river flow and snow-pillow snowpack; relief from NOAA ETOPO1.</span>
 		<span>Source on <a href="https://github.com/tiwari91/interactiveViz">GitHub</a> · Apache-2.0</span>
 	</footer>
 </body>

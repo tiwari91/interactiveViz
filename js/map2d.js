@@ -13,6 +13,7 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		.attr("role", "group").attr("aria-label", "Map of California reservoirs coloured by percent full");
 	const world = svg.append("g");
 	const gCounties = world.append("g");
+	const gSnow = world.append("g").attr("class", "snow-2d").attr("aria-hidden", "true");
 	const outline = world.append("path").attr("class", "outline");
 	const gStreams = world.append("g");
 	const gGauges = svg.append("g");
@@ -33,6 +34,17 @@ export function createMap2D(container, data, store, tooltip, audio) {
 
 	gCounties.selectAll("path").data(data.counties.features).join("path")
 		.attr("class", "county").append("title").text((d) => d.properties.fullName);
+
+	// Snowpack: the mountain counties of CDEC's three snow sections, washed white by the
+	// section's % of the April 1 average (a region indication, not the snow's actual extent).
+	const SNOW_COUNTIES = {
+		north: [ "Trinity", "Siskiyou", "Shasta", "Lassen", "Plumas", "Sierra" ],
+		central: [ "Nevada", "Placer", "El Dorado", "Alpine", "Amador", "Calaveras", "Tuolumne", "Mariposa" ],
+		south: [ "Madera", "Fresno", "Tulare", "Mono" ],
+	};
+	const sectionOf = new Map(Object.entries(SNOW_COUNTIES).flatMap(([ k, list ]) => list.map((n) => [ n, k ])));
+	const snowAreas = gSnow.selectAll("path").data(data.counties.features.filter((f) => sectionOf.has(f.properties.name))).join("path")
+		.attr("class", "snow-area").attr("data-section", (f) => sectionOf.get(f.properties.name));
 
 	const streams = gStreams.selectAll("g").data(data.links, (d) => d.key).join("g");
 	const streamBase = streams.append("path").attr("class", "stream-base");
@@ -153,6 +165,7 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		projection = makeProjection(data.outline, w, h, Math.min(28, w * 0.05));
 		const path = d3.geoPath(projection);
 		gCounties.selectAll("path").attr("d", path);
+		snowAreas.attr("d", path);
 		outline.attr("d", path(data.outline));
 		pos = new Map(data.reservoirs.map((r) => [ r.id, projection([ r.lon, r.lat ]) ]));
 		const gpos = new Map(data.gauges.map((g) => [ g.id, projection([ g.lon, g.lat ]) ]));
@@ -213,6 +226,10 @@ export function createMap2D(container, data, store, tooltip, audio) {
 	}
 
 	function update({ dateIndex, selected }) {
+		snowAreas.style("fill-opacity", (f) => {
+			const v = data.snow[sectionOf.get(f.properties.name)][dateIndex];
+			return v === null ? 0 : (0.08 + 0.5 * Math.min(1, v / 150)).toFixed(3);
+		});
 		// The tab stop follows the selected reservoir (e.g. one picked from the summary list).
 		if (selected && selected !== rover && reservoirs.some((r) => r.id === selected)) setRover(selected);
 		const grow = Math.sqrt(transform.k);

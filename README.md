@@ -97,6 +97,33 @@ All counts and date ranges on the page are computed from these files; none is ha
     24 March 2026 terminated what remained of it
     (https://www.gov.ca.gov/wp-content/uploads/2026/03/SOE-Termination-Proclamation_For-Print.-FORMATTED-3-23-26.pdf).
     The band uses March 2023, when the drought orders were lifted after the wet winter, as the end of the drought.
+- `data/snowpack_monthly.json` (built by `scripts/fetch_snow.py`): snowpack as **% of the April 1 average**,
+  statewide and for CDEC's North / Central / South Sierra sections, one value per month from October 2011 to the last
+  storage month. How it is made, mirroring CDEC's *Daily Statewide Summary of Snow Water Content*:
+  - **Stations**: the automatic snow pillows CDEC lists under "Stations included" in its DLYSWEQ report
+    (https://cdec.water.ca.gov/reportapp/javareports?name=DLYSWEQ): North = Trinity through Feather and Truckee,
+    Central = Yuba and Tahoe through Merced and Walker, South = San Joaquin and Mono through Kern. The station IDs used
+    are stored in the JSON (`stations`). LVT (Leavitt Lake) is listed under both Central and South and counts in both;
+    FLV and LLX have no April 1 average on CDEC and are left out (111 stations in all).
+  - **April 1 average** per station: the "Apr 1 Avg (IN)" column of CDEC's Daily Snow Sensor Report
+    (https://cdec.water.ca.gov/reportapp/javareports?name=PAGE6), stored in the JSON (`apr1_in`).
+  - **Snow water equivalent**: CDEC sensor 3 (SNOW WC, inches), daily (`dur_code=D`), from
+    `https://cdec.water.ca.gov/dynamicapp/req/CSVDataServlet?Stations=…&SensorNums=3&dur_code=D`. A month's value is
+    the reading on its **1st** (the snow-survey convention: "April" means April 1), or the 2nd or 3rd if the 1st is
+    missing. Negative readings count as 0; readings above max(150 in, 4 × the station's April 1 average) are treated
+    as sensor errors and dropped.
+  - **% of April 1 average** = sum of SWE over the stations reporting that day ÷ sum of those stations' April 1
+    averages; statewide uses every station. A section with fewer than half its stations reporting gets no value (null,
+    shown as "No data"); nothing is interpolated. The figures can differ by a few points from CDEC's own published
+    summary, which uses its station list of the day.
+  - On the page: the statewide figure in "Statewide this month", the fourth chart, and timeline flags at the lowest
+    April under 15% (April 2015) and the highest month over 150% (April 2023). In 3D the Snowpack layer drapes snow on
+    the Sierra Nevada, Cascades and Trinity Alps; the snowline for each section is set from its % (about 1,500 / 1,800 /
+    2,150 m at 100% in the north / centre / south, lower in a big year, only the high peaks in a dry one), split by
+    latitude at 39.35° and 37.55° N (an approximation of the basin groups). In the melt months (April to July) pale
+    pulses run down the mountain reservoirs' inflow rivers, scaled by how much the section's snowpack fell between the
+    1st of that month and the 1st of the next. The 2D map washes the mountain counties of each section white by its %
+    (a region indication, not the actual snow extent).
 
 ## Run locally
 
@@ -115,6 +142,8 @@ Refresh the data:
   The end defaults to the last day of the previous month, and trailing months that fewer than 80% of reservoirs
   have filed are dropped, so the series ends on the latest complete month.
 - `python3 scripts/fetch_elevation.py`: NOAA ETOPO1 elevation grids via ERDDAP (public domain).
+- `python3 scripts/fetch_snow.py`: CDEC snow pillows → `data/snowpack_monthly.json` (run after `fetch_cdec.py`; it
+  ends at the last storage month). Takes about six minutes.
 
 Dam types for the largest reservoirs follow the real structures; the rest are a reasonable guess by size and
 setting. Lake outlines are generated, not surveyed.

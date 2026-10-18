@@ -21,7 +21,21 @@ export function keyEvents(data) {
 		{ id: "low-2022", short: "2020–22 low", name: "2020–22 drought low", i: lowest(data, "2021-01", "2022-12") },
 		{ id: "ar-2023", short: "Atmospheric rivers", name: "2023 atmospheric rivers", i: at("2023-01") },
 	];
-	return list.filter((e) => e.i >= 0).map((e) => ({ ...e, detail: `${fmtPct(data.totals[e.i].pct)} full statewide` }));
+	const out = list.filter((e) => e.i >= 0).map((e) => ({ ...e, detail: `${fmtPct(data.totals[e.i].pct)} full statewide` }));
+	// Snowpack extremes, only where the data shows one: the lowest April 1 reading if it is
+	// under 15% of average, and the highest month if it is over 150%.
+	const sp = data.snow?.statewide ?? [];
+	let lo = -1;
+	let hi = -1;
+	sp.forEach((v, i) => {
+		if (v === null) return;
+		if (data.calMonth[i] === 3 && (lo < 0 || v < sp[lo])) lo = i;
+		if (hi < 0 || v > sp[hi]) hi = i;
+	});
+	const snowDetail = (i) => `snowpack ${Math.round(sp[i])}% of the April 1 average`;
+	if (lo >= 0 && sp[lo] < 15) out.push({ id: "snow-low", short: "Snow low", name: "Snowpack low", i: lo, detail: snowDetail(lo) });
+	if (hi >= 0 && sp[hi] > 150) out.push({ id: "snow-high", short: "Snow high", name: "Snowpack high", i: hi, detail: snowDetail(hi) });
+	return out.sort((a, b) => a.i - b.i);
 }
 
 // One small chart: a series over the record with a marker line at the current month.
@@ -33,12 +47,13 @@ function chart(box, title) {
 // profile(id): the 3D terrain's elevation profile of the river below that dam, or null (no
 // river drawn, or the 3D terrain not built yet); the third chart then shows the reservoir's storage.
 export function createCharts(el, data, store, profile = () => null) {
-	el.innerHTML = "<div class=\"chart\" data-chart=\"storage\"></div><div class=\"chart\" data-chart=\"avg\"></div><div class=\"chart\" data-chart=\"reservoir\"></div>";
+	el.innerHTML = "<div class=\"chart\" data-chart=\"storage\"></div><div class=\"chart\" data-chart=\"avg\"></div><div class=\"chart\" data-chart=\"reservoir\"></div><div class=\"chart\" data-chart=\"snow\"></div>";
 	const largest = data.tracked.reduce((a, r) => (r.capacity > a.capacity ? r : a));
 	const specs = [
 		{ key: "storage", title: "Statewide storage, million AF", values: () => data.totals.map((t) => t.storage / 1e6), fmt: (v) => d3.format(".1f")(v) },
 		{ key: "avg", title: "% of historical average", ref: 1, values: () => data.totals.map((t) => t.ofAvg), fmt: fmtPct },
 		{ key: "reservoir", title: "", values: (r) => r.series.map((v) => (v === null ? null : v / 1e6)), fmt: (v) => d3.format(".2f")(v), cap: true },
+		{ key: "snow", title: "Snowpack, % of Apr 1 average", ref: 100, values: () => data.snow.statewide, fmt: (v) => `${Math.round(v)}%` },
 	];
 	const parts = specs.map((s) => ({ s, ...chart(el.querySelector(`[data-chart="${s.key}"]`), s.title) }));
 	const pick = () => data.byId.get(store.get().selected) || largest;
@@ -65,7 +80,7 @@ export function createCharts(el, data, store, profile = () => null) {
 		const ga = p.svg.append("g").attr("class", "chart-axis");
 		y.ticks(3).forEach((t) => {
 			ga.append("line").attr("x1", 26).attr("x2", w - 4).attr("y1", y(t)).attr("y2", y(t));
-			ga.append("text").attr("x", 22).attr("y", y(t) + 3).attr("text-anchor", "end").text(p.s.key === "avg" ? fmtPct(t) : t);
+			ga.append("text").attr("x", 22).attr("y", y(t) + 3).attr("text-anchor", "end").text(p.s.key === "avg" ? fmtPct(t) : p.s.key === "snow" ? `${t}%` : t);
 		});
 		const years = d3.timeYear.range(d3.timeYear.ceil(data.dates[0]), data.dates[data.dates.length - 1]);
 		const every = years.length * 30 > w ? 4 : 2;

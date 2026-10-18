@@ -12,6 +12,7 @@ const ICON = {
 	rivers: "<path d=\"M7 2c0 4 5 4 5 8s-6 4-6 8 3 4 3 4\"/><path d=\"M13 2c0 4 5 4 5 8s-6 4-6 8 3 4 3 4\"/>",
 	forest: "<path d=\"M12 2l6 9h-3.5l4.5 7H5l4.5-7H6z\"/><path d=\"M12 18v4\"/>",
 	dams: "<path d=\"M3 6h18\"/><path d=\"M6 6l-2 15h16L18 6\"/><path d=\"M9 11h6M8.5 15.5h7\"/>",
+	snow: "<path d=\"M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7\"/><path d=\"M9.5 3.5L12 6l2.5-2.5M9.5 20.5L12 18l2.5 2.5\"/>",
 	labels: "<path d=\"M3 12V4h8l10 10-8 8z\"/><circle cx=\"7.5\" cy=\"8.5\" r=\"1.5\"/>",
 };
 const icon = (id) => `<svg class="layer-icon" viewBox="0 0 24 24" aria-hidden="true">${ICON[id]}</svg>`;
@@ -24,6 +25,7 @@ export const LAYERS = [
 	{ id: "rivers", name: "Rivers & outflows" },
 	{ id: "forest", name: "Riverside trees" },
 	{ id: "dams", name: "Dams & spillways" },
+	{ id: "snow", name: "Snowpack" },
 	{ id: "labels", name: "Labels", opacity: true },
 ];
 

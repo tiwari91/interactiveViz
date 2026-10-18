@@ -181,7 +181,7 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 
 
 /* ---- Charts ---- */
-.charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.charts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
 .chart { min-width: 0; padding: 10px 12px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 .chart-head .panel-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

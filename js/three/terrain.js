@@ -363,6 +363,8 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	return {
 		group,
 		detail,
+		// The main mesh's geometry and per-vertex metres/lon/lat, for overlays draped on it (snow).
+		grid: { geom, meta, inCA: soft },
 		// Golden grass: late summer and autumn, and more of it in a dry year.
 		setGold(v) {
 			uniforms.uGold.value = v;

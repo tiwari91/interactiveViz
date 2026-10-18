@@ -336,6 +336,173 @@ async function snowChecks(page) {
 		`${melts.map((x) => `${x.m}: ${x.count}`).join(", ")}; ${lines.length} inflows, ${lines.filter((l) => l.y0 > l.y1).length} run downhill`);
 }
 
+// Drought animations (three/droughtFx.js), every expectation recomputed here from the data.
+async function droughtChecks(page) {
+	const at = async (m, wait = 2200) => {
+		await setState(page, { dateIndex: await monthIndex(page, m), playing: false });
+		await page.waitForTimeout(wait);
+		return debug3d(page, "c.droughtFront()");
+	};
+	const s15 = await at("2015-09");
+	const s17 = await at("2017-09");
+	check("Drought front: the dry front covers more ground in Sep 2015 than in Sep 2017", s15.dry > s17.dry * 2 && s15.dryIds.length > s17.dryIds.length && s15.mix > 0.99, `Sep 2015 ${s15.dry} km² round ${s15.dryIds.length} reservoirs, Sep 2017 ${s17.dry} km² round ${s17.dryIds.length}`);
+	const want = await page.evaluate(() => {
+		const d = window.droughtViz.data;
+		const i = d.months.indexOf("2015-09");
+		return d.tracked.filter((r) => r.purpose !== "natural-lake").filter((r) => { const a = r.avgByMonth[d.calMonth[i]]; return r.series[i] !== null && a && r.series[i] / a < 0.6; }).map((r) => r.id).sort();
+	});
+	check("Drought front: in Sep 2015 it spreads from exactly the reservoirs below 60% of average", JSON.stringify([ ...s15.dryIds ].sort()) === JSON.stringify(want), `${want.length}: ${want.join(" ")}`);
+	const w17 = await at("2017-03");
+	const w23 = await at("2023-03");
+	const w17Ids = w17.wetIds.length;
+	check("Refill front: present round refilling lakes in Mar 2017 and Mar 2023", w17.wet > 0 && w23.wet > 0 && w17.wetIds.length >= 5, `Mar 2017 ${w17.wet} km² (${w17.wetIds.length} lakes), Mar 2023 ${w23.wet} km² (${w23.wetIds.length})`);
+	const mixNext = await page.evaluate(async () => {
+		const c = window.droughtViz.views["3d"].debug();
+		window.droughtViz.store.set({ dateIndex: window.droughtViz.data.months.indexOf("2015-09") });
+		await new Promise((r) => requestAnimationFrame(r));
+		await new Promise((r) => requestAnimationFrame(r));
+		return c.droughtFront().mix;
+	});
+	check("Drought front: tweens between months (not a jump)", mixNext > 0 && mixNext < 0.6, `mix two frames after a month change ${mixNext.toFixed(2)}`);
+	await page.waitForTimeout(1800);
+	const dust = (await debug3d(page, "c.droughtFront()")).dust;
+	const cap = await page.evaluate(() => window.droughtViz.views["3d"].ui.quality === "low" ? 18 : 36);
+	check("Drought front: a few dust motes drift at the dry edge (capped)", dust > 0 && dust <= cap, `${dust} of at most ${cap}`);
+	await page.evaluate(() => document.querySelector("[data-layer-toggle=\"front\"]").click());
+	await page.waitForTimeout(300);
+	const off = await debug3d(page, "c.droughtFront()");
+	await page.evaluate(() => document.querySelector("[data-layer-toggle=\"front\"]").click());
+	await page.waitForTimeout(300);
+	const on = await debug3d(page, "c.droughtFront()");
+	check("Layers: the Drought front toggle hides and shows the front and its dust", off.on === 0 && off.dust === 0 && on.on === 1, `off ${off.on}/${off.dust}, on ${on.on}`);
+	{
+		await setState(page, { mode: "2d", dateIndex: await monthIndex(page, "2015-09") });
+		await page.waitForTimeout(1500);
+		const n15 = await page.evaluate(() => [ ...document.querySelectorAll(".drought-2d .front-dry") ].filter((c) => +c.getAttribute("r") > 0).length);
+		const path2 = await page.evaluate(() => document.querySelectorAll(".drought-2d .dpath-stop2").length);
+		await setState(page, { dateIndex: await monthIndex(page, "2017-03") });
+		await page.waitForTimeout(1500);
+		const w17 = await page.evaluate(() => ({ dry: document.querySelectorAll(".drought-2d .front-dry").length, wet: document.querySelectorAll(".drought-2d .front-wet").length }));
+		await setState(page, { mode: "3d" });
+		await waitStill(page, 500);
+		check("2D: the drought front draws discs round the dry reservoirs, refill discs in Mar 2017, and the dated path", n15 === s15.dryIds.length && w17.wet === w17Ids && path2 > 0, `Sep 2015 ${n15} dry discs, ${path2} path stops; Mar 2017 ${w17.wet} refill discs`);
+	}
+
+	// Flares: the first reservoir (largest) crossing below 40% full in a month, from the data.
+	const cross = await page.evaluate(() => {
+		const d = window.droughtViz.data;
+		const pct = (r, i) => (r.series[i] === null ? null : r.series[i] / r.capacity);
+		for (const r of [ ...d.tracked ].sort((a, b) => b.capacity - a.capacity)) {
+			if (r.purpose === "natural-lake") continue;
+			for (let i = 1; i < d.months.length; i++) {
+				if (pct(r, i - 1) !== null && pct(r, i) !== null && pct(r, i - 1) >= 0.4 && pct(r, i) < 0.4) return { id: r.id, m: d.months[i], before: d.months[i - 1] };
+			}
+		}
+		return null;
+	});
+	const flaresIn = async (m) => {
+		await setState(page, { dateIndex: await monthIndex(page, m), playing: false });
+		await page.waitForTimeout(150);
+		return debug3d(page, "c.flares()");
+	};
+	const fb = await flaresIn(cross.before);
+	const fc = await flaresIn(cross.m);
+	const has = (f, id, m) => [ ...f.active, ...f.fired.filter((x) => x.month === m) ].some((x) => x.id === id && x.month === m && x.kind === "cross");
+	check("Flare: fires for a reservoir in the month it first drops below 40% full, not the month before", cross && has(fc, cross.id, cross.m) && !fb.active.some((x) => x.id === cross.id), `${cross?.id} ${cross?.before} -> ${cross?.m}; active ${fc.active.map((x) => `${x.id} ${x.kind}`).join(", ")}`);
+	const busy = await page.evaluate(() => {
+		const d = window.droughtViz.data;
+		let best = null;
+		for (let i = 1; i < d.months.length; i++) {
+			const n = d.tracked.filter((r) => r.purpose !== "natural-lake" && r.series[i - 1] !== null && r.series[i] !== null && r.series[i - 1] / r.capacity >= 0.4 && r.series[i] / r.capacity < 0.4).length;
+			if (!best || n > best.n) best = { m: d.months[i], n };
+		}
+		return best;
+	});
+	const fbusy = await flaresIn(busy.m);
+	check("Flares: at most three play at once, the rest wait", busy.n > 3 && fbusy.active.length === 3 && fbusy.queued.length >= busy.n - 3, `${busy.m}: ${busy.n} crossings, ${fbusy.active.length} playing, ${fbusy.queued.length} queued`);
+	const recM = await page.evaluate(() => {
+		const d = window.droughtViz.data;
+		const r = d.byId.get("SHA");
+		let lo = -1;
+		r.series.forEach((v, i) => { if (v !== null && !r.filled[i] && (lo < 0 || v < r.series[lo])) lo = i; });
+		return d.months[lo];
+	});
+	const frec = await flaresIn(recM);
+	check("Flare: a teal record-low flare plays on Shasta in its record-low month", [ ...frec.active, ...frec.queued.map((id) => ({ id, kind: "record" })) ].some((x) => x.id === "SHA" && x.kind === "record"), recM);
+
+	// Dated path: each stop is the driest reservoir of 1M AF or more in its month.
+	const paths = await debug3d(page, "c.droughtPaths()");
+	const minima = await page.evaluate((stops) => {
+		const d = window.droughtViz.data;
+		return stops.map((s) => {
+			const i = d.months.indexOf(s.month);
+			let best = null;
+			for (const r of d.tracked) {
+				if (r.purpose === "natural-lake" || r.capacity < 1e6 || r.filled[i]) continue;
+				const a = r.avgByMonth[d.calMonth[i]];
+				if (r.series[i] === null || !a) continue;
+				if (!best || r.series[i] / a < best.v) best = { id: r.id, v: r.series[i] / a };
+			}
+			return { month: s.month, id: best?.id, v: best?.v, got: s.id };
+		});
+	}, paths.flatMap((p) => p.stops));
+	check("Drought path: one path per drought, each stop the driest 1M-AF reservoir of its month", paths.length === 2 && minima.length >= 4 && minima.every((x) => x.id === x.got && x.v < 0.85), minima.map((x) => `${x.month} ${x.got}${x.id === x.got ? "" : `≠${x.id}`} ${Math.round(x.v * 100)}%`).join(", "));
+	const vis = async (m) => {
+		await setState(page, { dateIndex: await monthIndex(page, m), playing: false });
+		await page.waitForTimeout(1600);
+		return debug3d(page, "c.droughtPaths()");
+	};
+	const p15 = await vis("2015-09");
+	const p19 = await vis("2019-03");
+	const p22 = await vis("2022-09");
+	check("Drought path: shows only in drought months (Sep 2015 and Sep 2022, not Mar 2019)", p15[0].visible && p15[0].shown === p15[0].stops.length && !p19.some((p) => p.visible) && p22[1].visible && !p22[0].visible, `2015 ${p15.map((p) => p.visible)}, 2019 ${p19.map((p) => p.visible)}, 2022 ${p22.map((p) => p.visible)}`);
+	await page.waitForTimeout(800);
+	const clash = await page.evaluate(() => {
+		const boxes = [ ...document.querySelectorAll(".dpath-stop.on .dpath-text") ].map((e) => e.getBoundingClientRect());
+		// Names that step back under a date label (faded, like under the record-low label) do not count.
+		const names = [ ...document.querySelectorAll(".labels-3d .lbl-text:not(.far):not(.under-path)") ].filter((e) => e.closest(".lbl").style.display !== "none" && e.getBoundingClientRect().width).map((e) => e.getBoundingClientRect());
+		const ov = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+		return { stops: boxes.length, hits: boxes.filter((b) => names.some((n) => ov(b, n))).length };
+	});
+	check("Drought path: date labels keep clear of the lake names", clash.stops > 0 && clash.hits === 0, `${clash.stops} stop labels, ${clash.hits} overlapping`);
+	await page.evaluate(() => document.querySelector("[data-layer-toggle=\"path\"]").click());
+	await page.waitForTimeout(1500);
+	const poff = await debug3d(page, "c.droughtPaths()");
+	await page.evaluate(() => document.querySelector("[data-layer-toggle=\"path\"]").click());
+	check("Layers: the Drought path toggle hides the path", poff.every((p) => !p.visible), poff.map((p) => p.alpha.toFixed(2)).join(", "));
+
+	// Follow: with Follow on, playing into Sep 2014 glides the camera toward the driest large reservoir.
+	await page.evaluate(() => window.droughtViz.views["3d"].debug().home());
+	await setState(page, { dateIndex: await monthIndex(page, "2014-08"), playing: false });
+	await waitStill(page, 300);
+	await page.locator(".js-follow").click();
+	const d0 = await page.evaluate(() => {
+		const c = window.droughtViz.views["3d"].debug();
+		const b = c.basins.byId.get("NML");
+		const t = c.pose().target;
+		return Math.hypot(t[0] - b.cx, t[2] - b.cz);
+	});
+	const sep14 = await monthIndex(page, "2014-09");
+	await page.evaluate((i) => { const st = window.droughtViz.store; st.set({ playing: true }); st.set({ dateIndex: i }); st.set({ playing: false }); }, sep14);
+	await page.waitForTimeout(2600);
+	const fol = await page.evaluate(() => {
+		const c = window.droughtViz.views["3d"].debug();
+		const t = c.pose().target;
+		const id = c.followId();
+		const b = c.basins.byId.get(id);
+		return { id, d: b ? Math.hypot(t[0] - b.cx, t[2] - b.cz) : null, dist: c.pose().dist, pressed: document.querySelector(".js-follow").getAttribute("aria-pressed") };
+	});
+	const driest = minima.find((x) => x.month === "2014-09")?.id ?? "NML";
+	check("Follow: playing through Sep 2014 glides the camera to the driest large reservoir", fol.id === driest && fol.d !== null && fol.d < d0 * 0.2 && fol.pressed === "true", `${fol.id} (driest ${driest}), target ${d0.toFixed(0)} -> ${fol.d?.toFixed(1)} units away`);
+	const box = await page.locator("#view-3d canvas").boundingBox();
+	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+	await page.mouse.wheel(0, -200);
+	await page.waitForTimeout(300);
+	check("Follow: a user zoom turns follow off", (await page.locator(".js-follow").getAttribute("aria-pressed")) === "false" && !(await page.evaluate(() => window.droughtViz.views["3d"].ui.follow)));
+	await page.evaluate(() => window.droughtViz.views["3d"].debug().home());
+	await waitStill(page, 300);
+}
+
 async function main() {
 	fs.mkdirSync(SHOTS, { recursive: true });
 	const server = await serve();
@@ -351,6 +518,11 @@ async function main() {
 		let { ctx, page, errors } = await openPage(browser, base);
 		if (process.env.ONLY === "layers") {
 			await snowChecks(page);
+			check("Zero console errors", errors.length === 0, errors.slice(0, 3).join(" | "));
+			return;
+		}
+		if (process.env.ONLY === "drought") {
+			await droughtChecks(page);
 			check("Zero console errors", errors.length === 0, errors.slice(0, 3).join(" | "));
 			return;
 		}
@@ -415,6 +587,7 @@ async function main() {
 			const want = await page.evaluate(() => { const d = window.droughtViz.data; const big = d.tracked.reduce((a, r) => (r.capacity > a.capacity ? r : a)); return [ d.dates.length, d.totals.filter((t) => t.ofAvg !== null).length, big.series.filter((v) => v !== null).length, d.snow.statewide.filter((v) => v !== null).length ]; });
 			check("Charts plot one point per month of data (snowpack: one per month with data)", JSON.stringify(pts) === JSON.stringify(want), `${pts} vs ${want}`);
 			await snowChecks(page);
+			await droughtChecks(page);
 			await setState(page, { dateIndex: 0, playing: true });
 			await page.waitForTimeout(900);
 			const pl = await stateOf(page);
@@ -1385,6 +1558,16 @@ async function main() {
 			await setState(page, { dateIndex: await monthIndex(page, "2017-02") });
 			await page.waitForTimeout(500);
 			check("Reduced motion: no event animations", (await debug3d(page, "c.eventFx()")).name === null);
+			{
+				await setState(page, { dateIndex: await monthIndex(page, "2017-09") });
+				await page.waitForTimeout(400);
+				await setState(page, { dateIndex: await monthIndex(page, "2015-09") });
+				await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+				const f = await debug3d(page, "c.droughtFront()");
+				const fl = await debug3d(page, "c.flares()");
+				const fol = await page.evaluate(() => document.querySelector(".js-follow").disabled);
+				check("Reduced motion: drought front changes at once, no dust, no flares, no camera follow", f.mix === 1 && f.dust === 0 && fl.active.length === 0 && fl.fired.length === 0 && fol, `mix ${f.mix}, dust ${f.dust}, flares ${fl.fired.length}, follow disabled ${fol}`);
+			}
 			check("Reduced motion: lake level changes at once, no tween", Math.abs(tw.seq[1] - tw.b) < 1e-3 && tw.a - tw.b > 0.5, `frames ${tw.seq.slice(0, 3).map((v) => v.toFixed(2)).join(" ")}, final ${tw.b.toFixed(2)}`);
 		}
 		allErrors.push(...errors);

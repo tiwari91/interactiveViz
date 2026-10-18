@@ -143,6 +143,11 @@ function material(THREE, uniforms) {
 		shader.uniforms.uDetail = uniforms.uDetail;
 		shader.uniforms.uNight = uniforms.uNight;
 		shader.uniforms.uGold = uniforms.uGold;
+		shader.uniforms.uFrontA = uniforms.uFrontA;
+		shader.uniforms.uFrontB = uniforms.uFrontB;
+		shader.uniforms.uFrontMix = uniforms.uFrontMix;
+		shader.uniforms.uFrontOn = uniforms.uFrontOn;
+		shader.uniforms.uFTime = uniforms.uFTime;
 		shader.vertexShader = shader.vertexShader
 			.replace("#include <common>", "#include <common>\nattribute vec3 colorDry;\nattribute float bare;\nuniform float uDry;\nvarying vec3 vWPos;\nvarying vec3 vWN;\nvarying float vBare;\nvarying float vLY;")
 			.replace("#include <color_vertex>", "#include <color_vertex>\n\tvColor.rgb = mix(color.rgb, colorDry, uDry);\n\tvBare = bare;")
@@ -159,6 +164,12 @@ varying float vLY;
 uniform sampler2D uDetail;
 uniform float uNight;
 uniform float uGold;
+uniform sampler2D uFrontA;
+uniform sampler2D uFrontB;
+uniform float uFrontMix;
+uniform float uFrontOn;
+uniform float uFTime;
+vec2 gFront;
 float gNear;
 float gRock;
 vec4 gD1;`)
@@ -225,8 +236,28 @@ vec4 gD1;`)
 		ground = mix(ground, rockC * (1.0 - gD1.b * 0.3), outcrop * 0.85);
 		gRock = max(gRock, outcrop);
 		diffuseColor.rgb = mix(c, ground, gNear);
+	}
+	// Drought front (view3d drought fields): a sand wash round reservoirs far below their average,
+	// a teal wash round refilling ones; the leading edge glows and shimmers (emissive below).
+	gFront = vec2(0.0);
+	if (uFrontOn > 0.0) {
+		vec2 fuv = vWPos.xz / 1000.0 + 0.5;
+		vec4 f = mix(texture2D(uFrontA, fuv), texture2D(uFrontB, fuv), uFrontMix);
+		float ds = f.r * 2.0 - 1.0;
+		float ws = f.b * 2.0 - 1.0;
+		float dIn = smoothstep(0.0, 0.35, ds) * f.g;
+		float wIn = smoothstep(0.0, 0.35, ws) * f.a * (1.0 - dIn);
+		vec3 base = diffuseColor.rgb;
+		float l = dot(base, vec3(0.3, 0.59, 0.11));
+		diffuseColor.rgb = mix(base, vec3(0.83, 0.68, 0.43) * (0.55 + 0.9 * l), dIn * 0.72 * uFrontOn);
+		diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.55, 0.6) * (0.6 + 0.8 * l), wIn * 0.6 * uFrontOn);
+		float n = texture2D(uDetail, vWPos.xz * 0.018 + vec2(uFTime * 0.013, 0.0)).g;
+		float shim = 0.65 + 0.35 * sin(uFTime * 2.6 + n * 14.0);
+		gFront.x = (1.0 - smoothstep(0.0, 0.09, abs(ds - 0.02))) * step(0.02, f.g) * (0.45 + 0.55 * f.g) * shim * uFrontOn;
+		gFront.y = (1.0 - smoothstep(0.0, 0.09, abs(ws - 0.02))) * step(0.02, f.a) * (0.45 + 0.55 * f.a) * shim * uFrontOn * (1.0 - dIn);
 	}`)
 			.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+	totalEmissiveRadiance += gFront.x * vec3(1.0, 0.7, 0.32) * 0.5 + gFront.y * vec3(0.3, 0.78, 0.84) * 0.42;
 	if (uNight > 0.0) {
 		// Moonlit rims: slopes facing away from the viewer catch a cool edge light, so ridges
 		// read against the valleys behind them; valley floors sink a little darker.
@@ -341,7 +372,8 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	geom.setAttribute("bare", new THREE.BufferAttribute(new Float32Array(n), 1));
 
 	const detail = detailTexture(THREE);
-	const uniforms = { uDry: { value: 0.4 }, uDetail: { value: detail }, uNight: { value: 0 }, uGold: { value: 0.5 } };
+	const uniforms = { uDry: { value: 0.4 }, uDetail: { value: detail }, uNight: { value: 0 }, uGold: { value: 0.5 },
+		uFrontA: { value: null }, uFrontB: { value: null }, uFrontMix: { value: 1 }, uFrontOn: { value: 0 }, uFTime: { value: 0 } };
 	const mat = material(THREE, uniforms);
 	const mesh = new THREE.Mesh(geom, mat);
 	mesh.receiveShadow = true;
@@ -363,6 +395,7 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	return {
 		group,
 		detail,
+		uniforms,
 		// The main mesh's geometry and per-vertex metres/lon/lat, for overlays draped on it (snow).
 		grid: { geom, meta, inCA: soft },
 		// Golden grass: late summer and autumn, and more of it in a dry year.

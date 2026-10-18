@@ -2,6 +2,7 @@
 import { pctAt, flowAt } from "./data.js";
 import { markColor, makeProjection, meander, flowScale, MAJOR_CAPACITY, fmtPct } from "./scales.js";
 import { ensurePatterns } from "./legend.js";
+import { frontAt, droughtPaths, pathProgress, stopLabel } from "./drought.js";
 
 const d3 = window.d3;
 const LABEL_LEFT = new Set([ "CLE", "BER", "WHI" ]);
@@ -16,6 +17,14 @@ export function createMap2D(container, data, store, tooltip, audio) {
 	const gSnow = world.append("g").attr("class", "snow-2d").attr("aria-hidden", "true");
 	const outline = world.append("path").attr("class", "outline");
 	const gStreams = world.append("g");
+	// Drought front (simple 2D version of the 3D one): a sand disc round each reservoir far below
+	// its average, a teal one round refilling lakes, sized from the data; and the dated drought path.
+	const gDrought = svg.append("g").attr("class", "drought-2d").attr("aria-hidden", "true");
+	const gFront = gDrought.append("g");
+	const gPath = gDrought.append("g");
+	const paths2d = droughtPaths(data);
+	const reduce2d = window.matchMedia("(prefers-reduced-motion: reduce)");
+	let pxPerKm = 1;
 	const gGauges = svg.append("g");
 	// One tab stop for all reservoirs (roving tabindex); arrow keys move to the nearest one
 	// in that direction, Home/End to the largest/smallest, Enter or Space opens it.
@@ -176,6 +185,11 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		gauges.each(function (g) {
 			this.__pos = gpos.get(g.id);
 		});
+		{
+			const a = projection([ -119.5, 36 ]);
+			const b = projection([ -119.5, 37 ]);
+			pxPerKm = Math.hypot(b[0] - a[0], b[1] - a[1]) / 111.2;
+		}
 		rCap = rCap.range([ 0, Math.max(14, Math.min(w, h) * 0.034) ]);
 		placeMarks();
 		update(store.get());
@@ -225,7 +239,52 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		update(store.get());
 	}
 
+	function drawDrought(dateIndex) {
+		const k = transform.k;
+		const ms = reduce2d.matches ? 0 : 900;
+		const fronts = frontAt(data, dateIndex).filter((e) => pos.has(e.r.id));
+		const rings = fronts.flatMap((e) => [ { id: `${e.r.id}-w`, r: e.r, km: e.wetKm, v: e.wet, kind: "wet" }, { id: `${e.r.id}-d`, r: e.r, km: e.dryKm, v: e.dry, kind: "dry" } ]).filter((d) => d.km > 0);
+		gFront.selectAll("circle").data(rings, (d) => d.id).join(
+			(en) => en.append("circle").attr("r", 0),
+			(up) => up,
+			(ex) => ex.transition().duration(ms).attr("r", 0).remove(),
+		)
+			.attr("class", (d) => `front-${d.kind}`)
+			.attr("cx", (d) => screenPos(d.r.id)[0])
+			.attr("cy", (d) => screenPos(d.r.id)[1])
+			.style("--v", (d) => d.v.toFixed(2))
+			.transition().duration(ms).attr("r", (d) => d.km * pxPerKm * k);
+		const line = d3.line().curve(d3.curveCatmullRom.alpha(0.5));
+		gPath.selectAll("g.dpath").data(paths2d.filter((p) => dateIndex >= p.from && dateIndex <= p.to), (p) => p.label).join((en) => {
+			const g = en.append("g").attr("class", "dpath");
+			g.append("path").attr("class", "dpath-line");
+			return g;
+		}).each(function (p) {
+			const g = d3.select(this);
+			const pts = p.stops.map((st) => screenPos(st.r.id));
+			const el = g.select("path").attr("d", line(pts)).node();
+			const L = el.getTotalLength();
+			const prog = pathProgress(p, dateIndex);
+			// Arc length up to the stop progress: whole segments plus the fraction of the next one.
+			let drawn = 0;
+			if (pts.length > 1) {
+				const seg = Math.min(pts.length - 2, Math.floor(prog));
+				const cum = [ 0 ];
+				for (let j = 1; j < pts.length; j++) cum.push(cum[j - 1] + Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]));
+				drawn = (cum[seg] + (cum[seg + 1] - cum[seg]) * Math.min(1, prog - seg)) / cum[pts.length - 1] * L;
+			}
+			g.select("path").attr("stroke-dasharray", `${drawn.toFixed(1)} ${L.toFixed(1)}`);
+			g.selectAll("g.dpath-stop2").data(p.stops.filter((_, j) => j <= prog + 1e-6), (st) => st.month).join((en) => {
+				const sg = en.append("g").attr("class", "dpath-stop2");
+				sg.append("circle").attr("r", 3.5);
+				sg.append("text").attr("x", 7).attr("y", -6);
+				return sg;
+			}).attr("transform", (st) => `translate(${screenPos(st.r.id).join(",")})`).select("text").text((st) => stopLabel(st));
+		});
+	}
+
 	function update({ dateIndex, selected }) {
+		drawDrought(dateIndex);
 		snowAreas.style("fill-opacity", (f) => {
 			const v = data.snow[sectionOf.get(f.properties.name)][dateIndex];
 			return v === null ? 0 : (0.08 + 0.5 * Math.min(1, v / 150)).toFixed(3);

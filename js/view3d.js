@@ -15,6 +15,8 @@ import { createSky, applyPreset } from "./three/sky.js";
 import { createLabels } from "./three/labels.js";
 import { createSnapshots } from "./three/snapshot.js";
 import { flyTo, poseOf, poseToPosition, replayPath } from "./three/camera.js";
+import { createDroughtFx } from "./three/droughtFx.js";
+import { driestAt } from "./drought.js";
 import { createControls3D } from "./three/controls3d.js";
 import { getQuality, saveQuality } from "./three/quality.js";
 import { createPulses } from "./three/pulses.js";
@@ -46,10 +48,16 @@ export function createView3D(container, data, store, tooltip, audio) {
 		links: false,
 		compareIndex: Math.max(0, data.months.indexOf("2014-09")),
 		replaying: false,
+		follow: false,
 	};
 
 	const controls = createControls3D(stage, data, {
 		replay: () => (ui.replaying ? stopReplay() : startReplay()),
+		follow: () => {
+			ui.follow = !ui.follow;
+			if (ctx) ctx.followNow();
+			syncControls();
+		},
 		compare: () => toggleCompare(),
 		links: () => {
 			ui.links = !ui.links;
@@ -287,6 +295,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		});
 		canvas.addEventListener("pointerdown", (e) => {
 			down = { p: local(e), t: performance.now() };
+			cancelFollow();
 			if (ui.replaying) stopReplay();
 		});
 		canvas.addEventListener("pointerup", (e) => {
@@ -426,6 +435,15 @@ export function createView3D(container, data, store, tooltip, audio) {
 		// Top of what is drawn at a point: the ground, or a lake's water where it covers the bed.
 		// k is the vertical scale to use (the current one, or one a zoom step is about to reach).
 		const lakeIdx = new Map(basins.basins.map((b, i) => [ b.r.id, i ]));
+		// Drought front, flares and the dated path (three/droughtFx.js); Layers switch the first and last.
+		const fxLayer = { front: true, path: true };
+		const drought = createDroughtFx(THREE, {
+			data, basins, world, container, labels, terrain, shared, quality: ui.quality, layer: fxLayer,
+			groundLocal: (x, z) => groundAt(x, z) / vScale,
+			vScale: () => vScale,
+			reduced: () => reducedMotion.matches,
+		});
+		land.add(drought.dustPts, drought.pathGroup);
 		const topAt = (x, z, k = vScale) => {
 			const s = basins.surfaceAt(x, z);
 			let h = s ? s.h : world.groundY(x, z);
@@ -697,6 +715,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			sc.camera.lookAt(t);
 		}
 		canvas.addEventListener("wheel", (e) => {
+			cancelFollow();
 			if (ui.replaying) return;
 			// Normalise lines and pages to pixels; a macOS trackpad pinch arrives as small
 			// ctrl+wheel deltas, so it is scaled up to match a wheel notch.
@@ -738,6 +757,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			if (!pinch || e.touches.length !== 2 || ui.replaying) return;
 			const d = span(e.touches);
 			if (!pinch.on && Math.abs(Math.log(d / pinch.d0)) > 0.06) pinch.on = true;
+			if (pinch.on) cancelFollow();
 			if (pinch.on && d > 0) zoomBy(pinch.last / d, (e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
 			pinch.last = d;
 		}, { passive: true });
@@ -768,12 +788,16 @@ export function createView3D(container, data, store, tooltip, audio) {
 				if (t >= 1) stopReplay(true);
 				else {
 					const p = replayFn(t);
-					sc.controls.target.set(...p.target);
-					sc.camera.position.copy(poseToPosition(THREE, p));
+					// With Follow on, the follow moves steer the camera instead of the fixed path.
+					if (!following()) {
+						sc.controls.target.set(...p.target);
+						sc.camera.position.copy(poseToPosition(THREE, p));
+					}
 					const idx = Math.min(data.months.length - 1, Math.floor(t * (data.months.length - 1) + 0.0001));
 					if (idx !== store.get().dateIndex) store.set({ dateIndex: idx });
 				}
-			} else if (mover && mover(now)) mover = null;
+			}
+			if (mover && (!replayFn || following()) && mover(now)) mover = null;
 			stepZoom(dt);
 			sc.controls.update();
 			fitScale();
@@ -811,6 +835,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			snow.update(reducedMotion.matches ? 1 : k * 0.7);
 			melt.update(dt, meltRel, snow.mesh.visible && !reducedMotion.matches);
 			placeRecord();
+			drought.update(dt, now, sc.camera);
 			cur.dryness += (target.dryness - cur.dryness) * k * 0.6;
 			cur.gold += (target.gold - cur.gold) * k * 0.6;
 
@@ -1082,8 +1107,38 @@ export function createView3D(container, data, store, tooltip, audio) {
 			return env;
 		}
 
+		// Camera follow: while the timeline or the drought replay plays, glide to the largest
+		// reservoir furthest below its average that month, hold there, and pull back to the state
+		// view each October (a new water year) and at the end. Any drag or zoom turns it off.
+		const following = () => ui.follow && !reducedMotion.matches;
+		let followId = null;
+		function followTo(i) {
+			if (!following() || !(store.get().playing || ui.replaying)) return;
+			const d = driestAt(data, i);
+			const back = data.calMonth[i] === 9 || i >= data.months.length - 1 || !d;
+			const id = back ? "home" : d.r.id;
+			if (id === followId) return;
+			followId = id;
+			if (back) {
+				mover = flyTo(THREE, sc.camera, sc.controls, home(), 1800);
+				return;
+			}
+			const b = basins.byId.get(id);
+			const dist = home().dist * 0.4;
+			mover = flyTo(THREE, sc.camera, sc.controls, { target: [ b.cx, (b.P - 2) * scaleFor(dist), b.cz ], dist, polar: 0.98, az: poseOf(THREE, sc.camera, sc.controls).az }, 1800);
+		}
+		function cancelFollow() {
+			if (!ui.follow) return;
+			ui.follow = false;
+			followId = null;
+			mover = null;
+			syncControls();
+		}
+
 		function setMonth(i) {
 			startEvent(i);
+			drought.setMonth(i, store.get().playing || ui.replaying);
+			followTo(i);
 			showRecord(i);
 			target = snapshot(i);
 			snow.setTarget([ data.snow.north[i], data.snow.central[i], data.snow.south[i] ]);
@@ -1427,9 +1482,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 			chuteClearance: () => [ ...dams.info.values() ].filter((d) => d.chute).map((d) => d.chuteClear),
 			setLayer(name, on) {
 				if (name === "labels") container.classList.toggle("labels-off", !on);
+				else if (name === "front" || name === "path") fxLayer[name] = on;
 				else (layerObjs[name] || []).forEach((o) => (o.visible = on));
 			},
-			layerOn: (name) => (name === "labels" ? !container.classList.contains("labels-off") : (layerObjs[name] || [])[0]?.visible ?? false),
+			layerOn: (name) => (name in fxLayer ? fxLayer[name] : name === "labels" ? !container.classList.contains("labels-off") : (layerObjs[name] || [])[0]?.visible ?? false),
 			scaleText: () => scaleBar.lastChild.textContent,
 			linksVisible: () => links.visibleCount(),
 			setLinks: (v) => links.setShowAll(v),
@@ -1443,11 +1499,61 @@ export function createView3D(container, data, store, tooltip, audio) {
 				return [ r.left + (v3.x + 1) / 2 * r.width, r.top + (1 - v3.y) / 2 * r.height ];
 			},
 			northDeg: () => northDeg,
+			// For tests: straight down from the dam's crest to where its river starts (and on), what
+			// shows from above at each step: the dam, the river or bare ground. A river that leaves
+			// from under the dam has no ground between the two.
+			damToRiver(id) {
+				const di = lakeIdx.get(id);
+				const info = dams.info.get(id);
+				const r0 = outflow.links().find((l) => l.dam === di && l.kind === 0);
+				if (!r0 || !r0.drawn) return null;
+				const b = basins.byId.get(id);
+				const [ cu, cv ] = [ b.dam.u, b.toLocal(info.toePoint[0], info.toePoint[2])[1] ];
+				const [ ax, az ] = b.toWorld(cu, cv);
+				const s0 = r0.drawn;
+				const ex = s0[0];
+				const ez = s0[2];
+				const ray = new THREE.Raycaster();
+				const seq = [];
+				for (let k = 0; k <= 40; k++) {
+					const f = k / 32;
+					const x = ax + (ex - ax) * f;
+					const z = az + (ez - az) * f;
+					ray.set(v3.set(x, 900, z), toCam.set(0, -1, 0));
+					const h = ray.intersectObjects([ dams.mesh, outflow.group, terrain.group ], true).find((q) => q.object.visible && q.object.material.visible !== false);
+					let o = h?.object;
+					let what = "none";
+					while (o) {
+						if (o === dams.mesh) { what = "dam"; break; }
+						if (o === outflow.group) { what = "river"; break; }
+						if (o === terrain.group) { what = "ground"; break; }
+						o = o.parent;
+					}
+					seq.push(what[0]);
+				}
+				const str = seq.join("");
+				// Bare ground between the dam and its river (in either order along the line); none
+				// if the river runs on from under the dam. No dam seen at all counts as a gap.
+				const runs = [ ...str.matchAll(/d(g+)r|r(g+)d/g) ].map((m) => (m[1] ?? m[2]).length);
+				const gap = !str.includes("d") ? 99 : Math.max(0, ...runs);
+				const lateral = Math.abs(b.toLocal(ex, ez)[1] - cv);
+				return { id, seq: str, gap, gapUnits: gap * Math.hypot(ex - ax, ez - az) / 32, lateral, halfWidth: info.halfWidth };
+			},
+			// For tests: the drought front, flares and path as drawn now; and the camera follow.
+			droughtFront: () => drought.stats(),
+			flares: () => drought.flares(),
+			droughtPaths: () => drought.paths(),
+			followNow() {
+				followId = null;
+				if (ui.follow) followTo(store.get().dateIndex);
+			},
+			followId: () => followId,
 			keyboardPick: () => kbId,
 			dispose() {
 				this.stop();
 				clearTimeout(recordTimer);
 				record.remove();
+				drought.dispose();
 				pulses.dispose();
 				melt.dispose();
 				snow.dispose();

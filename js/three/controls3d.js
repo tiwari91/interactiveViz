@@ -14,6 +14,9 @@ export function createControls3D(stage, data, handlers) {
 		<button type="button" class="chip js-replay" aria-pressed="false" title="Drought replay">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg><span>Drought replay</span>
 		</button>
+		<button type="button" class="chip js-follow" aria-pressed="false" title="While playing, the camera follows the driest large reservoir">
+			<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="currentColor" stroke-width="1.8"/></svg><span>Follow</span>
+		</button>
 		<button type="button" class="chip js-compare" aria-pressed="false" title="Compare two months">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M4 7h5v10H4zM15 7h5v10h-5z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Compare</span>
 		</button>
@@ -49,6 +52,11 @@ export function createControls3D(stage, data, handlers) {
 
 	const $ = (s, root = bar) => root.querySelector(s);
 	$(".js-replay").addEventListener("click", () => handlers.replay());
+	$(".js-follow").addEventListener("click", () => handlers.follow());
+	if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+		$(".js-follow").disabled = true;
+		$(".js-follow").title = "Camera follow is off while the system asks for reduced motion";
+	}
 	$(".js-compare").addEventListener("click", () => handlers.compare());
 	$(".js-links").addEventListener("click", () => handlers.links());
 	$(".js-sky").addEventListener("change", (e) => handlers.sky(e.target.value));
@@ -90,7 +98,8 @@ export function createControls3D(stage, data, handlers) {
 			bar.hidden = !on;
 			if (!on) split.hidden = true;
 		},
-		setState({ replaying, comparing, links, sky, quality, compareIndex, dateIndex }) {
+		setState({ replaying, comparing, links, sky, quality, compareIndex, dateIndex, follow }) {
+			$(".js-follow").setAttribute("aria-pressed", String(Boolean(follow)));
 			$(".js-links").setAttribute("aria-pressed", String(Boolean(links)));
 			$(".js-replay").setAttribute("aria-pressed", String(replaying));
 			$(".js-replay span").textContent = replaying ? "Stop replay" : "Drought replay";

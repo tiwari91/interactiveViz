@@ -427,3 +427,13 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .snow-2d .snow-area { fill: #dfe9f2; } }
 @media (prefers-reduced-motion: reduce) { .snow-2d .snow-area { transition: none; } }
 .summary .snow-stat .big.no-data { font-size: 1.1rem; color: var(--ink-3); }
+
+/* Drought front and path on the 2D map (map2d.js). */
+.drought-2d { pointer-events: none; }
+.drought-2d .front-dry { fill: #d9a54a; fill-opacity: calc(0.1 + 0.18 * var(--v, 0.5)); stroke: #d99a3a; stroke-width: 1.5; stroke-opacity: 0.75; animation: front-shimmer 2.4s ease-in-out infinite alternate; }
+.drought-2d .front-wet { fill: #2a8f96; fill-opacity: calc(0.08 + 0.14 * var(--v, 0.5)); stroke: #2a8f96; stroke-width: 1.5; stroke-opacity: 0.7; animation: front-shimmer 2.4s ease-in-out infinite alternate; }
+@keyframes front-shimmer { from { stroke-opacity: 0.35; } to { stroke-opacity: 0.9; } }
+.drought-2d .dpath-line { fill: none; stroke: #1d3a5c; stroke-width: 2; stroke-linecap: round; transition: stroke-dasharray 0.6s ease; }
+.drought-2d .dpath-stop2 circle { fill: #d99a3a; stroke: #1d3a5c; stroke-width: 1.5; }
+.drought-2d .dpath-stop2 text { font: 500 10px var(--font-mono); fill: #1d3a5c; paint-order: stroke; stroke: #f4f7fa; stroke-width: 3px; }
+@media (prefers-reduced-motion: reduce) { .drought-2d .front-dry, .drought-2d .front-wet { animation: none; } .drought-2d .dpath-line { transition: none; } }

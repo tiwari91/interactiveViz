@@ -330,5 +330,31 @@ body:has(.detail-card:not([hidden])) .stage-hint { display: none; }
 @keyframes record-settle { from { transform: scale(1.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .record-text { position: absolute; left: 20px; top: 28px; white-space: nowrap; padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--ink); font: 500 0.72rem/1.4 var(--font-mono); box-shadow: 0 1px 3px rgb(0 0 0 / 0.15); }
 /* A lake name under the record-low label steps back while the label shows. */
-.lbl-text.under-record { opacity: 0.18; transition: opacity 0.3s ease; }
+.lbl-text.under-record, .lbl-text.under-path { opacity: 0.18; transition: opacity 0.3s ease; }
 @media (prefers-reduced-motion: reduce) { .record-low.on .record-ring { animation: none; } .lbl-text.under-record { transition: none; } }
+
+/* Drought flares and the dated drought path (three/droughtFx.js). */
+.flares-3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; --amber: #d99a3a; --refill: #2a8f96; }
+.flare { position: absolute; left: 0; top: 0; opacity: 0; }
+.flare.on { opacity: 1; }
+.flare-core { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle, #fff8e6 0 30%, var(--amber) 60%, transparent 72%); }
+.flare-ring { position: absolute; left: -10px; top: -10px; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--amber); opacity: 0; }
+.flare-record .flare-core { background: radial-gradient(circle, #effcfc 0 30%, var(--refill) 62%, transparent 74%); }
+.flare-record .flare-ring { border-color: var(--refill); }
+.flare.on .flare-core { animation: flare-core 2.2s ease-out both; }
+.flare.on .flare-ring { animation: flare-ring 1.6s cubic-bezier(0.2, 0.6, 0.3, 1) both; }
+.flare.on .flare-ring:nth-of-type(3) { animation-delay: 0.3s; }
+.flare.on .flare-ring:nth-of-type(4) { animation-delay: 0.6s; }
+.flare-text { position: absolute; left: 14px; top: -22px; white-space: nowrap; font: 600 0.7rem/1.2 var(--font-body); color: #6b3f06; background: color-mix(in srgb, #fff6e3 88%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 60%, transparent); border-radius: 4px; padding: 1px 5px; }
+.flare-text:empty { display: none; }
+.flare.on .flare-text { animation: flare-text 2.2s ease both; }
+@keyframes flare-core { 0% { transform: scale(0.3); opacity: 0; } 12% { transform: scale(1.8); opacity: 1; } 60% { opacity: 0.9; } 100% { transform: scale(0.8); opacity: 0; } }
+@keyframes flare-ring { 0% { transform: scale(0.4); opacity: 0.95; } 100% { transform: scale(3.6); opacity: 0; } }
+@keyframes flare-text { 0%, 8% { opacity: 0; } 18%, 75% { opacity: 1; } 100% { opacity: 0; } }
+.dpath-stop { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity 0.4s ease; }
+.dpath-stop:not(.on) { visibility: hidden; }
+.path-off .dpath-stop { display: none; }
+.dpath-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); border: 1.5px solid #1d3a5c; }
+.dpath-text { position: absolute; white-space: nowrap; font: 500 0.68rem/1.2 var(--font-mono); color: #1d3a5c; background: color-mix(in srgb, #f4f7fa 90%, transparent); border: 1px solid color-mix(in srgb, #1d3a5c 35%, transparent); border-radius: 3px; padding: 1px 4px; }
+.labels-off .dpath-text { display: none; }
+@media (prefers-reduced-motion: reduce) { .flare.on * { animation: none !important; } .dpath-stop { transition: none; } }

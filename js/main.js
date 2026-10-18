@@ -251,6 +251,25 @@ async function start() {
 	initTheme($("#theme-toggle"), (theme) => views["3d"].setTheme(theme));
 
 	await showMode(store.get().mode);
+
+	// Shareable link: ?month=YYYY-MM&mode=2d|3d&res=ID reopens the map at the same moment.
+	const askedRes = params.get("res");
+	if (askedRes && data.reservoirs.some((r) => r.id === askedRes)) store.set({ selected: askedRes });
+	const linkBtn = $("#copy-link");
+	const linkFor = () => {
+		const s = store.get();
+		const q = new URLSearchParams({ month: data.months[s.dateIndex], mode: s.mode });
+		if (s.selected) q.set("res", s.selected);
+		return location.origin + location.pathname + "?" + q.toString();
+	};
+	linkBtn.addEventListener("click", () => {
+		const url = linkFor();
+		history.replaceState(null, "", url);
+		const done = (text) => { linkBtn.textContent = text; setTimeout(() => { linkBtn.textContent = "Copy link"; }, 1800); };
+		if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(() => done("Link copied"), () => done("Link in address bar"));
+		else done("Link in address bar");
+	});
+	window.droughtViz_linkFor = linkFor;
 	document.body.dataset.ready = "true";
 
 	// Small hook for the automated checks in tests/check.mjs.

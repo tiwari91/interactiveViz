@@ -249,15 +249,15 @@ vec4 gD1;`)
 		float wIn = smoothstep(0.0, 0.35, ws) * f.a * (1.0 - dIn);
 		vec3 base = diffuseColor.rgb;
 		float l = dot(base, vec3(0.3, 0.59, 0.11));
-		diffuseColor.rgb = mix(base, vec3(0.83, 0.68, 0.43) * (0.55 + 0.9 * l), dIn * 0.72 * uFrontOn);
+		diffuseColor.rgb = mix(base, vec3(0.88, 0.62, 0.3) * (0.6 + 0.8 * l), dIn * 0.8 * uFrontOn);
 		diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.55, 0.6) * (0.6 + 0.8 * l), wIn * 0.6 * uFrontOn);
 		float n = texture2D(uDetail, vWPos.xz * 0.018 + vec2(uFTime * 0.013, 0.0)).g;
 		float shim = 0.65 + 0.35 * sin(uFTime * 2.6 + n * 14.0);
-		gFront.x = (1.0 - smoothstep(0.0, 0.09, abs(ds - 0.02))) * step(0.02, f.g) * (0.45 + 0.55 * f.g) * shim * uFrontOn;
+		gFront.x = (1.0 - smoothstep(0.0, 0.12, abs(ds - 0.02))) * step(0.02, f.g) * (0.45 + 0.55 * f.g) * shim * uFrontOn;
 		gFront.y = (1.0 - smoothstep(0.0, 0.09, abs(ws - 0.02))) * step(0.02, f.a) * (0.45 + 0.55 * f.a) * shim * uFrontOn * (1.0 - dIn);
 	}`)
 			.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
-	totalEmissiveRadiance += gFront.x * vec3(1.0, 0.7, 0.32) * 0.5 + gFront.y * vec3(0.3, 0.78, 0.84) * 0.42;
+	totalEmissiveRadiance += gFront.x * vec3(1.0, 0.66, 0.26) * 0.85 + gFront.y * vec3(0.3, 0.78, 0.84) * 0.42;
 	if (uNight > 0.0) {
 		// Moonlit rims: slopes facing away from the viewer catch a cool edge light, so ridges
 		// read against the valleys behind them; valley floors sink a little darker.

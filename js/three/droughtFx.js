@@ -304,7 +304,7 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 			const z = stopAt[Math.min(stopAt.length - 1, k + 1)];
 			prog.push(z > a ? k + Math.min(1, Math.max(0, (j - a) / (z - a))) : k);
 		});
-		const W = 0.9;
+		const W = 1.5;
 		const pos = new Float32Array(samples.length * 6);
 		const al = new Float32Array(samples.length * 2);
 		samples.forEach((q, j) => {
@@ -329,7 +329,7 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 		const mat = new THREE.ShaderMaterial({
 			vertexShader: PATH_VERT,
 			fragmentShader: PATH_FRAG,
-			uniforms: { uColor: { value: new THREE.Color("#1d3a5c") }, uA: { value: 0 } },
+			uniforms: { uColor: { value: new THREE.Color("#152c47") }, uA: { value: 0 } },
 			transparent: true,
 			depthWrite: false,
 			side: THREE.DoubleSide,

@@ -33,12 +33,25 @@ const DUST_FRAG = `
 		if (d > 1.0 || vA < 0.01) discard;
 		gl_FragColor = vec4(uColor, (1.0 - d) * vA);
 	}`;
+// The path is a fixed width on screen, not in the world: a world-width ribbon turned into a row of
+// black slabs when the camera came down close to it.
 const PATH_VERT = `
 	attribute float aAlong;
+	attribute float aSide;
+	attribute vec3 aNext;
+	uniform vec2 uRes;
+	uniform float uWidth;
 	varying float vAlong;
 	void main() {
 		vAlong = aAlong;
-		gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+		vec4 c = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+		vec4 n = projectionMatrix * modelViewMatrix * vec4(aNext, 1.0);
+		vec2 a = c.xy / max(c.w, 1e-4) * uRes;
+		vec2 b = n.xy / max(n.w, 1e-4) * uRes;
+		vec2 d = b - a;
+		d = length(d) > 1e-5 ? normalize(d) : vec2(1.0, 0.0);
+		vec2 off = vec2(-d.y, d.x) * aSide * uWidth / uRes;
+		gl_Position = c + vec4(off * c.w, 0.0, 0.0);
 	}`;
 const PATH_FRAG = `
 	uniform vec3 uColor;
@@ -305,9 +318,7 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 			prog.push(z > a ? k + Math.min(1, Math.max(0, (j - a) / (z - a))) : k);
 		});
 		const W = 1.5;
-		const pos = new Float32Array(samples.length * 6);
-		const al = new Float32Array(samples.length * 2);
-		samples.forEach((q, j) => {
+		const ys = samples.map((q, j) => {
 			const a = samples[Math.max(0, j - 1)];
 			const c = samples[Math.min(samples.length - 1, j + 1)];
 			let dx = c.x - a.x;
@@ -315,8 +326,23 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 			const l = Math.hypot(dx, dz) || 1;
 			dx /= l;
 			dz /= l;
-			const y = Math.max(groundLocal(q.x, q.z), groundLocal(q.x - dz * W, q.z + dx * W), groundLocal(q.x + dz * W, q.z - dx * W)) + 1.4;
-			pos.set([ q.x - dz * W, y, q.z + dx * W, q.x + dz * W, y, q.z - dx * W ], j * 6);
+			return Math.max(groundLocal(q.x, q.z), groundLocal(q.x - dz * W, q.z + dx * W), groundLocal(q.x + dz * W, q.z - dx * W)) + 1.4;
+		});
+		// Both edge vertices sit on the centre line; the shader pushes them apart on screen along
+		// the perpendicular of the direction to the next sample (the previous one, reversed, at the end).
+		const pos = new Float32Array(samples.length * 6);
+		const nxt = new Float32Array(samples.length * 6);
+		const side = new Float32Array(samples.length * 2);
+		const al = new Float32Array(samples.length * 2);
+		const last = samples.length - 1;
+		samples.forEach((q, j) => {
+			const o = samples[j < last ? j + 1 : Math.max(0, j - 1)];
+			const oy = ys[j < last ? j + 1 : Math.max(0, j - 1)];
+			const flip = j < last ? 1 : -1;
+			pos.set([ q.x, ys[j], q.z, q.x, ys[j], q.z ], j * 6);
+			nxt.set([ o.x, oy, o.z, o.x, oy, o.z ], j * 6);
+			side[j * 2] = flip;
+			side[j * 2 + 1] = -flip;
 			al[j * 2] = al[j * 2 + 1] = along[j];
 		});
 		const index = [];
@@ -324,12 +350,14 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 		const geom = new THREE.BufferGeometry();
 		geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
 		geom.setAttribute("aAlong", new THREE.BufferAttribute(al, 1));
+		geom.setAttribute("aNext", new THREE.BufferAttribute(nxt, 3));
+		geom.setAttribute("aSide", new THREE.BufferAttribute(side, 1));
 		geom.setIndex(index);
 		geom.setDrawRange(0, 0);
 		const mat = new THREE.ShaderMaterial({
 			vertexShader: PATH_VERT,
 			fragmentShader: PATH_FRAG,
-			uniforms: { uColor: { value: new THREE.Color("#152c47") }, uA: { value: 0 } },
+			uniforms: { uColor: { value: new THREE.Color("#152c47") }, uA: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uWidth: { value: 1.6 } },
 			transparent: true,
 			depthWrite: false,
 			side: THREE.DoubleSide,
@@ -372,6 +400,7 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 			while (segs < p.prog.length - 1 && p.prog[segs + 1] <= prog + 1e-6) segs++;
 			p.mesh.geometry.setDrawRange(0, segs * 6);
 			p.mesh.material.uniforms.uA.value = 0.85 * p.alpha;
+			p.mesh.material.uniforms.uRes.value.set(cw / 2, ch / 2);
 			p.mesh.visible = p.alpha > 0;
 			p.stops.forEach((s, j) => {
 				const el = p.els[j];

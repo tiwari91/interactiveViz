@@ -4,8 +4,8 @@ import { fmtMonth, fmtMonthLong, fmtPct } from "./scales.js";
 const d3 = window.d3;
 const PLAY = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M7 4.5v15l13-7.5z\"/></svg>";
 const PAUSE = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 4h4.5v16H6zM13.5 4H18v16h-4.5z\"/></svg>";
-// Playback lasts about 45 s however long the record is, within these bounds per month.
-const STEP_MS = (n) => Math.max(160, Math.min(420, 45000 / n));
+// Playback lasts about 90 s however long the record is (slow enough to follow each year), within these bounds per month.
+const STEP_MS = (n) => Math.max(320, Math.min(840, 90000 / n));
 const SPEEDS = [ 1, 2, 4 ];
 
 export function createTimeline(el, { dates, totals, droughtPeriods, provisional }, store, events = []) {

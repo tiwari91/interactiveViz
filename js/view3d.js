@@ -27,8 +27,8 @@ const d3 = window.d3;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 // The replay lasts about a minute however many months there are, but never
 // rushes faster than this per month.
-const REPLAY_TOTAL_MS = 60000;
-const REPLAY_MIN_MS_PER_MONTH = 250;
+const REPLAY_TOTAL_MS = 120000;
+const REPLAY_MIN_MS_PER_MONTH = 500;
 // Camera moves are instant under reduced motion.
 const motionMs = (ms) => (reducedMotion.matches ? 1 : ms);
 

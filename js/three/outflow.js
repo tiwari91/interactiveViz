@@ -9,7 +9,7 @@ import { stemLines, STEM_DAM } from "./mainRivers.js";
 const RIBBON_VERT = `
 	attribute float aSide;
 	attribute float aAlong;
-	attribute vec4 aMeta; // dam, kind, total length, overview weight (big rivers 1)
+	attribute vec4 aMeta; // dam, kind, total length, overview weight (big rivers 1; a chute: where its concrete ends)
 	attribute vec2 aDir; // horizontal side vector of the strip
 	varying float vFar;
 	uniform float uRelease[DAMS];
@@ -22,6 +22,7 @@ const RIBBON_VERT = `
 	varying float vRel;
 	varying float vKind;
 	varying float vEnd;
+	varying float vRun;
 	varying vec3 vWorld;
 	void main() {
 		int k = int(aMeta.x + 0.5);
@@ -42,6 +43,7 @@ const RIBBON_VERT = `
 		vYl = position.y;
 		vKind = kind;
 		vEnd = aMeta.z - aAlong;
+		vRun = kind > 1.5 && kind < 2.5 ? aAlong - aMeta.w : -1.0;
 		vec4 wp = modelMatrix * vec4(p, 1.0);
 		vWorld = wp.xyz;
 		gl_Position = projectionMatrix * viewMatrix * wp;
@@ -67,6 +69,7 @@ const RIBBON_FRAG = `
 	varying float vYl;
 	varying float vKind;
 	varying float vEnd;
+	varying float vRun;
 	varying vec3 vWorld;
 	varying float vFar;
 	float hash(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
@@ -77,7 +80,10 @@ const RIBBON_FRAG = `
 	// Ripples stretched along the flow and carried downstream.
 	float ripple(vec2 p) { return noise(p) * 0.5 + noise(p * 2.3 + 4.1) * 0.3 + noise(p * 5.1 - 2.7) * 0.2; }
 	void main() {
-		if (vRel < (vKind > 1.5 ? 0.02 : 0.001)) discard;
+		// Past the foot of a chute its run-out to the river shows as a dry stony channel when
+		// nothing is spilling, so the chute visibly leads into the river.
+		float runOut = step(0.0, vRun);
+		if (vRel < (vKind > 1.5 ? 0.02 : 0.001) && runOut < 0.5) discard;
 		// Main stems hand over to the overview line far out (and skip the shading there).
 		float mainFade = vKind > 2.5 ? 1.0 - smoothstep(380.0, 560.0, length(cameraPosition - vWorld)) : 1.0;
 		if (mainFade <= 0.0) discard;
@@ -131,11 +137,15 @@ const RIBBON_FRAG = `
 		float dryness = smoothstep(waterEdge, 1.0, side);
 		vec3 bank = mix(uBank * 0.38, uBank * 0.75, dryness) * (0.65 + 0.6 * grit) * (1.0 - 0.7 * uNight);
 		col = mix(bank, col, wet);
+		// Dry run-out: stony bed, darker down the middle, wetting as the spill starts.
+		vec3 bed = uBank * mix(0.3, 0.55, smoothstep(0.2, 0.9, side)) * (0.7 + 0.5 * grit) * (1.0 - 0.7 * uNight);
+		col = mix(col, bed, runOut * (1.0 - smoothstep(0.02, 0.2, vRel)));
 		// From afar: a clean blue line so the river network reads on the state view (dimmer at night).
 		col = mix(col, uWater * mix(1.6, 0.9, uNight) + vec3(0.03, 0.07, 0.11), vFar * 0.75);
 		float edge = 1.0 - smoothstep(0.55, 1.0, side) * (1.0 - wet * 0.3);
 		float ends = vKind < 0.5 ? smoothstep(0.0, 12.0, vEnd) : vKind < 1.5 ? smoothstep(0.0, 5.0, vAlong) : vKind > 2.5 ? smoothstep(0.0, 1.0, vAlong) : 1.0;
-		float a = edge * ends * mainFade * mix(1.0, clamp(vRel * 1.5, 0.0, 1.0), chute) * mix(0.8, 0.98, wet);
+		float chuteA = max(clamp(vRel * 1.5, 0.0, 1.0), runOut * 0.9 * smoothstep(0.0, 0.4, vRun));
+		float a = edge * ends * mainFade * mix(1.0, chuteA, chute) * mix(0.8, 0.98, wet);
 		float fog = smoothstep(uFogNear, uFogFar, length(cameraPosition - vWorld));
 		gl_FragColor = vec4(mix(col, uFogColor, fog), a);
 		#include <tonemapping_fragment>
@@ -502,14 +512,18 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		const info = dams.info.get(b.r.id);
 		// From the downstream toe, along the canyon floor, then downhill.
 		// Arch dams bulge upstream, so start below the dam line, never in the lake.
+		// The search starts from the foot of the face's full run (info.routeFrom), which can lie
+		// out beyond where the face goes under high ground downstream (Perris).
 		const foot = [ info.toePoint[0], info.toePoint[2] ];
-		const toe = info.toeU <= b.dam.u - 0.6 ? foot : b.toWorld(b.dam.u - 0.6, b.toLocal(...foot)[1]);
+		const from = info.routeFrom ?? foot;
+		const fromU = info.routeU ?? info.toeU;
+		const toe = fromU <= b.dam.u - 0.6 ? from : b.toWorld(b.dam.u - 0.6, b.toLocal(...from)[1]);
 		const raw0 = router.downhill(toe, [ -b.eu[0], -b.eu[1] ], 24 + b.Lu * 2.4, { avoid: b });
 		const pts = onward(raw0, b);
 		let seq = router.drape(pts);
-		// An arch bulges upstream, so the search starts below the dam line; the river itself still
-		// leaves from the foot of the wall, running straight (never below where it starts) to there.
-		if (toe !== foot && seq.length) {
+		// The river itself leaves from the foot of the face as it shows, running straight (never
+		// below where it starts) to where the search began.
+		if (Math.hypot(toe[0] - foot[0], toe[1] - foot[1]) > 0.05 && seq.length) {
 			const steps = Math.ceil(Math.hypot(toe[0] - foot[0], toe[1] - foot[1]) / 0.3);
 			for (let k = steps - 1; k >= 0; k--) {
 				const x = foot[0] + (toe[0] - foot[0]) * k / steps;
@@ -674,9 +688,11 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			}
 			info.chuteLine = line;
 			info.chuteMeets = q ? [ q[0], q[1], q[2] ] : null;
-			const st = stripGeometry(line, out, { dam: di, kind: KIND.CHUTE });
+			// Overview weight slot carries where the concrete ends (the run-out shows dry past it).
+			const concreteEnd = info.chute.reduce((acc, p, i) => (i ? acc + Math.hypot(p[0] - info.chute[i - 1][0], p[2] - info.chute[i - 1][2]) : 0), 0);
+			const st = stripGeometry(line, out, { dam: di, kind: KIND.CHUTE, weight: line.length > info.chute.length ? concreteEnd : 1e6 });
 			// On the concrete the floor height stands; past it the water lies on the ground.
-			strips.push({ ...st, kind: KIND.CHUTE, dam: di, centre: line, shape: () => info.chuteWidth, sample: (x, z, y) => Math.max(y, ground(x, z)) });
+			strips.push({ ...st, kind: KIND.CHUTE, dam: di, centre: line, shape: (i) => info.chuteWidth * (i >= info.chute.length ? 1.25 : 1), sample: (x, z, y) => Math.max(y, ground(x, z)) });
 		}
 	});
 

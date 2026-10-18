@@ -1363,6 +1363,16 @@ async function main() {
 				far.length >= 30 && near.length === far.length && badFar.length === 0 && badNear.length === 0 && near.every((g) => g.vs < 0.5 && g.z > 50),
 				`${far.length} dams; state max ${worst(far, "px")} px; close (${near[0]?.z.toFixed(0)}x, relief ${near[0]?.vs.toFixed(2)}) max ${worst(near, "xz")} across, ${worst(near, "dy")} up, ${worst(near, "px")} px${[ ...badFar, ...badNear ].length ? `; off: ${[ ...badFar, ...badNear ].map((g) => g.id).join(", ")}` : ""}`);
 		}
+		// Seen from above, the river starts under what shows of its dam: no strip of bare ground
+		// between the foot of the face and the river head (as below Perris, where the face goes
+		// under the high ground downstream well short of its full run).
+		{
+			const gaps = await debug3d(page, "c.basins.basins.map((b) => c.damRiverGap(b.r.id)).filter(Boolean)");
+			const off = gaps.filter((g) => g.gap > 0.1 || g.lateral > g.halfWidth);
+			check("Every dam's river head is within 0.1 of where the dam shows above the ground (high quality)",
+				gaps.length >= 30 && off.length === 0,
+				`${gaps.length} dams; max ${Math.max(...gaps.map((g) => g.gap)).toFixed(3)}${off.length ? `; off: ${off.map((g) => `${g.id} ${g.gap}`).join(", ")}` : ""}`);
+		}
 		// A river that ends at a main stem ends on the drawn main-stem ribbon (the same ribbon is
 		// drawn at every zoom, so this holds at the overview, mid and close zooms), and no river
 		// line hooks or doubles back on itself.
@@ -1582,6 +1592,11 @@ async function main() {
 				check(`iPhone 12 ${mode} ${scheme}: no horizontal scroll`, await noHScroll(page));
 				if (mode === "3d" && scheme === "light") {
 					check("iPhone 12 defaults to low quality", (await page.locator(".js-quality").inputValue()) === "low");
+					const gapsLow = await debug3d(page, "c.basins.basins.map((b) => c.damRiverGap(b.r.id)).filter(Boolean)");
+					const offLow = gapsLow.filter((g) => g.gap > 0.1 || g.lateral > g.halfWidth);
+					check("Every dam's river head is within 0.1 of where the dam shows above the ground (low quality)",
+						gapsLow.length >= 30 && offLow.length === 0,
+						`${gapsLow.length} dams; max ${Math.max(...gapsLow.map((g) => g.gap)).toFixed(3)}${offLow.length ? `; off: ${offLow.map((g) => `${g.id} ${g.gap}`).join(", ")}` : ""}`);
 					const ripLow = await debug3d(page, "c.riparian()");
 					check("Low quality keeps trees light", ripLow.bank <= 2200 && ripLow.forest <= 1600 && ripLow.shrub <= 1200 && ripLow.rock <= 400, `${ripLow.bank} bank + ${ripLow.forest} forest trees, ${ripLow.shrub} shrubs, ${ripLow.rock} boulders`);
 					check("Bank trees are skipped at the overview", !(await debug3d(page, "c.sc.scene.getObjectByName('riparian').visible")));

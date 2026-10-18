@@ -24,13 +24,18 @@ function chaikin(p) {
 	return out;
 }
 
-export function createRouter(basins, world) {
-	const surface = (x, z) => {
+// Height of the ground the rivers are laid on: the carved basin surface, else the DEM.
+export function groundSurface(basins, world) {
+	return (x, z) => {
 		const s = basins.surfaceAt(x, z);
 		// Lake beds can sit below sea level (a deep bowl in the low foothills); only open ground
 		// is held at the shore height.
 		return s && s.zone === "bowl" ? s.h : Math.max(0.3, s ? s.h : world.groundY(x, z));
 	};
+}
+
+export function createRouter(basins, world) {
+	const surface = groundSurface(basins, world);
 
 	// Steepest descent with momentum; stops at a pit, when it would climb, at the
 	// length limit, or (inflow) when it reaches the lake.

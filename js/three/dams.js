@@ -3,6 +3,7 @@
 // (gated crest or abutment chute), a powerhouse, and instanced white-water foam.
 import { bulgeOf, damTypeOf, isConcrete, structureOf } from "./damTypes.js";
 import { hash2 } from "./world.js";
+import { groundSurface } from "./outflowPaths.js";
 
 const SEGMENTS = 28;
 
@@ -36,7 +37,8 @@ function builder(THREE) {
 	};
 }
 
-export function createDams(THREE, data, basins) {
+export function createDams(THREE, data, basins, world = null, quality = "high") {
+	const surface = world ? groundSurface(basins, world) : null;
 	const B = builder(THREE);
 	const C = {
 		concrete: new THREE.Color(0xc9c4ba),
@@ -162,7 +164,29 @@ export function createDams(THREE, data, basins) {
 		const ev = bs.ev;
 		const down = [ -eu[0], -eu[1] ];
 		const [ mu, mv ] = axisAt(0.5);
-		const toe = section(crest - bottoms[SEGMENTS / 2])[3][0];
+		// The full run of the downstream face, down to the lake-bed depth it is built from.
+		const fullToe = section(crest - bottoms[SEGMENTS / 2])[3][0];
+		// The foot of the face as it shows: where the ground downstream stands high (a lake carved
+		// into flat country, as at Perris), the face goes under it well short of the full run, and a
+		// river started at the full run began out on bare ground. March down the face and stop
+		// where it comes within TOE_MARGIN of the ground (more on low quality, whose coarser grid
+		// rounds the ground up), so the river leaves from under what shows of the dam.
+		const TOE_MARGIN = quality === "low" ? 0.4 : 0.12;
+		// The drawn ground is interpolated over grid cells, so take the highest ground near the point.
+		const REACH = quality === "low" ? 0.6 : 0.35;
+		const groundNear = (x, z) => Math.max(surface(x, z), surface(x + REACH, z), surface(x - REACH, z), surface(x, z + REACH), surface(x, z - REACH));
+		const toe = (() => {
+			if (!surface) return fullToe;
+			const sec = section(crest - bottoms[SEGMENTS / 2]);
+			const d0 = sec[2][0];
+			const h = crest - bottoms[SEGMENTS / 2];
+			for (let k = 1; k <= 60; k++) {
+				const d = d0 + (fullToe - d0) * k / 60;
+				const [ gx, gz ] = bs.toWorld(mu - d, mv);
+				if (crest - h * k / 60 <= groundNear(gx, gz) + TOE_MARGIN) return d;
+			}
+			return fullToe;
+		})();
 		// Where the river leaves the dam: the foot of the downstream face, tucked just under it so
 		// the ribbon runs out from the concrete with no strip of bare ground between.
 		const TOE_OUT = 0.04;
@@ -170,6 +194,9 @@ export function createDams(THREE, data, basins) {
 			const [ x, z ] = bs.toWorld(mu - toe - TOE_OUT, mv);
 			return [ x, groundAt(mu - toe - TOE_OUT, mv) + 0.05, z ];
 		})();
+		// Where the river is routed from (the foot of the full run), so its course stays the same;
+		// outflow.js runs it straight in from toePoint.
+		const routeFrom = bs.toWorld(mu - fullToe - TOE_OUT, mv);
 		const faceBase = (() => {
 			const [ x, z ] = bs.toWorld(mu - toe, mv);
 			return [ x, groundAt(mu - toe, mv), z ];
@@ -263,7 +290,7 @@ export function createDams(THREE, data, basins) {
 		void outletEnd;
 		info.set(bs.r.id, {
 			type, crest, toePoint, center: bs.toWorld(mu, mv), height: hMax, scale, concrete,
-			toeU: mu - toe - TOE_OUT, faceBase, spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth, chuteClear,
+			toeU: mu - toe - TOE_OUT, routeFrom, routeU: mu - fullToe - TOE_OUT, faceBase, spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth, chuteClear,
 			lights: [ axisAt(0.02), axisAt(0.98) ].map(([ u, v ]) => {
 				const [ x, z ] = bs.toWorld(u - tc * 0.5, v);
 				return [ x, crest + 0.25, z ];

@@ -113,7 +113,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const shared = waterUniforms(THREE);
 		const lakes = createLakes(THREE, basins, shared);
 		const ocean = createOcean(THREE, shared);
-		const dams = createDams(THREE, data, basins);
+		const dams = createDams(THREE, data, basins, world, ui.quality);
 		const links = createGaugeLinks(THREE, data, world, basins);
 		const outflow = createOutflow(THREE, basins, dams, world, shared, ui.quality);
 		const pulses = createPulses(THREE, outflow.outflowLines(), { perLine: ui.quality === "low" ? 4 : 8 });
@@ -1520,7 +1520,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 					const x = ax + (ex - ax) * f;
 					const z = az + (ez - az) * f;
 					ray.set(v3.set(x, 900, z), toCam.set(0, -1, 0));
-					const h = ray.intersectObjects([ dams.mesh, outflow.group, terrain.group ], true).find((q) => q.object.visible && q.object.material.visible !== false);
+					const h = ray.intersectObjects([ dams.mesh, outflow.group, terrain.group ], true).find((q) => q.object.isMesh && q.object.visible && q.object.material.visible !== false);
 					let o = h?.object;
 					let what = "none";
 					while (o) {
@@ -1537,7 +1537,44 @@ export function createView3D(container, data, store, tooltip, audio) {
 				const runs = [ ...str.matchAll(/d(g+)r|r(g+)d/g) ].map((m) => (m[1] ?? m[2]).length);
 				const gap = !str.includes("d") ? 99 : Math.max(0, ...runs);
 				const lateral = Math.abs(b.toLocal(ex, ez)[1] - cv);
-				return { id, seq: str, gap, gapUnits: gap * Math.hypot(ex - ax, ez - az) / 32, lateral, halfWidth: info.halfWidth };
+				// Horizontal distance, in world units, from where the dam last shows to the river head.
+				const step = Math.hypot(ex - ax, ez - az) / 32;
+				return { id, seq: str, gap, gapUnits: gap === 99 ? 99 : gap * step, lateral, halfWidth: info.halfWidth };
+			},
+			// For tests: how far downstream of where the dam last shows above the ground its river
+			// starts (world units, 0 when the river leaves from under the dam). Walks from just
+			// upstream of the crest's middle straight downstream, raycasting the dam and the ground, and keeps the
+			// furthest point of the unbroken run where it stands above the ground.
+			damRiverGap(id) {
+				const di = lakeIdx.get(id);
+				const info = dams.info.get(id);
+				const r0 = outflow.links().find((l) => l.dam === di && l.kind === 0);
+				if (!r0 || !r0.drawn) return null;
+				const b = basins.byId.get(id);
+				const [ cx, cz ] = info.center;
+				const dx = -b.eu[0];
+				const dz = -b.eu[1];
+				const head = r0.drawn;
+				const along = (head[0] - cx) * dx + (head[2] - cz) * dz;
+				const lateral = Math.abs((head[0] - cx) * dz - (head[2] - cz) * dx);
+				const ray = new THREE.Raycaster();
+				const STEP = 0.03;
+				let shows = null;
+				for (let t = -1; t <= Math.max(along, 1) + 2; t += STEP) {
+					const x = cx + dx * t;
+					const z = cz + dz * t;
+					ray.set(v3.set(x, 900, z), toCam.set(0, -1, 0));
+					const h = ray.intersectObject(dams.mesh, false)[0];
+					// The ground as drawn (the terrain mesh), else the height it is built from.
+					const g = ray.intersectObject(terrain.group, true).find((q) => q.object.isMesh && q.object.visible)?.point.y ?? groundAt(x, z);
+					if (!h || h.point.y < g + 0.02 * vScale) {
+						if (shows !== null || t > 0.5) break;
+						continue;
+					}
+					shows = t;
+				}
+				shows ??= 0;
+				return { id, along: +along.toFixed(3), shows: +shows.toFixed(3), gap: +Math.max(0, along - shows).toFixed(3), lateral: +lateral.toFixed(3), halfWidth: info.halfWidth };
 			},
 			// For tests: the drought front, flares and path as drawn now; and the camera follow.
 			droughtFront: () => drought.stats(),

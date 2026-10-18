@@ -273,7 +273,12 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 		}
 	}
 	const v = new THREE.Vector3();
+	let flareDimmed = new Set();
 	function placeFlares(now, camera) {
+		let names = null;
+		const taken = [];
+		const dimNow = new Set();
+		const cr = container.getBoundingClientRect();
 		for (const s of slots) {
 			if (!s.f) continue;
 			if (now - s.t0 > FLARE_MS || reduced()) {
@@ -284,9 +289,46 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 			const b = basins.byId.get(s.f.r.id);
 			v.set(b.cx, b.levelFor(0.3) * vScale(), b.cz).project(camera);
 			const off = v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1;
+			const x = (v.x + 1) / 2 * container.clientWidth;
+			const y = (1 - v.y) / 2 * container.clientHeight;
 			s.el.style.visibility = off ? "hidden" : "";
-			s.el.style.transform = `translate(${((v.x + 1) / 2 * container.clientWidth).toFixed(1)}px, ${((1 - v.y) / 2 * container.clientHeight).toFixed(1)}px)`;
+			s.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+			// The "below 40%" label takes the side that stays clear of the lake names and the other
+			// flares' labels; a name it still cannot clear steps back while it shows.
+			const t = s.el.lastChild;
+			if (off || !t.textContent) continue;
+			const tw = t.offsetWidth;
+			const th = t.offsetHeight;
+			if (!names) {
+				names = [ ...labels.layer.querySelectorAll(".lbl-text:not(.far)") ].filter((n) => n.closest(".lbl").style.display !== "none").map((n) => {
+					const r = n.getBoundingClientRect();
+					return { el: n, left: r.left - cr.left - 2, right: r.right - cr.left + 2, top: r.top - cr.top - 2, bottom: r.bottom - cr.top + 2 };
+				});
+			}
+			const spots = [];
+			for (const g of [ 14, 30, 48 ]) spots.push([ g, -g - th + 6 ], [ -g - tw, -g - th + 6 ], [ g, g - 6 ], [ -g - tw, g - 6 ], [ -tw / 2, -g - th ], [ -tw / 2, g ], [ g, -th / 2 ], [ -g - tw, -th / 2 ]);
+			const over = ([ dx, dy ]) => {
+				const box = { left: x + dx, right: x + dx + tw, top: y + dy, bottom: y + dy + th };
+				return [ ...names, ...taken ].filter((n) => box.left < n.right && n.left < box.right && box.top < n.bottom && n.top < box.bottom);
+			};
+			let best = spots[0];
+			let bh = over(best).length;
+			for (const sp of spots.slice(1)) {
+				if (!bh) break;
+				const h2 = over(sp).length;
+				if (h2 < bh) {
+					best = sp;
+					bh = h2;
+				}
+			}
+			t.style.left = `${best[0].toFixed(1)}px`;
+			t.style.top = `${best[1].toFixed(1)}px`;
+			for (const n of over(best)) if (n.el) dimNow.add(n.el);
+			taken.push({ left: x + best[0], right: x + best[0] + tw, top: y + best[1], bottom: y + best[1] + th });
 		}
+		for (const el of flareDimmed) if (!dimNow.has(el)) el.classList.remove("under-flare");
+		for (const el of dimNow) el.classList.add("under-flare");
+		flareDimmed = dimNow;
 		startFlares(now);
 	}
 
@@ -480,7 +522,14 @@ export function createDroughtFx(THREE, { data, basins, world, container, labels,
 		},
 		// For tests and the camera follow.
 		stats: () => ({ ...stats, mix: U.uFrontMix.value, on: U.uFrontOn.value, dust: dustPts.visible ? dustLive : 0 }),
-		flares: () => ({ active: slots.filter((s) => s.f).map((s) => ({ id: s.f.r.id, kind: s.f.kind, month: data.months[s.f.i] })), queued: queue.map((f) => f.r.id), fired: fired.slice() }),
+		flares: () => {
+			// Flare labels that overlap a lake name still at full strength, or another flare label.
+			const ov = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+			const texts = slots.filter((s) => s.f && s.el.lastChild.textContent && s.el.style.visibility !== "hidden").map((s) => ({ id: s.f.r.id, r: s.el.lastChild.getBoundingClientRect() }));
+			const names = [ ...labels.layer.querySelectorAll(".lbl-text:not(.far)") ].filter((n) => n.closest(".lbl").style.display !== "none" && !/under-(flare|path|record)/.test(n.className)).map((n) => ({ name: n.textContent, r: n.getBoundingClientRect() }));
+			const clash = texts.flatMap((t, i) => [ ...names.filter((n) => ov(t.r, n.r)).map((n) => `${t.id}/${n.name}`), ...texts.slice(i + 1).filter((u) => ov(t.r, u.r)).map((u) => `${t.id}/${u.id}`) ]);
+			return { active: slots.filter((s) => s.f).map((s) => ({ id: s.f.r.id, kind: s.f.kind, month: data.months[s.f.i] })), queued: queue.map((f) => f.r.id), fired: fired.slice(), labels: texts.length, clash };
+		},
 		flareNow: () => slots.find((s) => s.f)?.f ?? null,
 		paths: () => paths.map((p) => ({ label: p.label, from: data.months[p.from], to: data.months[p.to], stops: p.stops.map((s) => ({ id: s.r.id, month: s.month, oa: s.oa })), visible: p.mesh.visible, alpha: p.alpha, drawn: p.drawn, shown: p.els.filter((e) => e.classList.contains("on")).length })),
 		dispose() {

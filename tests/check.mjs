@@ -419,6 +419,9 @@ async function droughtChecks(page) {
 		return best;
 	});
 	const fbusy = await flaresIn(busy.m);
+	await page.waitForTimeout(700);
+	const fclash = await debug3d(page, "c.flares()");
+	check("Flare labels clear the lake names and each other", fclash.labels > 0 && fclash.clash.length === 0, `${busy.m}: ${fclash.labels} labels${fclash.clash.length ? `; overlap ${fclash.clash.join(", ")}` : ""}`);
 	check("Flares: at most three play at once, the rest wait", busy.n > 3 && fbusy.active.length === 3 && fbusy.queued.length >= busy.n - 3, `${busy.m}: ${busy.n} crossings, ${fbusy.active.length} playing, ${fbusy.queued.length} queued`);
 	const recM = await page.evaluate(() => {
 		const d = window.droughtViz.data;

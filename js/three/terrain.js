@@ -245,11 +245,18 @@ vec4 gD1;`)
 		vec4 f = mix(texture2D(uFrontA, fuv), texture2D(uFrontB, fuv), uFrontMix);
 		float ds = f.r * 2.0 - 1.0;
 		float ws = f.b * 2.0 - 1.0;
-		float dIn = smoothstep(0.0, 0.35, ds) * f.g;
+		// Strength boosted so a moderately dry reservoir still reads against dry summer ground.
+		float dIn = smoothstep(0.0, 0.3, ds) * min(1.0, f.g * 1.5);
 		float wIn = smoothstep(0.0, 0.35, ws) * f.a * (1.0 - dIn);
 		vec3 base = diffuseColor.rgb;
 		float l = dot(base, vec3(0.3, 0.59, 0.11));
-		diffuseColor.rgb = mix(base, vec3(0.88, 0.62, 0.3) * (0.6 + 0.8 * l), dIn * 0.8 * uFrontOn);
+		diffuseColor.rgb = mix(base, vec3(0.86, 0.55, 0.24) * (0.5 + 0.75 * l), dIn * 0.9 * uFrontOn);
+		// A fine diagonal map hatch over the dry wash (a survey-sheet mark, not a glow), so it reads
+		// on tan ground too; it shows only at middle zooms (not as stripes close up, nor shimmer far out).
+		float hp = (vWPos.x - vWPos.z) * 0.5;
+		float hw = fwidth(hp);
+		float hatch = smoothstep(0.42 - hw, 0.42 + hw, abs(fract(hp) - 0.5)) * smoothstep(0.015, 0.05, hw) * (1.0 - smoothstep(0.12, 0.3, hw));
+		diffuseColor.rgb *= 1.0 - 0.2 * hatch * dIn * uFrontOn;
 		diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.55, 0.6) * (0.6 + 0.8 * l), wIn * 0.6 * uFrontOn);
 		float n = texture2D(uDetail, vWPos.xz * 0.018 + vec2(uFTime * 0.013, 0.0)).g;
 		float shim = 0.65 + 0.35 * sin(uFTime * 2.6 + n * 14.0);

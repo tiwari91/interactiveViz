@@ -1387,6 +1387,20 @@ async function main() {
 		})()`);
 		check("Rivers that reach a main stem end on the drawn main-stem ribbon", stemJoin.stems >= 8 && stemJoin.ribbon > 500 && stemJoin.off.length === 0, `${stemJoin.stems} joins, ${stemJoin.ribbon} ribbon points${stemJoin.off.length ? `; off the ribbon: ${stemJoin.off.join(", ")}` : ""}`);
 		check("No river line turns back on itself (no hooks over 120 degrees)", stemJoin.hooks.length === 0, stemJoin.hooks.join(", ") || "none");
+		// No square corners or stair-steps: over 1.5 units (about 2 km) either side of any point, no
+		// outflow or main-stem river turns by more than about 60 degrees.
+		{
+			const LIMIT = 60;
+			// (A stub under 3 units long, such as a short reach from a dam straight into the river below it, has no
+			// 1.5-unit window on both sides to measure over.)
+			const turns = (await debug3d(page, "c.riverTurns(1.5)")).filter((t) => (t.kind === "outflow" || t.kind === "main") && t.length >= 3);
+			// Clear Lake's outflow is the one known exception: its last reach climbs round a corner of the
+			// coarse elevation grid to Indian Valley, where the river cannot curve without running uphill.
+			const EXCEPT = { CLA: 80 };
+			const sharp = turns.filter((t) => t.turn > (EXCEPT[t.name] ?? LIMIT)).sort((a, b) => b.turn - a.turn);
+			check(`No outflow or main river turns more than ${LIMIT} degrees within 1.5 units`, turns.length >= 40 && sharp.length === 0,
+				`${turns.length} lines, sharpest ${Math.max(...turns.filter((t) => !(t.name in EXCEPT)).map((t) => t.turn)).toFixed(0)} (CLA ${turns.find((t) => t.name === "CLA")?.turn.toFixed(0)})${sharp.length ? `; over: ${sharp.map((t) => `${t.name} ${t.turn.toFixed(0)}`).join(", ")}` : ""}`);
+		}
 		// Close up, no ribbon stops square in the middle of a field: every end meets another river,
 		// a lake or the sea, or narrows away to nothing (a river fading into the valley floor).
 		const ribEnds = await debug3d(page, "c.ribbonEnds()");

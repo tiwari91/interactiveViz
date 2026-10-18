@@ -16,6 +16,9 @@ const RIVERS = {
 	Tuolumne: [ [ -120.42, 37.67 ], [ -120.65, 37.63 ], [ -121.00, 37.63 ], [ -121.18, 37.60 ] ],
 	Stanislaus: [ [ -120.53, 37.94 ], [ -120.57, 37.82 ], [ -120.93, 37.73 ], [ -121.25, 37.67 ] ],
 	Merced: [ [ -120.33, 37.52 ], [ -120.60, 37.40 ], [ -120.95, 37.35 ] ],
+	// Below Castaic: Castaic Creek meets it at Castaic Junction, then west past Piru (Piru Creek,
+	// from Pyramid), Fillmore and Santa Paula to the sea at Ventura.
+	"Santa Clara": [ [ -118.632, 34.425 ], [ -118.665, 34.410 ], [ -118.700, 34.399 ], [ -118.755, 34.403 ], [ -118.792, 34.398 ], [ -118.850, 34.385 ], [ -118.912, 34.382 ], [ -118.990, 34.364 ], [ -119.055, 34.346 ], [ -119.150, 34.272 ], [ -119.215, 34.245 ], [ -119.262, 34.234 ] ],
 };
 
 // Sacramento-San Joaquin Delta channels (approximate courses).
@@ -60,7 +63,10 @@ export function stemLines(world) {
 }
 
 // The dam whose release a main stem carries below it (the Delta channels carry the Sacramento).
-export const STEM_DAM = { Sacramento: "SHA", Feather: "ORO", Yuba: "BUL", American: "FOL", "San Joaquin": "MIL", Tuolumne: "DNP", Stanislaus: "NML", Merced: "NML" };
+export const STEM_DAM = { Sacramento: "SHA", Feather: "ORO", Yuba: "BUL", American: "FOL", "San Joaquin": "MIL", Tuolumne: "DNP", Stanislaus: "NML", Merced: "NML", "Santa Clara": "CAS" };
+// How far (world units) a stalled outflow is drawn on toward a main stem; the Central Valley
+// rivers draw from far off, a small coastal river only from its own valley.
+export const STEM_REACH = { "Santa Clara": 24 };
 
 function chaikin(p) {
 	const out = [ p[0] ];

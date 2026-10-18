@@ -5,6 +5,7 @@
 const STEP = 0.45;
 const OFFSET = 0.12; // lift above the ground
 const CLIMB_TOL = 0.45; // a path stops rather than climb more than this
+const PULL = 8; // longest straight run string pulling may lay across a zigzag
 
 export const KIND = { OUTFLOW: 0, INFLOW: 1, CHUTE: 2, MAIN: 3 };
 export const CLIMB = CLIMB_TOL;
@@ -239,4 +240,221 @@ export function placeStrip(st, seq, half, sampleY, pos) {
 			v++;
 		}
 	});
+}
+
+// Smooth a laid-out course ([x, y, z] points) at the scale of the elevation grid, so a path traced
+// cell by cell over the DEM runs in easy curves instead of stair-steps and square corners, and a
+// straight lead-in or link blends into the course it meets. Both ends stay where they are.
+// heightAt(x, z) gives the centreline height on the ground. With a climb limit, any stretch the
+// smoothing would lift up a valley side is eased back toward the traced line until the course
+// again never climbs more than that. alpha0 (per point, 0..1) limits where it may move at all.
+export function smoothCourse(seq, heightAt, { radius = 1.5, passes = 3, spacing = 0.3, climb = null, alpha0 = null } = {}) {
+	if (seq.length < 3) return seq;
+	// Resample evenly along the line (index-aligned original and smoothed copies).
+	const along = [ 0 ];
+	for (let i = 1; i < seq.length; i++) along.push(along[i - 1] + Math.hypot(seq[i][0] - seq[i - 1][0], seq[i][2] - seq[i - 1][2]));
+	const total = along[along.length - 1];
+	if (total < spacing * 3) return seq;
+	// A course that ends back near where it began (a walk that circled in a hollow) is left as it
+	// is: smoothing would draw the loop in on itself.
+	if (Math.hypot(seq[seq.length - 1][0] - seq[0][0], seq[seq.length - 1][2] - seq[0][2]) < 3) return seq;
+	const n = Math.max(3, Math.round(total / spacing) + 1);
+	const orig = [];
+	const a0 = [];
+	for (let k = 0, j = 0; k < n; k++) {
+		const d = total * k / (n - 1);
+		while (j < seq.length - 2 && along[j + 1] < d) j++;
+		const t = Math.min(1, Math.max(0, (d - along[j]) / ((along[j + 1] - along[j]) || 1)));
+		const p = seq[j];
+		const q = seq[j + 1];
+		orig.push([ p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t ]);
+		a0.push(alpha0 ? alpha0[j] + (alpha0[j + 1] - alpha0[j]) * t : 1);
+	}
+	// Pull the string first: where the traced line zigzags round a hollow or a low rise, run straight
+	// across instead, wherever that straight run stays as low as the line it replaces.
+	if (climb !== null) pull(orig, a0, heightAt, climb, Math.round(PULL / (total / (n - 1))));
+	// Repeated centred moving average.
+	const step = total / (n - 1);
+	const average = (r) => {
+		const K = Math.max(1, Math.round(r / step));
+		let sm = orig.map((p) => [ p[0], p[2] ]);
+		for (let pass = 0; pass < passes; pass++) {
+			const prev = sm;
+			// Past each end the line is mirrored through the end point, which so stays put while the
+			// points next to it are smoothed as fully as any other.
+			const get = (j) => {
+				if (j < 0) {
+					const q = prev[Math.min(n - 1, -j)];
+					return [ 2 * prev[0][0] - q[0], 2 * prev[0][1] - q[1] ];
+				}
+				if (j > n - 1) {
+					const q = prev[Math.max(0, 2 * (n - 1) - j)];
+					return [ 2 * prev[n - 1][0] - q[0], 2 * prev[n - 1][1] - q[1] ];
+				}
+				return prev[j];
+			};
+			sm = prev.map((p, i) => {
+				if (i === 0 || i === n - 1) return p;
+				let sx = 0;
+				let sz = 0;
+				for (let m = -K; m <= K; m++) {
+					const q = get(i + m);
+					sx += q[0];
+					sz += q[1];
+				}
+				return [ sx / (2 * K + 1), sz / (2 * K + 1) ];
+			});
+		}
+		return sm;
+	};
+	// Coarse to fine: where the smoothest line would climb a valley side, it eases (continuously)
+	// toward a less smoothed one, and last of all to the traced line.
+	const levels = [ average(radius) ];
+	if (climb !== null) levels.push(average(radius / 2), average(radius / 4), orig.map((p) => [ p[0], p[2] ]));
+	const top = levels.length - 1;
+	const lvl = new Float32Array(n);
+	const at = (i) => {
+		const a = a0[i];
+		const t = lvl[i];
+		if (a <= 0 || (top > 0 && t >= top)) return orig[i];
+		const f = Math.floor(t);
+		const u = t - f;
+		const A = levels[f][i];
+		const B = levels[Math.min(top, f + 1)][i];
+		const x = orig[i][0] + (A[0] + (B[0] - A[0]) * u - orig[i][0]) * a;
+		const z = orig[i][2] + (A[1] + (B[1] - A[1]) * u - orig[i][2]) * a;
+		return [ x, heightAt(x, z), z ];
+	};
+	const out = orig.map((_, i) => at(i));
+	if (climb === null) return out;
+	const K = Math.max(1, Math.round(radius / step));
+	// Points where the traced line itself rises (within the router's own tolerance) stand as they are.
+	const accepted = new Set();
+	for (let iter = 0; iter < 4000; iter++) {
+		let low = Infinity;
+		let lowAt = 0;
+		let bad = -1;
+		for (let i = 0; i < n; i++) {
+			if (out[i][1] > low + climb && !accepted.has(i)) {
+				bad = i;
+				break;
+			}
+			if (out[i][1] < low) {
+				low = out[i][1];
+				lowAt = i;
+			}
+		}
+		if (bad < 0) break;
+		// Ease toward the finer line around the offending point (and the stretch before it, where
+		// the line came down), tapering off either side so the line stays smooth.
+		let moved = false;
+		for (let i = Math.max(0, bad - 4 * K); i <= Math.min(n - 1, bad + 2 * K); i++) {
+			if (lvl[i] >= top) continue;
+			const d = i < bad ? (bad - i) / (4 * K) : (i - bad) / (2 * K);
+			lvl[i] = Math.min(top, lvl[i] + 0.25 * Math.min(1, 1.5 * (1 - d)));
+			out[i] = at(i);
+			moved = true;
+		}
+		if (!moved || lvl[bad] >= top) {
+			// The traced line itself is all that is left here: ease back the stretch from the low point.
+			let any = false;
+			for (let i = lowAt; i < bad; i++) {
+				if (lvl[i] >= top) continue;
+				lvl[i] = top;
+				out[i] = at(i);
+				any = true;
+			}
+			if (!any) accepted.add(bad);
+		}
+	}
+	return out;
+}
+
+// String pulling for smoothCourse (in place on the evenly spaced points): replace a stretch i..j by
+// the straight run between its ends when that run is shorter, never rises more than the climb
+// limit above the low point reached so far, and never dips below the stretch's own lowest point
+// (so nothing after it newly counts as climbing).
+function pull(pts, a0, heightAt, climb, M) {
+	const n = pts.length;
+	const step = Math.hypot(pts[1][0] - pts[0][0], pts[1][2] - pts[0][2]) || 0.3;
+	// Chord i..j stays within the climb limit above the low so far, and no lower than the stretch.
+	const chordOk = (i, j, low) => {
+		let lowIJ = Infinity;
+		for (let k = i; k <= j; k++) lowIJ = Math.min(lowIJ, pts[k][1]);
+		for (let k = i + 1; k < j; k++) {
+			if (a0[k] < 1) return false;
+			const t = (k - i) / (j - i);
+			const h = heightAt(pts[i][0] + (pts[j][0] - pts[i][0]) * t, pts[i][2] + (pts[j][2] - pts[i][2]) * t);
+			if (h > Math.min(low, lowIJ) + climb || h < lowIJ - 0.01) return false;
+		}
+		return a0[i] === 1 && a0[j] === 1;
+	};
+	const lay = (i, j) => {
+		const [ ax, , az ] = pts[i];
+		const [ bx, , bz ] = pts[j];
+		for (let k = i + 1; k < j; k++) {
+			const t = (k - i) / (j - i);
+			const x = ax + (bx - ax) * t;
+			const z = az + (bz - az) * t;
+			pts[k] = [ x, heightAt(x, z), z ];
+		}
+	};
+	// Loops first: where the line wanders off and comes back near itself (an overshoot on a flat
+	// valley floor), cut straight across the neck.
+	{
+		let low = pts[0][1];
+		const far = Math.round(20 / step);
+		for (let i = 0; i < n - 2; i++) {
+			low = Math.min(low, pts[i][1]);
+			// Not right at the head: the river leaves the dam the way it shows.
+			if (i * step < 4) continue;
+			for (let j = Math.min(n - 1, i + far); j > i + Math.round(2 / step); j--) {
+				const d = Math.hypot(pts[j][0] - pts[i][0], pts[j][2] - pts[i][2]);
+				if (d > 4 || d * 2.5 > (j - i) * step) continue;
+				if (!chordOk(i, j, low)) continue;
+				lay(i, j);
+				for (let k = i; k <= j; k++) low = Math.min(low, pts[k][1]);
+				i = j - 1;
+				break;
+			}
+		}
+	}
+	let low = pts[0][1];
+	for (let i = 0; i < n - 2; ) {
+		let best = -1;
+		let lowIJ = pts[i][1];
+		let path = 0;
+		for (let j = i + 1; j < Math.min(n, i + M + 1); j++) {
+			lowIJ = Math.min(lowIJ, pts[j][1]);
+			path += Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][2] - pts[j - 1][2]);
+			if (a0[j] < 1 || a0[i] < 1) break;
+			if (j < i + 2) continue;
+			const chord = Math.hypot(pts[j][0] - pts[i][0], pts[j][2] - pts[i][2]);
+			if (path < chord * 1.03) continue;
+			let ok = true;
+			for (let k = i + 1; k < j && ok; k++) {
+				const t = (k - i) / (j - i);
+				const x = pts[i][0] + (pts[j][0] - pts[i][0]) * t;
+				const z = pts[i][2] + (pts[j][2] - pts[i][2]) * t;
+				const h = heightAt(x, z);
+				if (h > Math.min(low, lowIJ) + climb || h < lowIJ - 0.01) ok = false;
+			}
+			if (ok) best = j;
+		}
+		if (best > 0) {
+			const [ ax, , az ] = pts[i];
+			const [ bx, , bz ] = pts[best];
+			for (let k = i + 1; k < best; k++) {
+				const t = (k - i) / (best - i);
+				const x = ax + (bx - ax) * t;
+				const z = az + (bz - az) * t;
+				pts[k] = [ x, heightAt(x, z), z ];
+			}
+			for (let k = i; k <= best; k++) low = Math.min(low, pts[k][1]);
+			i = best;
+		} else {
+			i++;
+			low = Math.min(low, pts[i][1]);
+		}
+	}
 }

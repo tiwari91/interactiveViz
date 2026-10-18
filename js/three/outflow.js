@@ -3,8 +3,8 @@
 // water down spillway chutes when a lake is above ~90% full, mist at the base,
 // and small warm lights on the dam at night. Width, speed, foam and mist follow
 // the same release value that drives the dam's sound (release.js).
-import { createRouter, stripGeometry, placeStrip, KIND, ACROSS, CLIMB } from "./outflowPaths.js";
-import { stemLines, STEM_DAM } from "./mainRivers.js";
+import { createRouter, stripGeometry, placeStrip, smoothCourse, KIND, ACROSS, CLIMB } from "./outflowPaths.js";
+import { stemLines, STEM_DAM, STEM_REACH } from "./mainRivers.js";
 
 const RIBBON_VERT = `
 	attribute float aSide;
@@ -249,6 +249,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 	const stems = stemLines(world);
 	for (const line of stems) {
 		for (const p of line) {
+			p.reach = STEM_REACH[line.name] ?? Infinity;
 			stemPts.push(p);
 			const key = `${Math.floor(p[0] / STEM_CELL)},${Math.floor(p[1] / STEM_CELL)}`;
 			if (!stemGrid.has(key)) stemGrid.set(key, []);
@@ -279,7 +280,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		let bd = Infinity;
 		for (const p of stemPts) {
 			const d = Math.hypot(p[0] - x, p[1] - z);
-			if (d < bd) {
+			if (d < bd && d < p.reach) {
 				bd = d;
 				best = p;
 			}
@@ -298,6 +299,10 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		// A river that reaches another lake ends at its shore.
 		const enters = pts.findIndex(([ x, z ], i) => i > 2 && lakeAt(x, z, own));
 		if (enters > 0) return pts.slice(0, enters + 1);
+		// A river whose own descent already crosses a small coastal main stem ends where it meets it
+		// (the Central Valley rivers' outflows run on down their canyons to where they join).
+		const meets = pts.findIndex(([ x, z ], i) => i > 2 && nearStem(x, z, 1.2)?.reach < Infinity);
+		if (meets > 0) return [ ...pts.slice(0, meets + 1), nearStem(...pts[meets], 1.2) ];
 		const out = pts.slice();
 		let [ px, pz ] = out[out.length - 1];
 		if (nearStem(px, pz, 1.2) || lakeAt(px, pz, own)) return out;
@@ -506,6 +511,31 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		for (let k = bottom; k >= 0 && k !== start; k = prev[k]) route.push(own.toWorld(ua + Math.floor(k / nv) * H, va + (k % nv) * H));
 		return out.concat(route.reverse());
 	}
+	// Where (well down the line) it turns by more than about 70 degrees over 1.5 units either side
+	// just after its lowest point so far, i.e. it can only go on by climbing round a corner: the
+	// last point on that low flat.
+	function sharpLow(seq) {
+		const al = [ 0 ];
+		for (let i = 1; i < seq.length; i++) al.push(al[i - 1] + Math.hypot(seq[i][0] - seq[i - 1][0], seq[i][2] - seq[i - 1][2]));
+		let low = Infinity;
+		for (let i = 0, j = 0, k = 0; i < seq.length; i++) {
+			low = Math.min(low, seq[i][1]);
+			while (j < i && al[i] - al[j] > 1.5) j++;
+			while (k < seq.length - 1 && al[k] - al[i] < 1.5) k++;
+			if (j === i || k === i || al[i] < 12) continue;
+			const ax = seq[i][0] - seq[j][0];
+			const az = seq[i][2] - seq[j][2];
+			const bx = seq[k][0] - seq[i][0];
+			const bz = seq[k][2] - seq[i][2];
+			const cos = (ax * bx + az * bz) / ((Math.hypot(ax, az) * Math.hypot(bx, bz)) || 1);
+			if (cos >= 0.34) continue;
+			// Fade out on the flat just before the corner, if it climbs there from its low.
+			for (let m = i; m >= j; m--) if (seq[m][1] < low + 0.08) return m;
+		}
+		return -1;
+	}
+	// Smoothing radius: about one cell of the elevation grid (finer grid at high quality).
+	const SMOOTH = quality === "low" ? 2.2 : 2;
 	const order = list.map((_, i) => i).sort((a, b) => list[b].r.capacity - list[a].r.capacity);
 	for (const di of order) {
 		const b = list[di];
@@ -558,6 +588,9 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				break;
 			}
 		}
+		// The traced course follows the elevation grid cell by cell: smooth it at that scale (and blend
+		// the lead-in from the dam into it), keeping both ends and never letting it climb.
+		seq = smoothCourse(seq, ground, { radius: SMOOTH, climb: CLIMB * 0.97 });
 		outSeq[di] = seq;
 		for (const p of seq) {
 			const key = cell(p[0], p[2]);
@@ -577,7 +610,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			if (!joins[di] && nearStem(seq[seq.length - 1][0], seq[seq.length - 1][2], 1.6)) {
 				let bestK = seq.length - 1;
 				let bestD = Infinity;
-				for (let k = seq.length - 1; k >= Math.max(3, seq.length - 12); k--) {
+				// Over its last few units (the course is evenly spaced, about 0.3 apart).
+				for (let k = seq.length - 1, d0 = 0; k >= 3 && d0 < 9; d0 += Math.hypot(seq[k][0] - seq[k - 1][0], seq[k][2] - seq[k - 1][2]), k--) {
 					const q = nearStem(seq[k][0], seq[k][2], 2.5);
 					const d = q ? Math.hypot(q[0] - seq[k][0], q[1] - seq[k][2]) : Infinity;
 					if (d < bestD - 0.02) {
@@ -592,6 +626,24 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				const dx = t[0] - h[0];
 				const dz = t[2] - h[2];
 				if (q && (q[0] - t[0]) * dx + (q[1] - t[2]) * dz >= -0.26 * Math.hypot(q[0] - t[0], q[1] - t[2]) * Math.hypot(dx, dz)) onto = q;
+				// Meet the stem at a slant, a little way down it, rather than square on to the nearest point.
+				if (onto) {
+					const hl = Math.hypot(dx, dz) || 1;
+					let bestCos = -2;
+					for (let i = -1; i <= 1; i++) {
+						for (let j = -1; j <= 1; j++) {
+							for (const p of stemGrid.get(`${Math.floor(t[0] / STEM_CELL) + i},${Math.floor(t[2] / STEM_CELL) + j}`) ?? []) {
+								const d = Math.hypot(p[0] - t[0], p[1] - t[2]);
+								if (d < 0.5 || d > 3) continue;
+								const cos = ((p[0] - t[0]) * dx + (p[1] - t[2]) * dz) / (d * hl);
+								if (cos > bestCos + 0.02) {
+									bestCos = cos;
+									onto = p;
+								}
+							}
+						}
+					}
+				}
 			}
 			const tail = seq[seq.length - 1];
 			if (onto && Math.hypot(onto[0] - tail[0], onto[1] - tail[2]) > 0.3) {
@@ -601,6 +653,29 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 					const z = tail[2] + (onto[1] - tail[2]) * k / n;
 					seq.push([ x, ground(x, z), z ]);
 				}
+				// Curve into that last reach rather than turning onto it at a corner (only the tail moves:
+				// other rivers may already end on the line further up).
+				const m = seq.length - n - 1;
+				const a0 = seq.map((_, i) => smooth(m - 20, m - 4, i));
+				const s2 = smoothCourse(seq, ground, { radius: SMOOTH, climb: CLIMB * 0.97, alpha0: a0 });
+				seq.length = 0;
+				seq.push(...s2);
+			}
+			// A river that would fade out anyway, and whose only way on from a flat low turns sharply
+			// back up over a rise (the grid's ridges are too coarse to show where it really goes), fades
+			// out on that flat instead of climbing round a square corner.
+			if (!joins[di] && !nearStem(seq[seq.length - 1][0], seq[seq.length - 1][2], 1.6) && !lakeAt(seq[seq.length - 1][0], seq[seq.length - 1][2], b, 1.4) && !atSea(seq[seq.length - 1][0], seq[seq.length - 1][2])) {
+				const cut = sharpLow(seq);
+				// Rivers that join this one must all join above the cut.
+				const joinAt = (sq) => {
+					const e = sq[sq.length - 1];
+					let bi = 0;
+					seq.forEach((p, i) => {
+						if (Math.hypot(p[0] - e[0], p[2] - e[2]) < Math.hypot(seq[bi][0] - e[0], seq[bi][2] - e[2])) bi = i;
+					});
+					return bi;
+				};
+				if (cut > 0 && list.every((o, oi) => joins[oi] !== b.r.id || (outSeq[oi] && joinAt(outSeq[oi]) < cut - 3))) seq.length = cut + 1;
 			}
 			// How the river ends: at another dam's river, a main stem, a lake, or fading out on
 			// flat valley ground. Only the last fades; the others run on into what they meet.
@@ -752,7 +827,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				for (const seq of pool) {
 					for (const q of seq) {
 						const d = Math.hypot(q[0] - p[0], q[2] - p[2]);
-						if (d > 0.5 && ((q[0] - p[0]) * hx + (q[2] - p[2]) * hz) / (d * hl) < -0.26) continue;
+						if (d > 0.5 && ((q[0] - p[0]) * hx + (q[2] - p[2]) * hz) / (d * hl) < 0.34) continue;
 						if (d < bd) {
 							bd = d;
 							best = q;
@@ -799,6 +874,8 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			else r.seq.unshift(...link.reverse());
 		}
 	}
+	// Gap links are straight reaches: let each main stem curve into them.
+	for (const r of mainRuns) r.seq = smoothCourse(r.seq, (x, z) => ground2(x, z) + router.OFFSET, { radius: SMOOTH * 1.5, spacing: 0.5 });
 	for (const { line, di, wide, seq, taper } of mainRuns) {
 		{
 			// The ribbon carries the main stem from close up to the state view (where a cheap line
@@ -1023,6 +1100,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 		// biggest step between neighbouring centre points (a gap in the line).
 		// For tests: centre points of the main-stem ribbons.
 		// Each dam's outflow centreline (for the flow pulses).
+		centreOf: (di) => outSeq[di],
 		outflowLines: () => strips.filter((st) => st.kind === KIND.OUTFLOW).map((st) => ({ dam: st.dam, pts: st.centre })),
 		inflowLines: () => strips.filter((st) => st.kind === KIND.INFLOW).map((st) => ({ dam: st.dam, pts: st.centre })),
 		stemPoints: () => strips.filter((st) => st.kind === KIND.MAIN).flatMap((st) => st.centre.map((p) => [ p[0], p[2] ])),
@@ -1056,6 +1134,30 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			for (let c = 0; c < cols; c++) for (let a = 0; a < 3; a++) drawn[a] += positions[(st.start + c) * 3 + a] / cols;
 			return { drawn, dam: st.dam, kind: st.kind, start: st.centre[0], end: st.centre[st.centre.length - 1], gap, minY, inLake, turn, weight: weightOf(own) };
 		}),
+		// For tests: the sharpest turn along each outflow, main-stem and chute run-out line, between
+		// headings over a window of win units either side, and where it is.
+		turns(win = 1.5) {
+			return strips.filter((st) => st.kind !== KIND.INFLOW).map((st) => {
+				const c = st.centre;
+				const al = st.alongs;
+				let turn = 0;
+				let at = null;
+				for (let i = 0, j = 0, k = 0; i < c.length; i++) {
+					while (j < i && al[i] - al[j] > win) j++;
+					while (k < c.length - 1 && al[k] - al[i] < win) k++;
+					if (j === i || k === i) continue;
+					const a = [ c[i][0] - c[j][0], c[i][2] - c[j][2] ];
+					const b = [ c[k][0] - c[i][0], c[k][2] - c[i][2] ];
+					const cos = (a[0] * b[0] + a[1] * b[1]) / ((Math.hypot(...a) * Math.hypot(...b)) || 1);
+					const t = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+					if (t > turn) {
+						turn = t;
+						at = [ +c[i][0].toFixed(2), +c[i][2].toFixed(2), +al[i].toFixed(2) ];
+					}
+				}
+				return { kind: [ "outflow", "inflow", "chute", "main" ][st.kind], name: st.name ?? list[st.dam].r.id, turn: +turn.toFixed(1), at, length: +st.length.toFixed(1) };
+			});
+		},
 		bankPoints,
 		nearChute,
 		router,
@@ -1168,6 +1270,7 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 			let maxGap = 0;
 			let maxClimb = 0;
 			let worst = null;
+			let climbAt = null;
 			const P = positions;
 			const cols = ACROSS.length;
 			for (const st of strips) {
@@ -1194,11 +1297,14 @@ export function createOutflow(THREE, basins, dams, world, shared, quality) {
 				if (st.kind === KIND.MAIN) continue;
 				let low = Infinity;
 				for (const p of st.centre) {
-					maxClimb = Math.max(maxClimb, p[1] - low);
+					if (p[1] - low > maxClimb) {
+						maxClimb = p[1] - low;
+						climbAt = `${list[st.dam].r.id} ${[ "outflow", "inflow", "chute", "main stem" ][st.kind]} at ${p[0].toFixed(0)},${p[2].toFixed(0)}`;
+					}
 					low = Math.min(low, p[1]);
 				}
 			}
-			return { maxGap: +maxGap.toFixed(3), maxClimb: +Math.max(0, maxClimb).toFixed(3), worst, strips: strips.length };
+			return { maxGap: +maxGap.toFixed(3), maxClimb: +Math.max(0, maxClimb).toFixed(3), worst, climbAt, strips: strips.length };
 		},
 	};
 }

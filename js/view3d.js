@@ -1267,6 +1267,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			ribbonEnds: () => outflow.ribbonEnds().map((e) => ({ ...e, ll: world.unproject(e.x, e.z).map((v) => +v.toFixed(3)) })),
 			// For tests, at a month: outflow start to dam toe, inflow to the current water (vertical
 			// gap above the water, 0 once it reaches it or the lake is empty) and gaps inside a line.
+			riverTurns: (win) => outflow.turns(win),
 			riverLinks: () => outflow.links().map((r) => ({ ...r, id: basins.basins[r.dam].r.id })),
 			stemPoints: () => outflow.stemPoints(),
 			damInfo: (id) => { const d = dams.info.get(id); return { toePoint: d.toePoint, center: d.center, toeU: d.toeU, faceBase: d.faceBase, spillBottom: d.spillBottom, chute: Boolean(d.chute), type: d.type }; },
@@ -1360,6 +1361,9 @@ export function createView3D(container, data, store, tooltip, audio) {
 			mainRivers: () => mainRivers.names,
 			waterways: () => ({ delta: mainRivers.delta, canals: mainRivers.canals, ends: mainRivers.ends }),
 			project: (ll) => world.project(ll),
+			unproject: (x, z) => world.unproject(x, z),
+			surface: (x, z) => outflow.router.surface(x, z),
+			centreOf: (id) => outflow.centreOf(basins.basins.findIndex((b) => b.r.id === id)),
 			// For tests: is the terrain cell at a lon/lat drawn as sea?
 			isSea(lon, lat) {
 				const e = world.elev;

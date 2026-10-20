@@ -824,7 +824,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				shared.uMoonDir.value.set(f.x / h * Math.cos(el), Math.sin(el), f.z / h * Math.cos(el));
 			}
 			riparian.update(sc.camera, groundAt(sc.camera.position.x, sc.camera.position.z));
-			life.update(sc.camera, groundAt(sc.camera.position.x, sc.camera.position.z), vScale, shared.uTime.value);
+			life.update(sc.camera, groundAt(sc.camera.position.x, sc.camera.position.z), vScale, shared.uTime.value, container.clientHeight);
 			sc.updateSun();
 
 			// Ease toward the target month.

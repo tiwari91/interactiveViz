@@ -1241,15 +1241,32 @@ async function main() {
 			};
 			await debug3d(page, "c.focus('FOL')");
 			await waitStill(page, 1500);
-			const lifeNear = await debug3d(page, "({ on: c.sc.scene.getObjectByName('life').visible, ...c.life().stats })");
-			check("Close to a dam: traffic, boats, people, towers and animals are drawn", lifeNear.on && lifeNear.cars > 30 && lifeNear.boats > 30 && lifeNear.people + lifeNear.anglers > 30 && lifeNear.towers > 30 && lifeNear.waterbirds > 100 && lifeNear.raptors > 20 && lifeNear.deer > 20 && lifeNear.cattle > 20,
-				`${lifeNear.cars} vehicles, ${lifeNear.boats} boats, ${lifeNear.people} visitors, ${lifeNear.anglers} anglers, ${lifeNear.towers} towers, ${lifeNear.waterbirds} waterbirds, ${lifeNear.raptors} raptors, ${lifeNear.deer} deer, ${lifeNear.cattle} cattle`);
+			const lifeNear = await debug3d(page, "({ on: c.sc.scene.getObjectByName('life').visible, cars: ['cars', 'pickups', 'people', 'shelters', 'huts'].filter((n) => c.sc.scene.getObjectByName('life-' + n)), ...c.life().stats })");
+			check("Close to a dam: boats, marinas, anglers, towers and animals are placed; no traffic, car parks or overlooks", lifeNear.on && lifeNear.cars.length === 0 && lifeNear.boats > 30 && lifeNear.docks > 20 && lifeNear.anglers > 30 && lifeNear.towers > 30 && lifeNear.waterbirds > 100 && lifeNear.raptors > 20 && lifeNear.deer > 20 && lifeNear.cattle > 20,
+				`${lifeNear.boats} boats, ${lifeNear.houseboats} houseboats, ${lifeNear.docks} marinas, ${lifeNear.anglers} anglers, ${lifeNear.towers} towers on ${lifeNear.lines} lines, ${lifeNear.waterbirds} waterbirds, ${lifeNear.raptors} raptors, ${lifeNear.deer} deer, ${lifeNear.cattle} cattle${lifeNear.cars.length ? `; also ${lifeNear.cars.join(", ")}` : ""}`);
 			const ground = await debug3d(page, "(() => { const l = c.life(); return { max: l.groundMax, n: l.groundN }; })()");
-			check("Nothing stands on steep ground: grade under every person, animal, parked car, building and tower", ground.n > 500 && ground.max <= 0.2, `${ground.n} on the ground; steepest ${(ground.max * 100).toFixed(1)}% (limit 20%)`);
+			check("Nothing stands on steep ground: grade under every angler, animal and tower", ground.n > 300 && ground.max <= 0.2, `${ground.n} on the ground; steepest ${(ground.max * 100).toFixed(1)}% (limit 20%)`);
+			// Near true size: no model drawn more than 4x life, boats and marinas at most 2x.
+			const caps = await debug3d(page, "c.life().caps");
+			const worst = Object.entries(caps).sort((a, b) => b[1] - a[1])[0];
+			check("Life is drawn near true size: nothing over 4x, boats and marinas at most 2x", worst[1] <= 4.01 && [ "boats", "houseboats", "docks", "towers" ].every((n) => caps[n] <= 2.01), Object.entries(caps).map(([ k, v ]) => `${k} ${v}x`).join(", "));
+			// The on-screen size test: the shaders' pixel scale matches the camera and canvas, and at
+			// this close view something is still big enough to draw (none of it under the threshold).
+			const px = await debug3d(page, "(() => { const l = c.life(); const h = c.sc.renderer.domElement.clientHeight; return { u: l.uniforms.pxScale, want: h / (2 * Math.tan(c.sc.camera.fov * Math.PI / 360)), drawn: l.drawn, min: l.minPx[0], mpu: l.metresPerUnit }; })()");
+			const shown = Object.entries(px.drawn).filter(([ , v ]) => v.n > 0);
+			check("Life is drawn only while at least ~3 px on screen, and the close view still shows some", Math.abs(px.u - px.want) < 1 && shown.length > 0 && shown.every(([ , v ]) => v.min >= px.min),
+				`${shown.map(([ k, v ]) => `${k} ${v.n} (>= ${v.min.toFixed(1)} px)`).join(", ")}; ${(px.u / px.mpu / 8.8).toFixed(2)} px per metre 8.8 units away`);
 			const full = await afloat("2017-05");
 			const dry = await afloat("2015-09");
 			check("Boats, docks and waterbirds sit on the water at Folsom, full (May 2017) and low (Sep 2015)", full.boats >= 3 && dry.boats >= 3 && full.dock && dry.dock && full.bad === 0 && dry.bad === 0,
 				`May 2017: ${full.n} afloat (${full.boats} boats), ${full.bad} off the water; Sep 2015: ${dry.n} afloat (${dry.boats} boats), ${dry.bad} off the water`);
+			check("Fewer boats out on a low lake", dry.boats < full.boats, `${full.boats} full, ${dry.boats} low`);
+			// Marinas sit at the month's shoreline: a short gangway from a water's edge (not out on the
+			// dry bed), and the concrete ramp stops at its real length.
+			const marinas = await debug3d(page, "c.life().marinas");
+			const afloatM = marinas.filter((m) => m.dock);
+			check("Marinas float just off the current shoreline; ramps end at their real length", afloatM.length > 0 && afloatM.every((m) => m.gangway <= 700 && m.edgeAbove < 0.01) && marinas.every((m) => m.concrete <= 300),
+				`${afloatM.length} of ${marinas.length} marinas afloat; longest gangway ${Math.max(...afloatM.map((m) => m.gangway))} m; concrete ${Math.max(...marinas.map((m) => m.concrete))} m`);
 			await setState(page, { dateIndex: await monthIndex(page, "2014-09") });
 		}
 		const aniso = await debug3d(page, "[ c.anisotropy(), c.renderer.capabilities.getMaxAnisotropy() ]");
@@ -1645,7 +1662,7 @@ async function main() {
 					check("Low quality keeps trees light", ripLow.bank <= 2200 && ripLow.forest <= 1600 && ripLow.shrub <= 1200 && ripLow.rock <= 400, `${ripLow.bank} bank + ${ripLow.forest} forest trees, ${ripLow.shrub} shrubs, ${ripLow.rock} boulders`);
 					check("Bank trees are skipped at the overview", !(await debug3d(page, "c.sc.scene.getObjectByName('riparian').visible")));
 					const lifeLow = await debug3d(page, "c.life().stats");
-					check("Low quality draws no dam-side life", lifeLow.cars === 0 && lifeLow.boats === 0 && lifeLow.waterbirds === 0, JSON.stringify({ cars: lifeLow.cars, boats: lifeLow.boats }));
+					check("Low quality draws no dam-side life", lifeLow.boats === 0 && lifeLow.anglers === 0 && lifeLow.towers === 0 && lifeLow.waterbirds === 0, JSON.stringify({ boats: lifeLow.boats, towers: lifeLow.towers }));
 					const phoneNamed = await page.evaluate(() => {
 						const byName = new Map(window.droughtViz.data.reservoirs.map((r) => [ r.name.replace(/ \(.*\)$/, "").replace(/ (Dam|Reservoir)$/, ""), r ]));
 						return [ ...document.querySelectorAll(".labels-3d .lbl") ].filter((e) => e.style.display !== "none" && !e.querySelector(".lbl-text").classList.contains("far")).map((e) => byName.get(e.querySelector(".lbl-name").textContent)).filter(Boolean).map((r) => ({ id: r.id, lat: r.lat }));

@@ -452,13 +452,19 @@ export function createLife(THREE, { basins, dams, outflow, router, world, ripari
 		const scale = d.scale;
 
 		// Traffic on the crest road: a car or two and a pickup driving slowly, in their lanes.
+		// A concrete dam's gated spillway piers stand across the middle of the crest, so there each
+		// car keeps to the stretch on one side of them.
 		const road = d.road;
-		const roadLen = road.reduce((a, p, i) => (i ? a + Math.hypot(p[0] - road[i - 1][0], p[1] - road[i - 1][1]) : 0), 0);
+		const lengthOf = (pts) => pts.reduce((a, p, i) => (i ? a + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0);
+		const N = road.length - 1;
+		const runs = d.concrete ? [ road.slice(0, Math.floor(N * 0.33) + 1), road.slice(Math.ceil(N * 0.67)) ] : [ road ];
+		const roadLen = lengthOf(road);
 		const nMove = roadLen > 6 ? 3 : roadLen > 2.5 ? 2 : 1;
 		for (let k = 0; k < nMove; k++) {
 			const set = k === 1 ? pickups : cars;
-			const i = set.add(road[0][0], d.crest, road[0][1], 0, pick(PAINT));
-			if (i >= 0) site.movers.push({ set, i, s0: r(), dir: k % 2 ? -1 : 1, speed: 0.22 + r() * 0.1, len: roadLen });
+			const run = runs[k % runs.length];
+			const i = set.add(run[0][0], d.crest, run[0][1], 0, pick(PAINT));
+			if (i >= 0) site.movers.push({ set, i, road: run, s0: r(), speed: 0.22 + r() * 0.1, len: lengthOf(run) });
 			stats.cars++;
 		}
 
@@ -481,6 +487,14 @@ export function createLife(THREE, { basins, dams, outflow, router, world, ripari
 				const z = e[1] + out[1] * dist + down[1] * lat;
 				const g = clearAt(x, z, 1.1);
 				if (g < 0) continue;
+				// The access road from the crest must not cross the spillway chute or a river.
+				let crosses = false;
+				for (let k = 1; k < 8 && !crosses; k++) {
+					const px = e[0] + (x - e[0]) * k / 8;
+					const pz = e[1] + (z - e[1]) * k / 8;
+					crosses = outflow.nearChute(px, pz, 0.3) || onRiver(px, pz, 0.1);
+				}
+				if (crosses) continue;
 				overlook = { x, z, g, e, out };
 			}
 			if (overlook) break;
@@ -513,6 +527,7 @@ export function createLife(THREE, { basins, dams, outflow, router, world, ripari
 			const nPark = 2 + Math.floor(r() * 4);
 			for (let k = 0; k < nPark; k++) {
 				const [ px, , pz ] = P(-W / 2 + 0.25 + k * 0.32, D * 0.2);
+				if (gentle(px, pz, 0.12) < 0) continue;
 				const set = r() < 0.3 ? pickups : cars;
 				set.add(px, S(px, pz), pz, ang + Math.PI / 2 + (r() - 0.5) * 0.08, pick(PAINT));
 				stats.cars++;
@@ -525,14 +540,17 @@ export function createLife(THREE, { basins, dams, outflow, router, world, ripari
 				for (let k = 0; k < nv; k++) {
 					const lx = sx + toDam[0] / tl * 0.12 + (toDam[1] / tl) * (k - nv / 2) * 0.07;
 					const lz = sz + toDam[1] / tl * 0.12 - (toDam[0] / tl) * (k - nv / 2) * 0.07;
-					people.add(lx, S(sx, sz), lz, face(toDam[0], toDam[1]) + (r() - 0.5) * 0.6, pick(SHIRTS));
+					if (gentle(lx, lz, 0.05) < 0) continue;
+					people.add(lx, S(lx, lz), lz, face(toDam[0], toDam[1]) + (r() - 0.5) * 0.6, pick(SHIRTS));
 					stats.people++;
 				}
 			}
 			// Someone walking from the cars.
 			const [ wx, , wz ] = P(W * 0.3, -D * 0.25);
-			people.add(wx, S(wx, wz), wz, r() * 6.28, pick(SHIRTS));
-			stats.people++;
+			if (gentle(wx, wz, 0.05) >= 0) {
+				people.add(wx, S(wx, wz), wz, r() * 6.28, pick(SHIRTS));
+				stats.people++;
+			}
 		}
 
 		// Transmission line: towers marching away from the powerhouse up and out of the canyon,
@@ -665,7 +683,11 @@ export function createLife(THREE, { basins, dams, outflow, router, world, ripari
 				if (!best || score > best.score) best = { score, sx, sz, dir, hx, hz, g, bed };
 			}
 			if (best) {
-				const { sx, sz, dir, hx, hz, g, bed } = best;
+				const { sx, sz, dir, hx, hz, g } = best;
+				// The ramp runs down the bed only as far as the lake goes (never up a far bank).
+				const wet0 = best.bed.findIndex((p) => p[3]);
+				const dry = best.bed.findIndex((p, i) => i > wet0 && !p[3]);
+				const bed = dry > 0 ? best.bed.slice(0, dry) : best.bed;
 				claim(hx, hz, 0.9, g);
 				stats.ramps++;
 				const ang = face(-dir[0], -dir[1]);
@@ -675,11 +697,12 @@ export function createLife(THREE, { basins, dams, outflow, router, world, ripari
 				strip(bed.map(([ x, y, z ]) => [ x, y, z ]), 0.22, 0x9c968c, 0.035);
 				for (let k = 0; k < 2 + Math.floor(r() * 3); k++) {
 					const [ px, , pz ] = P(-0.45 + k * 0.32, -0.15);
+					if (gentle(px, pz, 0.12) < 0) continue;
 					pickups.add(px, S(px, pz), pz, ang + Math.PI / 2, pick(PAINT));
 					stats.cars++;
 				}
 				const hutAt = P(0.5, 0.28);
-				huts.add(hutAt[0], S(hutAt[0], hutAt[2]), hutAt[2], ang);
+				if (gentle(hutAt[0], hutAt[2], 0.12) >= 0) huts.add(hutAt[0], S(hutAt[0], hutAt[2]), hutAt[2], ang);
 				const dockI = docks.add(sx, b.P, sz, ang);
 				const moor = [];
 				for (let k = 0; k < 4; k++) {
@@ -974,8 +997,8 @@ export function createLife(THREE, { basins, dams, outflow, router, world, ripari
 			// Traffic on the crests and birds wheeling over the canyons (near dams only).
 			for (const i of near) {
 				const site = sites[i];
-				const road = site.d.road;
 				for (const m of site.movers) {
+					const road = m.road;
 					const total = m.len * 2;
 					let s = ((m.s0 * total + time * m.speed) % total + total) % total;
 					let dir = 1;
@@ -1037,8 +1060,24 @@ export function createLife(THREE, { basins, dams, outflow, router, world, ripari
 					water.push({ id, kind: set.name, x: w[0], z: w[2], level: L, y: w[1], bed: bedAt(w[0], w[2], id) });
 				}
 			});
+			// Independent of placement: the true grade under everything standing on the ground
+			// (not traffic on the crests, birds in the air or anything afloat), wherever it is now.
+			const skip = new Set();
+			for (const site of sites) {
+				for (const m of site.movers) skip.add(`${m.set.name}:${m.i}`);
+				for (const p of site.ramp?.dockPeople ?? []) skip.add(`anglers:${p.i}`);
+			}
+			let groundMax = 0;
+			let groundN = 0;
+			for (const set of [ people, anglers, cars, pickups, huts, shelters, towers, deer, cattle ]) {
+				set.where.forEach((w, k) => {
+					if (!w || skip.has(`${set.name}:${k}`)) return;
+					groundN++;
+					groundMax = Math.max(groundMax, grade(w[0], w[2]));
+				});
+			}
 			const spots = Object.fromEntries(sites.map((s) => [ s.b.r.id, { overlook: s.overlook ?? null, ramp: s.ramp ? [ s.ramp.bed[0][0], s.ramp.bed[0][2] ] : null } ]));
-			return { stats, visible, water, spots, fade: [ FADE_NEAR, FADE_FAR ], show: SHOW_WITHIN };
+			return { stats, visible, water, spots, groundMax, groundN, fade: [ FADE_NEAR, FADE_FAR ], show: SHOW_WITHIN };
 		},
 	};
 }

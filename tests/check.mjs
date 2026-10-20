@@ -1244,7 +1244,8 @@ async function main() {
 			const lifeNear = await debug3d(page, "({ on: c.sc.scene.getObjectByName('life').visible, ...c.life().stats })");
 			check("Close to a dam: traffic, boats, people, towers and animals are drawn", lifeNear.on && lifeNear.cars > 30 && lifeNear.boats > 30 && lifeNear.people + lifeNear.anglers > 30 && lifeNear.towers > 30 && lifeNear.waterbirds > 100 && lifeNear.raptors > 20 && lifeNear.deer > 20 && lifeNear.cattle > 20,
 				`${lifeNear.cars} vehicles, ${lifeNear.boats} boats, ${lifeNear.people} visitors, ${lifeNear.anglers} anglers, ${lifeNear.towers} towers, ${lifeNear.waterbirds} waterbirds, ${lifeNear.raptors} raptors, ${lifeNear.deer} deer, ${lifeNear.cattle} cattle`);
-			check("Nothing stands on steep ground (people, animals, cars, towers, car parks)", lifeNear.maxGrade > 0 && lifeNear.maxGrade <= 0.2, `steepest grade under anything placed ${(lifeNear.maxGrade * 100).toFixed(1)}%`);
+			const ground = await debug3d(page, "(() => { const l = c.life(); return { max: l.groundMax, n: l.groundN }; })()");
+			check("Nothing stands on steep ground: grade under every person, animal, parked car, building and tower", ground.n > 500 && ground.max <= 0.2, `${ground.n} on the ground; steepest ${(ground.max * 100).toFixed(1)}% (limit 20%)`);
 			const full = await afloat("2017-05");
 			const dry = await afloat("2015-09");
 			check("Boats, docks and waterbirds sit on the water at Folsom, full (May 2017) and low (Sep 2015)", full.boats >= 3 && dry.boats >= 3 && full.dock && dry.dock && full.bad === 0 && dry.bad === 0,

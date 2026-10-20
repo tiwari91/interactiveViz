@@ -318,9 +318,8 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 		counts[sp.mesh === "conifer" ? "pine" : "broad"]++;
 		counts.species[name] = (counts.species[name] ?? 0) + 1;
 		counts[forest ? "forest" : "bank"]++;
-		const blobI = blobs.count;
 		blob(x, y, z, sc * (sp.mesh === "conifer" ? 1.1 : 1.3));
-		placed.push({ x, z, m, veg, mesh: sp.mesh, i: used[sp.mesh] - 1, w: sc * w, blob: blobs.count > blobI ? blobI : -1 });
+		placed.push({ x, z, m, veg });
 	};
 	function smoothstep(a, b, x) {
 		const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -434,33 +433,6 @@ export function createRiparian(THREE, outflow, router, basins, world, quality) {
 		fade: [ FADE_NEAR, FADE_FAR ],
 		// Where the trees stand (for deer at the forest edge).
 		trees: () => placed,
-		// Remove every tree whose crown reaches within r of any of the points (a boat ramp).
-		clearAround(pts, r) {
-			if (!pts.length) return 0;
-			const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-			const half = {};
-			for (const [ name, mesh ] of Object.entries(meshOf)) {
-				mesh.geometry.computeBoundingBox();
-				const bb = mesh.geometry.boundingBox;
-				half[name] = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2;
-			}
-			let n = 0;
-			for (let k = placed.length - 1; k >= 0; k--) {
-				const t = placed[k];
-				const reach = t.w * half[t.mesh] + r;
-				if (!pts.some(([ x, z ]) => Math.hypot(t.x - x, t.z - z) < reach)) continue;
-				meshOf[t.mesh].setMatrixAt(t.i, zero);
-				meshOf[t.mesh].instanceMatrix.needsUpdate = true;
-				if (t.blob >= 0) {
-					blobs.setMatrixAt(t.blob, zero);
-					blobs.instanceMatrix.needsUpdate = true;
-				}
-				placed.splice(k, 1);
-				n++;
-			}
-			counts.cleared = (counts.cleared ?? 0) + n;
-			return n;
-		},
 		// For tests: lowest vegetation value under any placed tree.
 		minVegetation: () => placed.reduce((a, p) => Math.min(a, p.veg), 1),
 	};

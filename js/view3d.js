@@ -10,7 +10,7 @@ import { createDams } from "./three/dams.js";
 import { createGaugeLinks } from "./three/gaugeLinks.js";
 import { createOutflow } from "./three/outflow.js";
 import { createRiparian } from "./three/riparian.js";
-import { createLife } from "./three/life.js";
+import { createWildlife } from "./three/wildlife.js";
 import { createMainRivers } from "./three/mainRivers.js";
 import { createSky, applyPreset } from "./three/sky.js";
 import { createLabels } from "./three/labels.js";
@@ -143,8 +143,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 		});
 		const mainRivers = createMainRivers(THREE, world, outflow.router, shared, basins);
 		const riparian = createRiparian(THREE, outflow, outflow.router, basins, world, ui.quality);
-		// People, traffic, boats and animals round each dam, for close views (High quality only).
-		const life = createLife(THREE, { basins, dams, outflow, router: outflow.router, world, riparian, shared, quality: ui.quality });
+		// Waterbirds, vultures, deer and cattle round each dam, for close views (High quality only).
+		const wildlife = createWildlife(THREE, { basins, dams, outflow, router: outflow.router, world, riparian, shared, quality: ui.quality });
 		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
 		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
@@ -176,14 +176,14 @@ export function createView3D(container, data, store, tooltip, audio) {
 		// Riparian trees hide themselves by camera height, so the Layers toggle uses a wrapper.
 		const forest = new THREE.Group();
 		forest.add(riparian.group);
-		land.add(terrain.group, snow.mesh, melt.points, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, forest, mainRivers.mesh, life.group);
+		land.add(terrain.group, snow.mesh, melt.points, ocean.mesh, lakes.mesh, dams.mesh, dams.foam.mesh, links.group, outflow.group, forest, mainRivers.mesh, wildlife.group);
 		// Layers panel: each name switches real scene objects (or the DOM label layer).
 		const layerObjs = {
 			terrain: [ terrain.group ],
 			reservoirs: [ lakes.mesh ],
 			rivers: [ outflow.group, mainRivers.mesh ],
-			forest: [ forest, life.wild ],
-			dams: [ dams.mesh, dams.foam.mesh, life.infra ],
+			forest: [ forest, wildlife.wild ],
+			dams: [ dams.mesh, dams.foam.mesh ],
 			snow: [ snow.mesh ],
 		};
 		sc.scene.add(sky.mesh, land);
@@ -203,7 +203,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			land.scale.y = k;
 			land.updateMatrixWorld(true);
 			riparian.setUnsquash(1 / k);
-			life.setUnsquash(1 / k);
+			wildlife.setUnsquash(1 / k);
 		}
 
 		// Invisible pick volumes over each lake and dam.
@@ -249,7 +249,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			terrain.setDryness(state.dryness);
 			terrain.setGold(state.gold);
 			mainRivers.setFlow(1 - state.dryness);
-			life.setLevels(state.levels, snap.visible);
+			wildlife.setLevels(state.levels, snap.visible);
 		}
 
 		// Camera: start pulled back, then settle on the home pose.
@@ -824,7 +824,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				shared.uMoonDir.value.set(f.x / h * Math.cos(el), Math.sin(el), f.z / h * Math.cos(el));
 			}
 			riparian.update(sc.camera, groundAt(sc.camera.position.x, sc.camera.position.z));
-			life.update(sc.camera, groundAt(sc.camera.position.x, sc.camera.position.z), vScale, shared.uTime.value, container.clientHeight);
+			wildlife.update(sc.camera, groundAt(sc.camera.position.x, sc.camera.position.z), vScale, shared.uTime.value, container.clientHeight);
 			sc.updateSun();
 
 			// Ease toward the target month.
@@ -1385,7 +1385,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			ribbonCompare: () => outflow.compareState(),
 			riverLevelsReady: () => outflow.levelsReady(),
 			lakeEdgeSoft: () => Boolean(lakes.mesh.material.uniforms.uBed?.value) && /edgeA/.test(lakes.mesh.material.fragmentShader),
-			life: () => life.debug(),
+			wildlife: () => wildlife.debug(),
 			riparian: () => ({ ...riparian.counts, minVeg: riparian.minVegetation(), fade: riparian.fade }),
 			// For tests: the largest step (metres) between a land DEM cell and the mean of its neighbours.
 			maxSpike() {

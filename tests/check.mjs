@@ -1225,6 +1225,32 @@ async function main() {
 		check("Bank trees grow only on vegetated ground", rip.minVeg >= 0.05, `lowest vegetation under a tree ${rip.minVeg.toFixed(2)}`);
 		const homeDist = await page.evaluate(() => { const v = window.droughtViz.views["3d"].debug(); return v.sc.camera.aspect >= 1 ? 1180 : 1700; });
 		check("Bank trees fade out well before the state overview", rip.fade[1] < homeDist / 2, `gone by ${rip.fade[1]} units; overview at ${homeDist}`);
+		// Life round the dams (traffic, boats, people, animals): skipped at the overview, drawn
+		// close in, never on steep ground, and everything afloat sits on the month's water.
+		{
+			await debug3d(page, "c.home()");
+			await waitStill(page, 1500);
+			const lifeFar = await debug3d(page, "({ on: c.sc.scene.getObjectByName('life').visible, calls: c.renderer.info.render.calls })");
+			check("Dam-side life is not drawn at the state overview", !lifeFar.on, `${lifeFar.calls} draw calls at the overview`);
+			const afloat = async (m) => {
+				await setState(page, { dateIndex: await monthIndex(page, m) });
+				await page.waitForTimeout(3500);
+				const w = (await debug3d(page, "c.life().water")).filter((x) => x.id === "FOL");
+				const bad = w.filter((x) => !(x.bed < x.level - 0.035) || Math.abs(x.y - x.level) > 1e-4);
+				return { n: w.length, boats: w.filter((x) => /boat/.test(x.kind)).length, bad: bad.length, dock: w.some((x) => x.kind === "docks") };
+			};
+			await debug3d(page, "c.focus('FOL')");
+			await waitStill(page, 1500);
+			const lifeNear = await debug3d(page, "({ on: c.sc.scene.getObjectByName('life').visible, ...c.life().stats })");
+			check("Close to a dam: traffic, boats, people, towers and animals are drawn", lifeNear.on && lifeNear.cars > 30 && lifeNear.boats > 30 && lifeNear.people + lifeNear.anglers > 30 && lifeNear.towers > 30 && lifeNear.waterbirds > 100 && lifeNear.raptors > 20 && lifeNear.deer > 20 && lifeNear.cattle > 20,
+				`${lifeNear.cars} vehicles, ${lifeNear.boats} boats, ${lifeNear.people} visitors, ${lifeNear.anglers} anglers, ${lifeNear.towers} towers, ${lifeNear.waterbirds} waterbirds, ${lifeNear.raptors} raptors, ${lifeNear.deer} deer, ${lifeNear.cattle} cattle`);
+			check("Nothing stands on steep ground (people, animals, cars, towers, car parks)", lifeNear.maxGrade > 0 && lifeNear.maxGrade <= 0.2, `steepest grade under anything placed ${(lifeNear.maxGrade * 100).toFixed(1)}%`);
+			const full = await afloat("2017-05");
+			const dry = await afloat("2015-09");
+			check("Boats, docks and waterbirds sit on the water at Folsom, full (May 2017) and low (Sep 2015)", full.boats >= 3 && dry.boats >= 3 && full.dock && dry.dock && full.bad === 0 && dry.bad === 0,
+				`May 2017: ${full.n} afloat (${full.boats} boats), ${full.bad} off the water; Sep 2015: ${dry.n} afloat (${dry.boats} boats), ${dry.bad} off the water`);
+			await setState(page, { dateIndex: await monthIndex(page, "2014-09") });
+		}
 		const aniso = await debug3d(page, "[ c.anisotropy(), c.renderer.capabilities.getMaxAnisotropy() ]");
 		check("Terrain detail texture uses the GPU's full anisotropic filtering", aniso[0] === aniso[1] && aniso[0] >= 1, `${aniso[0]} of ${aniso[1]}`);
 		// Zooming in hard with the wheel stops at the minimum distance, toward the cursor.
@@ -1617,6 +1643,8 @@ async function main() {
 					const ripLow = await debug3d(page, "c.riparian()");
 					check("Low quality keeps trees light", ripLow.bank <= 2200 && ripLow.forest <= 1600 && ripLow.shrub <= 1200 && ripLow.rock <= 400, `${ripLow.bank} bank + ${ripLow.forest} forest trees, ${ripLow.shrub} shrubs, ${ripLow.rock} boulders`);
 					check("Bank trees are skipped at the overview", !(await debug3d(page, "c.sc.scene.getObjectByName('riparian').visible")));
+					const lifeLow = await debug3d(page, "c.life().stats");
+					check("Low quality draws no dam-side life", lifeLow.cars === 0 && lifeLow.boats === 0 && lifeLow.waterbirds === 0, JSON.stringify({ cars: lifeLow.cars, boats: lifeLow.boats }));
 					const phoneNamed = await page.evaluate(() => {
 						const byName = new Map(window.droughtViz.data.reservoirs.map((r) => [ r.name.replace(/ \(.*\)$/, "").replace(/ (Dam|Reservoir)$/, ""), r ]));
 						return [ ...document.querySelectorAll(".labels-3d .lbl") ].filter((e) => e.style.display !== "none" && !e.querySelector(".lbl-text").classList.contains("far")).map((e) => byName.get(e.querySelector(".lbl-name").textContent)).filter(Boolean).map((r) => ({ id: r.id, lat: r.lat }));

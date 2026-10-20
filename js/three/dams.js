@@ -290,6 +290,10 @@ export function createDams(THREE, data, basins, world = null, quality = "high") 
 		void outletEnd;
 		info.set(bs.r.id, {
 			type, crest, toePoint, center: bs.toWorld(mu, mv), height: hMax, scale, concrete,
+			// For the life layer: the crest road's centre line, its width, the powerhouse at the toe.
+			road: Array.from({ length: SEGMENTS + 1 }, (_, i) => bs.toWorld(axisAt(i / SEGMENTS)[0] - tc * 0.5, axisAt(i / SEGMENTS)[1])),
+			roadWidth: tc,
+			powerhouse: [ phx, groundAt(mu - toe - 0.55 * scale, mv + hw * 0.25) - 0.05, phz, 0.9 * scale, 0.5 * scale, 0.55 * scale ],
 			toeU: mu - toe - TOE_OUT, routeFrom, routeU: mu - fullToe - TOE_OUT, faceBase, spillTop, spillBottom, halfWidth: hw, groundAt, chute, chuteWidth, chuteClear,
 			lights: [ axisAt(0.02), axisAt(0.98) ].map(([ u, v ]) => {
 				const [ x, z ] = bs.toWorld(u - tc * 0.5, v);

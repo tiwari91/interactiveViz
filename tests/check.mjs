@@ -1637,6 +1637,126 @@ async function main() {
 		allErrors.push(...errors);
 		await ctx.close();
 
+		// ---------- Wood view, cut file, projection, hand control, data melody ----------
+		{
+			const requests = [];
+			({ ctx, page, errors } = await openPage(browser, base, { query: "?mode=wood&month=2014-09" }));
+			page.on("request", (r) => requests.push(r.url()));
+			await page.reload();
+			await page.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 120000, polling: 500 });
+			await page.waitForTimeout(600);
+			const w = await page.evaluate(() => {
+				const v = window.droughtViz.views.wood.debug();
+				const m = window.droughtViz.data.months;
+				return {
+					mode: window.droughtViz.store.get().mode,
+					visible: [ ...document.querySelectorAll(".view") ].filter((e) => !e.hidden).map((e) => e.id),
+					layers: v.layers,
+					pieces: v.pieces,
+					wanted: [ "2012-09", "2013-09", "2014-09", "2015-09", "2016-09", "2017-09" ].filter((k) => m.includes(k)).length,
+					dry14: v.dryShare(m.indexOf("2014-09")),
+					dry17: v.dryShare(m.indexOf("2017-04")),
+					deep14: v.dryShare(m.indexOf("2014-09"), 0.55),
+					credit: Boolean(document.querySelector('.wood-credit a[href*="yoonchunghan.com"]')),
+				};
+			});
+			check("?mode=wood opens the wood view, alone", w.mode === "wood" && w.visible.join() === "view-wood" && w.layers >= 4, `${w.layers} layers`);
+			check("Wood: six pieces, every one a month in the data", w.pieces.length === 6 && w.wanted === 6, w.pieces.join(" "));
+			check("Wood: Sep 2014 is mostly walnut, Apr 2017 almost none; dark walnut is part of it", w.dry14 > 0.5 && w.dry17 < 0.1 && w.deep14 > 0 && w.deep14 < w.dry14, `${(w.dry14 * 100).toFixed(0)}% vs ${(w.dry17 * 100).toFixed(0)}%, dark ${(w.deep14 * 100).toFixed(0)}%`);
+			check("Wood: credits Yoon Chung Han with a link to her page", w.credit);
+			check("Wood: loads no three.js and no hand tracking", !requests.some((u) => /three(\.min)?\.js|OrbitControls|mediapipe/.test(u)), requests.filter((u) => /three|mediapipe/.test(u)).join(" "));
+			await page.locator(".wood-piece").nth(5).click();
+			check("Wood: a piece jumps the timeline to its month", (await page.evaluate(() => window.droughtViz.data.months[window.droughtViz.store.get().dateIndex])) === "2017-09");
+			const cut = await page.evaluate(() => {
+				const i = window.droughtViz.data.months.indexOf("2014-09");
+				const t = window.droughtViz.views.wood.cutFile(i);
+				const d = new DOMParser().parseFromString(t, "image/svg+xml");
+				const paths = [ ...d.querySelectorAll("g[id^=sheet], g[id^=inlay]") ].map((g) => g.querySelector("path"));
+				return {
+					ok: !d.querySelector("parsererror"),
+					w: d.documentElement.getAttribute("width"),
+					sheets: d.querySelectorAll("g[id^=sheet]").length,
+					inlays: d.querySelectorAll("g[id^=inlay]").length,
+					hairline: paths.every((p) => p.getAttribute("fill") === "none" && p.getAttribute("stroke") === "#ff0000"),
+				};
+			});
+			check("Cut file: valid SVG in mm, one group per sheet, inlays, red hairline cuts", cut.ok && cut.w === "210mm" && cut.sheets >= 5 && cut.inlays === 2 && cut.hairline, JSON.stringify(cut));
+			const [ dl ] = await Promise.all([ page.waitForEvent("download"), page.locator(".wood-cut").click() ]);
+			check("Cut file downloads named by month", dl.suggestedFilename() === "california-drought-2017-09.svg", dl.suggestedFilename());
+			await shot(page, "desktop-wood.png", "#map");
+
+			// Projection mode
+			await page.locator("#projection").click();
+			await page.keyboard.press("Shift+ArrowRight");
+			await page.keyboard.press("+");
+			await page.keyboard.press("PageDown");
+			const pj = await page.evaluate(() => ({ on: window.droughtViz.projection.on, fit: window.droughtViz.projection.fit, cls: document.body.classList.contains("projecting"), month: window.droughtViz.data.months[window.droughtViz.store.get().dateIndex], dock: [ ...document.querySelectorAll(".map-dock > *") ].filter((e) => getComputedStyle(e).display !== "none").map((e) => e.id || e.className) }));
+			check("Projection: map only, keys move and size it, PageDown steps the month", pj.on && pj.cls && pj.fit.x === 20 && pj.fit.s > 1 && pj.month === "2017-08" && pj.dock.join() === "projection", JSON.stringify(pj));
+			await shot(page, "desktop-projection.png");
+			await page.keyboard.press("0");
+			await page.keyboard.press("Escape");
+			check("Projection: Esc leaves", !(await page.evaluate(() => window.droughtViz.projection.on || document.body.classList.contains("projecting"))));
+
+			// Hand control stays off until asked
+			check("Hand control: off by default, no camera", (await page.locator("#hands").getAttribute("aria-pressed")) === "false" && !(await page.evaluate(() => window.droughtViz.hands.active)) && (await page.locator(".hands-panel").isHidden()));
+			{
+				const m = await page.evaluate(async () => {
+					const h = await import("./js/hands.js");
+					const n = window.droughtViz.data.months.length;
+					return {
+						left: h.monthFromHand(0, n), start: h.monthFromHand(0.15, n), mid: h.monthFromHand(0.5, n), end: h.monthFromHand(0.85, n), right: h.monthFromHand(1, n), n,
+						pinch: h.isPinch({ x: 0.5, y: 0.5 }, { x: 0.52, y: 0.51 }), open: h.isPinch({ x: 0.5, y: 0.3 }, { x: 0.4, y: 0.5 }),
+					};
+				});
+				check("Hand control: left edge is the first month, right edge the last, middle the middle; pinch detected", m.left === 0 && m.start === 0 && m.end === m.n - 1 && m.right === m.n - 1 && Math.abs(m.mid - (m.n - 1) / 2) <= 1 && m.pinch && !m.open, JSON.stringify(m));
+				// A start turned off while the camera is still being granted must release the camera.
+				await page.evaluate(() => {
+					window.__camStops = 0;
+					navigator.mediaDevices.getUserMedia = () => new Promise((res) => {
+						window.__grant = () => res({ getTracks: () => [ { stop: () => { window.__camStops += 1; } } ] });
+					});
+				});
+				await page.locator("#hands").click();
+				await page.locator("#hands").click();
+				await page.evaluate(() => window.__grant());
+				await page.waitForTimeout(200);
+				const cam = await page.evaluate(() => ({ stops: window.__camStops, active: window.droughtViz.hands.active, hidden: document.querySelector(".hands-panel").hidden, pressed: document.querySelector("#hands").getAttribute("aria-pressed") }));
+				check("Hand control: turned off before the camera answers, the camera is released, not left on", cam.stops === 1 && !cam.active && cam.hidden && cam.pressed === "false", JSON.stringify(cam));
+			}
+
+			// Keyboard: one tab stop for the wood reservoirs, arrows move between them, not the month
+			{
+				const before = await page.evaluate(() => window.droughtViz.store.get().dateIndex);
+				await page.locator('.map-wood .wres[tabindex="0"]').focus();
+				const first = await page.evaluate(() => document.activeElement.__data__?.id);
+				await page.keyboard.press("ArrowDown");
+				const after = await page.evaluate(() => ({ id: document.activeElement.__data__?.id, tabs: document.querySelectorAll('.map-wood .wres[tabindex="0"]').length, month: window.droughtViz.store.get().dateIndex, tip: !document.querySelector("#tooltip").hidden }));
+				await page.keyboard.press("Enter");
+				const sel = await page.evaluate(() => window.droughtViz.store.get().selected);
+				check("Wood: arrow keys move between reservoirs (one tab stop), Enter selects, the month stays", first && after.id && after.id !== first && after.tabs === 1 && after.month === before && after.tip && sel === after.id, `${first} -> ${after.id}, selected ${sel}`);
+				await page.evaluate(() => window.droughtViz.store.set({ selected: null }));
+			}
+
+			// Data melody
+			await page.locator(".sound-toggle").click();
+			await page.locator("#sound-melody").check();
+			await page.evaluate(() => window.droughtViz.store.set({ dateIndex: window.droughtViz.data.months.indexOf("2014-09") }));
+			await page.waitForTimeout(200);
+			const mel = await page.evaluate(() => window.droughtViz.audio.debugState());
+			check("Data melody: plays a note for the month when turned on", mel.melody && mel.lastFreq > 100 && mel.lastFreq < 600, `${mel.lastFreq.toFixed(1)} Hz`);
+			await page.locator("#sound-melody").uncheck();
+			await page.locator(".sound-toggle").click();
+
+			// Back to 2D and 3D still work
+			await page.locator('.mode-switch button[data-mode="2d"]').click();
+			await page.waitForTimeout(400);
+			check("Switching wood -> 2D shows only the 2D map", (await page.evaluate(() => [ ...document.querySelectorAll(".view") ].filter((e) => !e.hidden).map((e) => e.id).join())) === "view-2d");
+			const ex = await page.evaluate(() => ({ section: Boolean(document.getElementById("exhibitions")), link: Boolean(document.querySelector('#exhibitions a[href*="yoonchunghan.com"]')), media: document.querySelectorAll("#exhibitions iframe, #exhibitions img, #exhibitions video").length }));
+			check("Original installation section links to her page and copies none of her media", ex.section && ex.link && ex.media === 0);
+			allErrors.push(...errors);
+			await ctx.close();
+		}
+
 		// ---------- iPhone 12 ----------
 		for (const scheme of [ "light", "dark" ]) {
 			for (const mode of [ "2d", "3d" ]) {

@@ -125,6 +125,30 @@ All counts and date ranges on the page are computed from these files; none is ha
     1st of that month and the 1st of the next. The 2D map washes the mountain counties of each section white by its %
     (a region indication, not the actual snow extent).
 
+## After the original installation
+
+Yoon Chung Han's *California Drought Impact* (2016–17) was laser-cut wood, projection mapping and MaxMSP
+sound played by hand movements ([her project page](http://yoonchunghan.com/portfolio/california-drought-impact.html)).
+These parts of the page are made in the spirit of that work. None of her photos, video or patches are copied here.
+
+- **Wood view** (`?mode=wood`, `js/wood/`): the state as stacked birch layers cut along the terrain (300, 800,
+  1400, 2100 and 2900 m contours of the ETOPO grid), with walnut where nearby reservoirs are below 80% of their
+  usual level for the calendar month and dark walnut below 55%. Between reservoirs the value is spread by
+  distance and capacity, so the walnut shapes are drawn, not mapped. A strip of six pieces (September 2012 to 2017)
+  jumps to each year.
+- **Cut file**: "Download cut file (SVG)" in the wood view saves the month as a laser-cutter file in millimetres:
+  one group per sheet (base outline, five birch layers, walnut and dark-walnut inlays), red hairline cuts, black
+  engraving for the month.
+- **Projection mode**: only the map, on black, for projecting onto a cut-out California. Arrows move it
+  (Shift for bigger steps), + / − size, &lt; / &gt; turn, PageUp / PageDown step the month, 0 resets, Esc leaves.
+  The fit is remembered in the browser.
+- **Hand control**: off by default. When turned on it asks for the webcam and loads MediaPipe hand tracking
+  (`@mediapipe/tasks-vision` 0.10.14, pinned); moving a hand left or right moves through the months, a pinch holds
+  the month. The video is processed in the browser and never sent anywhere.
+- **Data melody** (sound menu): one wooden note per month. Pitch follows statewide % full on a pentatonic scale;
+  wet months ring like a marimba, dry ones knock like a wood block. If the original MaxMSP patch becomes available,
+  Cycling '74's RNBO can export it to Web Audio, and it could replace this synth.
+
 ## Run locally
 
 From the repo root:

@@ -56,8 +56,8 @@ export function createLayers(el, view3d, store) {
 		});
 	}
 	const sync = (mode) => {
-		el.classList.toggle("is-2d", mode === "2d");
-		el.querySelectorAll("input").forEach((i) => (i.disabled = mode === "2d"));
+		el.classList.toggle("is-2d", mode !== "3d");
+		el.querySelectorAll("input").forEach((i) => (i.disabled = mode !== "3d"));
 	};
 	store.subscribe((s, changed) => changed.includes("mode") && sync(s.mode));
 	sync(store.get().mode);

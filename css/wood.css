@@ -1,0 +1,128 @@
+/* Wood view (after Yoon Chung Han's laser-cut sculptures), projection mode, hand control,
+   and the original-installation section. */
+:root {
+	--wood-bg: #cfcbc4;
+	--wood-bg-2: #bdb8b0;
+	--birch: #e8d6b5;
+	--birch-edge: #6b4a2b;
+	--walnut: #7b5236;
+	--walnut-deep: #3a2316;
+	--resin: #5f9fb8;
+	--wood-ink: #3b2a1c;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) { --wood-bg: #22201d; --wood-bg-2: #171614; --wood-ink: #e8dcc8; }
+}
+:root[data-theme="dark"] { --wood-bg: #22201d; --wood-bg-2: #171614; --wood-ink: #e8dcc8; }
+
+body[data-mode="wood"] .stage { background: radial-gradient(ellipse at 45% 40%, var(--wood-bg) 0%, var(--wood-bg-2) 100%); }
+
+.map-wood .wood-layer { fill: var(--birch); stroke: var(--birch-edge); stroke-width: 0.7; stroke-opacity: 0.75; fill-rule: evenodd; }
+.map-wood .wood-layer.l1 { fill: #ecdcbe; }
+.map-wood .wood-layer.l2 { fill: #efe1c6; }
+.map-wood .wood-layer.l3 { fill: #f2e6cf; }
+.map-wood .wood-layer.l4 { fill: #f4ead7; }
+.map-wood .wood-layer.l5 { fill: #f6eedf; }
+.map-wood .wood-deep { fill: var(--walnut-deep); fill-rule: evenodd; mix-blend-mode: multiply; opacity: 0.96; stroke: #1e120a; stroke-width: 0.6; }
+.map-wood .wood-dry { fill: var(--walnut); fill-rule: evenodd; mix-blend-mode: multiply; opacity: 0.94; stroke: #2b1a10; stroke-width: 0.6; transition: d 0.6s ease; }
+.map-wood .wres { cursor: pointer; }
+.map-wood .wres-cap { fill: rgb(255 250 240 / 35%); stroke: #5a3b20; stroke-width: 1; }
+.map-wood .wres-fill { fill: var(--resin); stroke: #2f5c70; stroke-width: 0.5; }
+.map-wood .wres.low .wres-cap { stroke: #f0e2c8; }
+.map-wood .wres.active .wres-cap { stroke: var(--accent); stroke-width: 2.2; }
+
+.wood-caption {
+	position: absolute; left: 14px; top: 12px; z-index: 2;
+	max-width: 250px; color: var(--wood-ink); font-size: 0.78rem;
+}
+.wood-caption p { margin: 0 0 4px; }
+.wood-month { font: 600 1.35rem/1.1 var(--font-mono); letter-spacing: 0.02em; }
+.wood-stat { color: var(--wood-ink); opacity: 0.85; }
+.wood-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 6px !important; }
+.wood-key .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--birch-edge); }
+.wood-key .sw-birch { background: var(--birch); }
+.wood-key .sw-walnut { background: var(--walnut); }
+.wood-key > span { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.wood-caption .wood-cut { position: static; margin: 8px 0 6px; }
+.wood-credit { font-size: 0.72rem; opacity: 0.85; }
+.wood-credit a { color: inherit; }
+
+.wood-strip { position: absolute; right: 12px; top: 12px; z-index: 2; display: flex; gap: 4px; }
+.wood-piece {
+	display: grid; justify-items: center; gap: 1px; padding: 4px 3px 3px;
+	border: 1px solid transparent; border-radius: 8px; background: transparent;
+	color: var(--wood-ink); font-size: 0.7rem; cursor: pointer;
+}
+.view .wood-piece svg { width: 46px; height: 54px; }
+.wood-piece:hover { border-color: var(--birch-edge); }
+.wood-piece[aria-pressed="true"] { border-color: var(--birch-edge); background: rgb(255 250 240 / 30%); }
+.wood-piece .wp-base { fill: var(--birch); stroke: var(--birch-edge); stroke-width: 0.5; }
+.wood-piece .wp-dry { fill: var(--walnut); fill-rule: evenodd; }
+.wood-piece .wp-deep { fill: var(--walnut-deep); fill-rule: evenodd; }
+.wood-key .sw-deep { background: var(--walnut-deep); }
+
+/* The dock has more buttons now: let it wrap, right-aligned, above the hint. */
+.map-dock { flex-wrap: wrap; justify-content: flex-end; max-width: calc(100% - 24px); }
+#projection[aria-pressed="true"], #hands[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+body[data-mode="wood"] .stage-hint { display: none; }
+
+@media (max-width: 760px) {
+	.wood-strip { top: 6px; right: 6px; gap: 0; }
+	.wood-piece { padding: 2px 1px 1px; font-size: 0.6rem; }
+	.view .wood-piece svg { width: 24px; height: 28px; }
+	.wood-caption { left: 10px; top: 8px; max-width: 120px; }
+	.wood-month { font-size: 1rem; }
+	.wood-stat, .wood-credit, .wood-key, .wood-caption .wood-cut { display: none !important; }
+	/* Projection and hand control are for a laptop or an installation, not a phone. */
+	#projection, #hands { display: none; }
+}
+
+/* Projection mode: only the map on black, nothing else lit. */
+body.projecting { overflow: hidden; background: #000; }
+body.projecting .stage {
+	position: fixed; inset: 0; z-index: 50; height: 100vh; min-height: 0;
+	background: #000 !important;
+}
+body.projecting .view { transform: translate(var(--pj-x, 0), var(--pj-y, 0)) scale(var(--pj-s, 1)) rotate(var(--pj-r, 0deg)); transform-origin: 50% 50%; }
+body.projecting .map-dock > :not(#projection),
+body.projecting .stage-hint, body.projecting .tooltip, body.projecting .detail-card,
+body.projecting .wood-caption, body.projecting .wood-strip, body.projecting .hands-panel { display: none !important; }
+body.projecting #projection { opacity: 0.25; }
+body.projecting #projection:hover, body.projecting #projection:focus-visible { opacity: 1; }
+body.projecting .map-wood .wres { display: none; }
+body.projecting .map-2d .county { fill: #f5f0e6; }
+.pj-help, .pj-month { display: none; }
+body.projecting .pj-help:not([hidden]) {
+	display: block; position: absolute; left: 16px; top: 14px; z-index: 5; margin: 0;
+	color: #9a9a9a; font-size: 0.8rem; line-height: 1.4;
+}
+.pj-help p { margin: 0 0 3px; }
+body.projecting .pj-month { display: block; position: absolute; right: 18px; top: 14px; z-index: 5; margin: 0; color: #777; font: 500 1rem var(--font-mono); }
+
+/* Hand control panel */
+.hands-panel {
+	position: absolute; left: 12px; bottom: 56px; z-index: 6; width: 220px; padding: 8px;
+	border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow);
+	font-size: 0.75rem; color: var(--ink-2);
+}
+.hands-panel[hidden] { display: none; }
+.hands-video { width: 100%; aspect-ratio: 4 / 3; border-radius: 8px; background: #111; transform: scaleX(-1); object-fit: cover; }
+.hands-frame { position: relative; }
+.hands-dot { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--accent); pointer-events: none; }
+.hands-dot.held { background: var(--warm); }
+.hands-status { margin: 6px 0 2px; color: var(--ink); font-weight: 500; }
+.hands-note { margin: 0 0 6px; }
+.hands-off { position: static; }
+
+/* Original installation section */
+.exhibitions { padding: 8px 0 28px; color: var(--ink-2); max-width: 820px; }
+.exhibitions h2 { margin: 0 0 8px; color: var(--ink); font-size: 1.3rem; }
+.exhibitions p { margin: 0 0 12px; }
+.exhibit-list { margin: 0 0 12px; padding: 0; list-style: none; }
+.exhibit-list li { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.exhibit-list .num { display: inline-block; width: 3.2em; color: var(--ink-3); }
+.exhibit-pub { font-size: 0.9rem; }
+
+.sound-melody { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.78rem; white-space: nowrap; }
+.map-wood .wres:focus { outline: none; }
+.map-wood .wres:focus-visible .wres-cap { stroke: var(--focus); stroke-width: 3; }

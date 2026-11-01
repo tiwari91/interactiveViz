@@ -3,6 +3,7 @@ import { pctAt, flowAt } from "./data.js";
 import { markColor, makeProjection, meander, flowScale, MAJOR_CAPACITY, fmtPct } from "./scales.js";
 import { ensurePatterns } from "./legend.js";
 import { frontAt, droughtPaths, pathProgress, stopLabel } from "./drought.js";
+import { moveTarget } from "./roving.js";
 
 const d3 = window.d3;
 const LABEL_LEFT = new Set([ "CLE", "BER", "WHI" ]);
@@ -76,22 +77,6 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		rover = id;
 		res.attr("tabindex", (d) => (d.id === id ? 0 : -1));
 	}
-	const DIRS = { ArrowRight: [ 1, 0 ], ArrowLeft: [ -1, 0 ], ArrowDown: [ 0, 1 ], ArrowUp: [ 0, -1 ] };
-	// Nearest reservoir on screen in a direction, favouring ones straight ahead.
-	function neighbour(r, [ dx, dy ]) {
-		const [ x0, y0 ] = screenPos(r.id);
-		let best = null;
-		for (const o of reservoirs) {
-			if (o === r) continue;
-			const [ x, y ] = screenPos(o.id);
-			const along = (x - x0) * dx + (y - y0) * dy;
-			if (along <= 0.5) continue;
-			const across = Math.abs((x - x0) * dy - (y - y0) * dx);
-			const score = along + across * 2.5;
-			if (!best || score < best.score) best = { o, score };
-		}
-		return best?.o;
-	}
 	// Hit area first (invisible, never overlapping a neighbour), then basin and water.
 	res.append("circle").attr("class", "res-hit");
 	res.append("circle").attr("class", "res-cap");
@@ -137,9 +122,9 @@ export function createMap2D(container, data, store, tooltip, audio) {
 				store.set({ selected: r.id });
 				return;
 			}
-			const next = DIRS[event.key] ? neighbour(r, DIRS[event.key]) : event.key === "Home" ? reservoirs[0] : event.key === "End" ? reservoirs[reservoirs.length - 1] : null;
-			if (DIRS[event.key] || event.key === "Home" || event.key === "End") event.preventDefault();
-			if (next) {
+			const next = moveTarget(event.key, reservoirs, (o) => screenPos(o.id), r);
+			if (next) event.preventDefault();
+			if (next && next !== r) {
 				setRover(next.id);
 				res.filter((d) => d.id === next.id).node().focus();
 			}

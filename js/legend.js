@@ -1,5 +1,6 @@
 // Legend: drought colour ramp plus a mode-specific encoding key.
 import { pctColor, NO_DATA_COLOR, FLOOD_COLOR } from "./scales.js";
+import { DRY_BELOW, DEEP_BELOW } from "./wood/field.js";
 
 const d3 = window.d3;
 const RAMP_W = 150;
@@ -77,6 +78,20 @@ const KEY_3D = `
 		<span>Dot = % full</span>
 	</span>`;
 
+const KEY_WOOD = `
+	<span class="legend-item">
+		<svg width="26" height="18" aria-hidden="true"><rect x="1" y="3" width="24" height="13" rx="2" fill="#ead9bb" stroke="#6b4a2b" stroke-width="0.8"/><rect x="5" y="1" width="16" height="10" rx="2" fill="#f2e6cf" stroke="#6b4a2b" stroke-width="0.8"/></svg>
+		<span>Birch layers<br>= height of the land</span>
+	</span>
+	<span class="legend-item">
+		<svg width="26" height="18" aria-hidden="true"><path d="M3 15 C6 4 14 2 23 6 L20 16 Z" fill="#7b5236" stroke="#2b1a10" stroke-width="0.8"/><path d="M8 14 C10 8 15 7 19 9 L17 15 Z" fill="#3a2316"/></svg>
+		<span>Walnut = below ${Math.round(DRY_BELOW * 100)}%,<br>dark walnut below ${Math.round(DEEP_BELOW * 100)}%<br>of the usual level</span>
+	</span>
+	<span class="legend-item">
+		<svg width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="#5a3b20"/><circle cx="8" cy="8" r="3.5" fill="#5f9fb8"/></svg>
+		<span>Ring = capacity<br>resin = storage</span>
+	</span>`;
+
 export function ensurePatterns() {
 	if (document.getElementById("hatch-nodata")) return;
 	const holder = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -90,5 +105,5 @@ export function ensurePatterns() {
 
 export function renderLegend(el, mode) {
 	ensurePatterns();
-	el.innerHTML = ramp() + (mode === "3d" ? KEY_3D : KEY_2D) + FLOOD + NO_DATA;
+	el.innerHTML = mode === "wood" ? KEY_WOOD : ramp() + (mode === "3d" ? KEY_3D : KEY_2D) + FLOOD + NO_DATA;
 }

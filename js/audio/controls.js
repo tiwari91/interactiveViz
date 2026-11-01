@@ -26,10 +26,15 @@ export function initSoundControls(root, audio, onEnable) {
 		<div class="sound-pop" hidden>
 			<label for="sound-volume">Volume</label>
 			<input id="sound-volume" type="range" min="0" max="1" step="0.05" value="${audio.volume}">
+			<label class="sound-melody"><input type="checkbox" id="sound-melody"> Data melody (wood notes)</label>
 		</div>`;
 	const btn = root.querySelector(".sound-toggle");
 	const pop = root.querySelector(".sound-pop");
-	const slider = root.querySelector("input");
+	const slider = root.querySelector("#sound-volume");
+	const melody = root.querySelector("#sound-melody");
+	melody.checked = Boolean(saved.melody);
+	audio.setMelody(melody.checked);
+	const store = () => save({ on: !audio.muted, volume: audio.volume, melody: audio.melody });
 
 	function sync() {
 		const on = !audio.muted;
@@ -42,7 +47,7 @@ export function initSoundControls(root, audio, onEnable) {
 	async function turnOn() {
 		await audio.enable();
 		onEnable();
-		save({ on: true, volume: audio.volume });
+		store();
 		sync();
 	}
 
@@ -50,13 +55,17 @@ export function initSoundControls(root, audio, onEnable) {
 		if (audio.muted) await turnOn();
 		else {
 			audio.mute();
-			save({ on: false, volume: audio.volume });
+			store();
 			sync();
 		}
 	});
 	slider.addEventListener("input", () => {
 		audio.setVolume(+slider.value);
-		save({ on: !audio.muted, volume: audio.volume });
+		store();
+	});
+	melody.addEventListener("change", () => {
+		audio.setMelody(melody.checked);
+		store();
 	});
 
 	// Browsers block audio until a gesture: resume a remembered "on" at the first one.

@@ -14,6 +14,7 @@
 	<link rel="stylesheet" href="css/viz.css">
 	<link rel="stylesheet" href="css/three.css">
 	<link rel="stylesheet" href="css/app.css">
+	<link rel="stylesheet" href="css/wood.css">
 	<script>
 		// Apply the saved theme before first paint to avoid a flash.
 		try {
@@ -68,6 +69,11 @@
 	<link rel="modulepreload" href="js/zoomMenu.js">
 	<link rel="modulepreload" href="js/tooltip.js">
 	<link rel="modulepreload" href="js/view3d.js">
+	<link rel="modulepreload" href="js/wood/viewWood.js">
+	<link rel="modulepreload" href="js/wood/field.js">
+	<link rel="modulepreload" href="js/wood/cutfile.js">
+	<link rel="modulepreload" href="js/projection.js">
+	<link rel="modulepreload" href="js/hands.js">
 	<link rel="preload" href="data/ca.json" as="fetch" crossorigin>
 	<link rel="preload" href="data/reservoir_filtered_data.csv" as="fetch" crossorigin>
 	<link rel="preload" href="data/reservoir_meta.csv" as="fetch" crossorigin>
@@ -87,6 +93,15 @@
 				quality = quality === "low" || quality === "high" ? quality : localStorage.getItem("cdi-quality");
 			} catch (e) { /* storage unavailable */ }
 			if (mode === "2d") return;
+			if (mode === "wood") {
+				// The wood view needs only the coarse elevation grid, not three.js.
+				for (const f of [ "data/elevation.json", "data/elevation-2m.bin" ]) {
+					const l = document.createElement("link");
+					Object.assign(l, { rel: "preload", href: f, as: "fetch", crossOrigin: "anonymous" });
+					document.head.appendChild(l);
+				}
+				return;
+			}
 			if (quality !== "low" && quality !== "high") quality = matchMedia("(pointer: coarse)").matches || innerWidth < 760 ? "low" : "high";
 			const add = (href, as) => {
 				const l = document.createElement("link");
@@ -143,14 +158,18 @@
 				<div class="stage" id="stage">
 					<div class="view view-2d" id="view-2d"></div>
 					<div class="view view-3d" id="view-3d" hidden></div>
+					<div class="view view-wood" id="view-wood" hidden></div>
 					<div class="map-dock">
 						<div class="mode-switch" role="group" aria-label="View mode">
 							<button type="button" data-mode="2d" aria-pressed="true">2D</button>
 							<button type="button" data-mode="3d" aria-pressed="false">3D</button>
+							<button type="button" data-mode="wood" aria-pressed="false">Wood</button>
 						</div>
 						<div class="zoom-menu" id="zoom-menu"></div>
 						<button type="button" class="stage-btn" id="reset-view" aria-label="Reset view">Reset view</button>
 						<button type="button" class="stage-btn" id="fullscreen" aria-label="Full screen" hidden>Full screen</button>
+						<button type="button" class="stage-btn" id="projection" aria-pressed="false" title="Only the map, on black, for projecting onto a cut-out">Projection</button>
+						<button type="button" class="stage-btn" id="hands" aria-pressed="false" title="Move through the months with your hand in front of the webcam">Hand control</button>
 						<button type="button" class="stage-btn" id="copy-link" aria-label="Copy a link to this month and reservoir">Copy link</button>
 					</div>
 					<p class="stage-hint" id="stage-hint"></p>
@@ -244,6 +263,26 @@
 					few stations reporting shows "No data". The 3D snowline follows each section's figure; it is drawn, not mapped.
 				</p>
 			</div>
+		</section>
+		<section class="exhibitions" id="exhibitions" aria-labelledby="exhibitions-title">
+			<h2 id="exhibitions-title">The original installation</h2>
+			<p>
+				Yoon Chung Han’s <em>California Drought Impact</em> was shown as laser-cut wooden sculptures of the state
+				(birch for water, walnut for drought), a visualization projected onto a cut-out California, and sound
+				made in MaxMSP that visitors played with hand movements in front of a camera. The Wood view, Projection mode,
+				Hand control and Data melody on this page are made in the spirit of that work.
+				Photos and video of the installation are on <a href="http://yoonchunghan.com/portfolio/california-drought-impact.html">her project page</a>.
+			</p>
+			<ul class="exhibit-list">
+				<li><span class="num">2017</span> ISEA 2017 Arts Exhibition, Manizales, Colombia</li>
+				<li><span class="num">2017</span> CHI 2017 Arts, Denver, USA</li>
+				<li><span class="num">2016</span> Los Angeles Art Association Open Show 2016, Los Angeles, USA</li>
+				<li><span class="num">2016</span> IEEE VISAP 2016 Arts Exhibition, Baltimore, USA</li>
+			</ul>
+			<p class="exhibit-pub">
+				Yoon Chung Han. <em>California Drought Impact v2: Interactive Data Visualization and Sonification using
+				Advanced Multimodal Interaction.</em> CHI 2017 Arts.
+			</p>
 		</section>
 	</main>
 

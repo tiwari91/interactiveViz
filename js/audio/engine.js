@@ -198,7 +198,69 @@ export function createAudio() {
 		o.stop(t + dur + 0.05);
 	}
 
+	// Data melody, in the spirit of the MaxMSP sonification of the 2016 installation:
+	// one wooden note per month. Pitch = statewide % full (pentatonic, low = empty);
+	// timbre = % of the usual level: a ringing marimba when wet, a short dry wood block in drought.
+	const SCALE = [ 0, 2, 4, 7, 9 ];
+	let melodyOn = false;
+	let lastNote = 0;
+	let lastFreq = 0;
+	function woodNote(pct, ofAvg) {
+		if (!ctx || muted || !melodyOn) return;
+		const now = performance.now();
+		if (now - lastNote < 140) return; // dragging the timeline: not one note per month
+		lastNote = now;
+		const step = Math.round(Math.min(1, Math.max(0, pct)) * 10);
+		const freq = 130.81 * 2 ** ((12 * Math.floor(step / 5) + SCALE[step % 5]) / 12);
+		lastFreq = freq;
+		const wet = Math.min(1, Math.max(0, ((ofAvg ?? 1) - 0.55) / 0.55));
+		const t = ctx.currentTime;
+		const dur = 0.18 + 1.1 * wet;
+		const k = calm() ? 0.5 : 1;
+		const out = ctx.createGain();
+		out.gain.value = 0.16 * k;
+		out.connect(nodes.ui);
+		// Marimba: fundamental plus a fast-fading 4th partial.
+		[ [ 1, 1, dur ], [ 3.98, 0.35 * wet, dur * 0.25 ] ].forEach(([ mul, amp, d ]) => {
+			if (amp <= 0.01) return;
+			const o = ctx.createOscillator();
+			o.frequency.value = freq * mul;
+			const g = ctx.createGain();
+			g.gain.setValueAtTime(0, t);
+			g.gain.linearRampToValueAtTime(amp, t + 0.004);
+			g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+			o.connect(g).connect(out);
+			o.start(t);
+			o.stop(t + d + 0.05);
+		});
+		// Dry knock: a short band of noise, louder the further below the usual level.
+		const dry = 1 - wet;
+		if (dry > 0.05) {
+			const s = ctx.createBufferSource();
+			s.buffer = nodes.white;
+			const bp = ctx.createBiquadFilter();
+			bp.type = "bandpass";
+			bp.frequency.value = freq * 6;
+			bp.Q.value = 6;
+			const g = ctx.createGain();
+			g.gain.setValueAtTime(0.9 * dry, t);
+			g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+			s.connect(bp).connect(g).connect(out);
+			s.start(t);
+			s.stop(t + 0.08);
+		}
+	}
+
 	const api = {
+		setMelody(on) {
+			melodyOn = Boolean(on);
+		},
+		get melody() {
+			return melodyOn;
+		},
+		note(pct, ofAvg) {
+			woodNote(pct, ofAvg);
+		},
 		get ready() {
 			return Boolean(ctx);
 		},
@@ -336,7 +398,7 @@ export function createAudio() {
 			};
 		},
 		debugState() {
-			return { context: ctx ? ctx.state : "none", nodes: built, muted, gain: ctx ? nodes.master.gain.value : 0 };
+			return { context: ctx ? ctx.state : "none", nodes: built, muted, gain: ctx ? nodes.master.gain.value : 0, melody: melodyOn, lastFreq };
 		},
 	};
 	return api;

@@ -14,6 +14,9 @@ import { createAudio } from "./audio/engine.js";
 import { createLayers, createReservoirCard } from "./panels.js";
 import { keyEvents, createCharts } from "./insights.js";
 import { initSoundControls } from "./audio/controls.js";
+import { createWood } from "./wood/viewWood.js";
+import { createProjection } from "./projection.js";
+import { createHands } from "./hands.js";
 
 // On a phone the legend folds away behind "Legend", so the map is near the top of the screen;
 // wider screens keep it open (its summary line is hidden there by CSS).
@@ -29,21 +32,24 @@ const d3 = window.d3;
 
 const MODE_KEY = "cdi-mode";
 
-// 3D by default; an explicit ?mode= wins, then the visitor's last choice. No WebGL -> 2D.
+const MODES = [ "2d", "3d", "wood" ];
+
+// 3D by default; an explicit ?mode= wins, then the visitor's last choice. No WebGL -> 2D
+// (the wood view is plain SVG, so it works without WebGL too).
 function initialMode(params) {
 	const canvas = document.createElement("canvas");
 	let gl = false;
 	try {
 		gl = Boolean(window.WebGLRenderingContext && (canvas.getContext("webgl2") || canvas.getContext("webgl")));
 	} catch (e) { /* no WebGL */ }
-	if (!gl) return "2d";
+	const ok = (m) => MODES.includes(m) && (gl || m !== "3d");
 	const asked = params.get("mode");
-	if (asked === "2d" || asked === "3d") return asked;
+	if (ok(asked)) return asked;
 	try {
 		const saved = localStorage.getItem(MODE_KEY);
-		if (saved === "2d" || saved === "3d") return saved;
+		if (ok(saved)) return saved;
 	} catch (e) { /* storage unavailable */ }
-	return "3d";
+	return gl ? "3d" : "2d";
 }
 
 function setProgress(f, text) {
@@ -136,6 +142,7 @@ async function start() {
 	const views = {
 		"2d": createMap2D($("#view-2d"), data, store, tooltip, audio),
 		"3d": createView3D($("#view-3d"), data, store, tooltip, audio),
+		wood: createWood($("#view-wood"), data, store, tooltip),
 	};
 	const release = createRelease(data);
 	const soundUi = { turnOn: async () => {} };
@@ -161,6 +168,7 @@ async function start() {
 			audio.tick();
 			mood(s.dateIndex);
 			audio.setDamLevels(release.voicesAt(s.dateIndex));
+			audio.note(data.totals[s.dateIndex].pct, data.totals[s.dateIndex].ofAvg);
 		}
 		if (changed.includes("selected")) {
 			if (s.selected) audio.select();
@@ -200,18 +208,20 @@ async function start() {
 		modeButtons.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
 		renderLegend($("#legend"), mode);
 		$("#stage-hint").textContent = views[mode].hint;
-		$("#view-2d").hidden = mode !== "2d";
-		$("#view-3d").hidden = mode !== "3d";
-		views[mode === "2d" ? "3d" : "2d"].pause();
+		for (const m of MODES) {
+			$(`#view-${m}`).hidden = m !== mode;
+			if (m !== mode) views[m].pause();
+		}
 		const url = new URL(location.href);
 		if (url.searchParams.has("mode")) {
 			url.searchParams.set("mode", mode);
 			history.replaceState(null, "", url);
 		}
 		const first3d = mode === "3d" && !views["3d"].debug();
-		if (first3d) {
+		const firstWood = mode === "wood" && !views.wood.debug();
+		if (first3d || firstWood) {
 			loading.classList.remove("done");
-			setProgress(0.05, "Loading 3D terrain…");
+			setProgress(0.05, first3d ? "Loading 3D terrain…" : "Cutting the wood layers…");
 		}
 		try {
 			await views[mode].mount(setProgress);
@@ -248,6 +258,9 @@ async function start() {
 		});
 	}
 
+	const projection = createProjection($("#projection"), stage, store, data);
+	const hands = createHands($("#hands"), stage, store, data);
+
 	initTheme($("#theme-toggle"), (theme) => views["3d"].setTheme(theme));
 
 	await showMode(store.get().mode);
@@ -273,7 +286,7 @@ async function start() {
 	document.body.dataset.ready = "true";
 
 	// Small hook for the automated checks in tests/check.mjs.
-	window.droughtViz = { store, data, views, audio };
+	window.droughtViz = { store, data, views, audio, projection, hands };
 }
 
 start();

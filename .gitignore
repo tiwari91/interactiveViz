@@ -1,2 +1,6 @@
 tests/screenshots/
 .DS_Store
+
+# Polyfork: only CC BY mesh files may be committed (see assets/polyfork/README.md)
+assets/polyfork/**/*.mjs
+assets/polyfork/hd/

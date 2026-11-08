@@ -18,7 +18,13 @@ Add one line per file: file, model name and link, licence, and what you changed 
 
 | File | Model | Licence | Changes |
 |---|---|---|---|
-| _none yet_ | | | |
+| `boat-launch-ramp-dbde11.glb` | "Boat Launch Ramp" by Polyfork (https://polyfork.dev/asset/boat-launch-ramp-dbde11) | CC BY 4.0 | none |
+| `dead-tree-6795fa.glb` | "Dead Tree" by Polyfork (https://polyfork.dev/asset/dead-tree-6795fa) | CC BY 4.0 | none |
+| `dive-marker-buoy-21beb7.glb` | "Dive Marker Buoy" by Polyfork (https://polyfork.dev/asset/dive-marker-buoy-21beb7) | CC BY 4.0 | none |
+| `pine-tree-3ea075.glb` | "Pine Tree" by Polyfork (https://polyfork.dev/asset/pine-tree-3ea075) | CC BY 4.0 | none |
+| `tall-pine-tree-ab4108.glb` | "Tall Pine Tree" by Polyfork (https://polyfork.dev/asset/tall-pine-tree-ab4108) | CC BY 4.0 | none |
+| `water-pump-house-121270.glb` | "Water Pump House" by Polyfork (https://polyfork.dev/asset/water-pump-house-121270) | CC BY 4.0 | none |
+| `windmill-pump-2993a4.glb` | "Windmill Pump" by Polyfork (https://polyfork.dev/asset/windmill-pump-2993a4) | CC BY 4.0 | none |
 
 Example:
 `acorn.glb` - "Acorn" by Polyfork (https://polyfork.dev/asset/acorn-6b2dd9) - CC BY 4.0 - scaled, recoloured

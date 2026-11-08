@@ -4,7 +4,7 @@ const ORBIT_URL = "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/contro
 
 let pending = null;
 
-function addScript(src) {
+export function addScript(src) {
 	return new Promise((resolve, reject) => {
 		const s = document.createElement("script");
 		s.src = src;

@@ -15,7 +15,7 @@ const { chromium, devices } = require("playwright");
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SHOTS = path.join(ROOT, "tests", "screenshots");
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".csv": "text/csv", ".svg": "image/svg+xml", ".png": "image/png", ".bin": "application/octet-stream" };
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".csv": "text/csv", ".svg": "image/svg+xml", ".png": "image/png", ".bin": "application/octet-stream", ".glb": "model/gltf-binary" };
 
 function serve() {
 	const server = http.createServer((req, res) => {
@@ -1256,6 +1256,37 @@ async function main() {
 			const shown = Object.entries(px.drawn).filter(([ , v ]) => v.n > 0);
 			check("Wildlife is drawn only while at least ~3 px on screen", Math.abs(px.u - px.want) < 1 && Object.keys(px.drawn).length > 0 && shown.every(([ , v ]) => v.min >= px.min),
 				`${shown.length ? shown.map(([ k, v ]) => `${k} ${v.n} (>= ${v.min.toFixed(1)} px)`).join(", ") : "none big enough at this view"}; ${(px.u / px.mpu / 8.8).toFixed(2)} px per metre 8.8 units away`);
+			// Street level (a few hundred metres up) is allowed round a lake, not elsewhere, and there
+			// the Polyfork shore props are big enough to see: a ramp, a pump house and a windmill.
+			const lim = await debug3d(page, "(() => { const b = c.basins.byId.get('SHA'); let far = null; let best = -1; for (let x = -450; x <= 450; x += 15) for (let z = -450; z <= 450; z += 15) { const d = Math.min(...c.basins.basins.map((o) => Math.hypot(x - o.cx, z - o.cz) - o.Lu * 1.6)); if (d > best) { best = d; far = [ x, z ]; } } return { lake: c.minDist(b.cx, b.cz), away: c.minDist(...far) }; })()");
+			const placed = await debug3d(page, "c.wildlife().stats");
+			const street = {};
+			const zb = await page.locator("#view-3d").boundingBox();
+			for (const name of [ "ramp", "pumphouse" ]) {
+				const p = await debug3d(page, `(() => {
+					const m = c.sc.scene.getObjectByName("wildlife-${name}"); const b = c.basins.byId.get("SHA");
+					const T = window.THREE; const m4 = new T.Matrix4(); const v = new T.Vector3(); let best = null;
+					for (let i = 0; i < m.count; i++) { m.getMatrixAt(i, m4); v.setFromMatrixPosition(m4); const d = Math.hypot(v.x - b.cx, v.z - b.cz); if (!best || d < best.d) best = { d, x: v.x, y: v.y, z: v.z }; }
+					const k = c.vScale(); c.sc.controls.target.set(best.x, best.y * k, best.z); c.sc.camera.position.set(best.x + 3, best.y * k + 5, best.z + 3);
+					return best;
+				})()`);
+				await page.waitForTimeout(800);
+				await page.mouse.move(zb.x + zb.width / 2, zb.y + zb.height / 2);
+				for (let k = 0; k < 40; k++) {
+					await page.mouse.wheel(0, -300);
+					await page.waitForTimeout(40);
+				}
+				await page.mouse.move(zb.x + 2, zb.y + zb.height - 2);
+				await waitStill(page, 1500);
+				street[name] = { at: p, ...(await debug3d(page, "({ dist: c.pose().dist, clear: c.nearClear(), drawn: c.wildlife().drawn })")) };
+				await page.screenshot({ path: path.join(SHOTS, `3d-street-${name}.png`) });
+			}
+			const seen = (n) => Object.values(street).some((v) => v.drawn[n]?.n > 0);
+			check("Street level near a lake (not elsewhere): ramp, pump house and windmill are drawn", Math.abs(lim.lake - 0.3) < 0.01 && Math.abs(lim.away - 7) < 0.01 && placed.ramps > 20 && placed.pumps > 20
+				&& Object.values(street).every((v) => v.dist < 0.5 && v.clear > 0) && [ "ramp", "pumphouse", "windmill" ].every(seen),
+				`closest zoom ${lim.lake.toFixed(2)} at Shasta, ${lim.away.toFixed(1)} away from lakes; ${placed.ramps} ramps, ${placed.pumps} pump sites; ${Object.entries(street).map(([ k, v ]) => `${k} view ${(v.dist * 1000).toFixed(0)} m, clearance ${v.clear.toFixed(2)}, drawn ${Object.entries(v.drawn).filter(([ , d ]) => d.n > 0).map(([ n, d ]) => `${n} ${d.min.toFixed(0)}px`).join(" ")}`).join("; ")}`);
+			await debug3d(page, "c.focus('FOL')");
+			await waitStill(page, 1500);
 			const full = await afloat("2017-05");
 			const dry = await afloat("2015-09");
 			check("Waterbirds sit on the water at Folsom, full (May 2017) and low (Sep 2015)", full.n > 0 && dry.n > 0 && full.bad === 0 && dry.bad === 0,
@@ -1275,8 +1306,9 @@ async function main() {
 			await page.waitForTimeout(40);
 		}
 		await page.waitForTimeout(1200);
-		const z1 = await debug3d(page, "({ dist: c.pose().dist, min: c.sc.controls.minDistance, t: c.sc.controls.target.toArray(), clear: c.clearance() })");
-		check("Zoom stops at the minimum distance and above the ground", z1.dist >= z1.min - 0.5 && z1.clear > 1, `${z1.dist.toFixed(1)} (min ${z1.min}), clearance ${z1.clear.toFixed(1)}`);
+		// The closest zoom depends on the place (street level round a lake): read it at the target.
+		const z1 = await debug3d(page, "({ dist: c.pose().dist, min: c.minDist(), t: c.sc.controls.target.toArray(), clear: c.clearance() })");
+		check("Zoom stops at the minimum distance and above the ground", z1.dist >= z1.min * 0.93 && z1.clear > Math.min(1, z1.dist * 0.3), `${z1.dist.toFixed(2)} (min ${z1.min.toFixed(2)}), clearance ${z1.clear.toFixed(2)}`);
 		check("Wheel zoom moves toward the cursor", Math.hypot(z1.t[0] - t0[0], z1.t[2] - t0[2]) > 1, `target moved ${Math.hypot(z1.t[0] - t0[0], z1.t[2] - t0[2]).toFixed(1)} units`);
 		await debug3d(page, "c.home()");
 		await waitStill(page, 500);

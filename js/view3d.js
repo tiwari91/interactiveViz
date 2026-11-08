@@ -1,7 +1,7 @@
 // 3D view: real terrain with carved reservoirs, dams and rivers. Handles the
 // month animation, picking, fly-to, drought replay, compare split and sound cues.
 import { loadThree, webglAvailable } from "./three/loader.js";
-import { createScene, homePose, comparePose } from "./three/scene.js";
+import { createScene, homePose, comparePose, STREET_DIST, MIN_DIST } from "./three/scene.js";
 import { createWorld, loadElevation, EXAGGERATION } from "./three/world.js";
 import { createBasins } from "./three/basins.js";
 import { createTerrain } from "./three/terrain.js";
@@ -11,6 +11,7 @@ import { createGaugeLinks } from "./three/gaugeLinks.js";
 import { createOutflow } from "./three/outflow.js";
 import { createRiparian } from "./three/riparian.js";
 import { createWildlife } from "./three/wildlife.js";
+import { loadShoreModels } from "./three/shoreModels.js";
 import { createMainRivers } from "./three/mainRivers.js";
 import { createSky, applyPreset } from "./three/sky.js";
 import { createLabels } from "./three/labels.js";
@@ -144,7 +145,10 @@ export function createView3D(container, data, store, tooltip, audio) {
 		const mainRivers = createMainRivers(THREE, world, outflow.router, shared, basins);
 		const riparian = createRiparian(THREE, outflow, outflow.router, basins, world, ui.quality);
 		// Waterbirds, vultures, deer and cattle round each dam, for close views (High quality only).
-		const wildlife = createWildlife(THREE, { basins, dams, outflow, router: outflow.router, world, riparian, shared, quality: ui.quality });
+		// Polyfork shore props (boat ramps, pump houses, windmills) join it when they load; without
+		// them the rest of the layer is drawn as before.
+		const shore = ui.quality === "high" ? await loadShoreModels(THREE).catch(() => null) : null;
+		const wildlife = createWildlife(THREE, { basins, dams, outflow, router: outflow.router, world, riparian, shared, quality: ui.quality, shore, groundAt: terrain.patchHeight });
 		await step(0.95, "Filling lakes…");
 		const sky = createSky(THREE);
 		const maxCap = Math.max(...data.reservoirs.map((r) => r.capacity));
@@ -437,6 +441,22 @@ export function createView3D(container, data, store, tooltip, audio) {
 			const s = basins.surfaceAt(x, z);
 			return Math.max(0.3, s ? s.h : world.groundY(x, z)) * vScale;
 		};
+		// Closest zoom at a point: street level (STREET_DIST) round a reservoir, out to where its
+		// shore props and animals stand, easing back to MIN_DIST over the next dozen units, where
+		// the terrain is too coarse to look at that close. OrbitControls itself allows STREET_DIST
+		// everywhere; the zoom and the frame loop keep to this floor, so leaving a lake's
+		// surroundings eases the camera out instead of snapping it.
+		const minDistAt = (x, z) => {
+			let t = 1;
+			for (const b of basins.basins) {
+				const inner = b.Lu * 1.6 + 6;
+				const d = Math.hypot(x - b.cx, z - b.cz);
+				if (d > inner + 12) continue;
+				const u = Math.min(1, Math.max(0, (d - inner) / 12));
+				t = Math.min(t, u * u * (3 - 2 * u));
+			}
+			return Math.exp(Math.log(STREET_DIST) + (Math.log(MIN_DIST) - Math.log(STREET_DIST)) * t);
+		};
 		// Top of what is drawn at a point: the ground, or a lake's water where it covers the bed.
 		// k is the vertical scale to use (the current one, or one a zoom step is about to reach).
 		const lakeIdx = new Map(basins.basins.map((b, i) => [ b.r.id, i ]));
@@ -470,15 +490,19 @@ export function createView3D(container, data, store, tooltip, audio) {
 		function needAt(p, t, k = vScale) {
 			const top = (x, z) => topAt(x, z, k);
 			const dist = p.distanceTo(t);
-			const margin = 1.5 + dist * 0.05;
+			// Below the usual closest zoom (street level near a lake) the fixed margins and sample
+			// radii shrink with the distance, so the camera can come down to a few hundred metres.
+			const c = Math.min(1, dist / MIN_DIST);
+			const margin = 1.5 * c + dist * 0.05;
 			// Close in, stay well above the local terrain: at least 40% of the distance to the
 			// target above the highest ground round the camera, so a view never sits beside cliffs.
-			let need = dist < 120 ? ringGround(p.x, p.z, Math.max(3, dist * 0.35), top) + dist * 0.4 : -Infinity;
+			let need = dist < 120 ? ringGround(p.x, p.z, Math.max(3 * c, dist * 0.35), top) + dist * 0.4 : -Infinity;
+			const side = 2 * c;
 			for (const f of CLEAR_F) {
 				const x = t.x + (p.x - t.x) * f;
 				const z = t.z + (p.z - t.z) * f;
 				let g = top(x, z);
-				if (f === 1) for (const [ ox, oz ] of [ [ 2, 0 ], [ -2, 0 ], [ 0, 2 ], [ 0, -2 ] ]) g = Math.max(g, top(x + ox, z + oz));
+				if (f === 1) for (const [ ox, oz ] of [ [ side, 0 ], [ -side, 0 ], [ 0, side ], [ 0, -side ] ]) g = Math.max(g, top(x + ox, z + oz));
 				need = Math.max(need, t.y + (g + margin * f - t.y) / f);
 			}
 			return need;
@@ -496,7 +520,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		// 50 degrees, so canyon walls do not fill the view.
 		const reliefAt = (d) => {
 			const t = sc.controls.target;
-			return Math.max(0, ringGround(t.x, t.z, Math.max(4, d * 0.6)) - t.y) / Math.max(1, d);
+			return Math.max(0, ringGround(t.x, t.z, Math.max(4 * Math.min(1, d / MIN_DIST), d * 0.6)) - t.y) / Math.max(Math.min(1, STREET_DIST), d);
 		};
 		const polarFor = (d, relief = 0) => {
 			const t = Math.min(1, Math.max(0, (Math.log(d) - Math.log(40)) / (Math.log(1600) - Math.log(40))));
@@ -554,23 +578,34 @@ export function createView3D(container, data, store, tooltip, audio) {
 		function zoomBy(factor, cx = null, cy = null) {
 			const d = sc.camera.position.distanceTo(sc.controls.target);
 			const base = zoom.active ? zoom.goal : d;
-			const goal = Math.min(sc.controls.maxDistance, Math.max(sc.controls.minDistance, base * factor));
-			if (Math.abs(Math.log(goal / base)) < 1e-4) return false;
 			const r = canvas.getBoundingClientRect();
 			const x = cx ?? r.left + r.width / 2;
 			const y = cy ?? r.top + r.height / 2;
 			// Repeat notches at the same pixel keep their anchor; re-picking it adds jitter.
-			if (!(zoom.active && Math.hypot(x - zoom.px[0], y - zoom.px[1]) <= 1)) {
+			const keep = zoom.active && Math.hypot(x - zoom.px[0], y - zoom.px[1]) <= 1;
+			let anchor = null;
+			let px = zoom.px;
+			if (!keep) {
 				const a = groundUnder(x, y);
 				if (a) {
-					zoom.anchor.set(a.x, a.y / vScale, a.z);
-					zoom.px = [ x, y ];
+					anchor = [ a.x, a.y / vScale, a.z ];
+					px = [ x, y ];
 				} else {
 					// No ground under the pointer (sky): zoom about the target, held at the centre.
 					const t = sc.controls.target;
-					zoom.anchor.set(t.x, t.y / vScale, t.z);
-					zoom.px = [ r.left + r.width / 2, r.top + r.height / 2 ];
+					anchor = [ t.x, t.y / vScale, t.z ];
+					px = [ r.left + r.width / 2, r.top + r.height / 2 ];
 				}
+			}
+			// Zoom closes in on the anchor, so the closest zoom is the one allowed there.
+			const ax = anchor ? anchor[0] : zoom.anchor.x;
+			const az = anchor ? anchor[2] : zoom.anchor.z;
+			const floor = Math.max(sc.controls.minDistance, minDistAt(ax, az));
+			const goal = Math.min(sc.controls.maxDistance, Math.max(Math.min(floor, base), base * factor));
+			if (Math.abs(Math.log(goal / base)) < 1e-4) return false;
+			if (anchor) {
+				zoom.anchor.set(...anchor);
+				zoom.px = px;
 			}
 			if (!zoom.active) zoom.relief = reliefAt(d);
 			zoom.goal = goal;
@@ -773,7 +808,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 		// z-fighting between ground, water and rivers), far views keep the whole state.
 		function fitNear() {
 			const d = sc.camera.position.distanceTo(sc.controls.target);
-			const near = Math.min(2, Math.max(0.1, d * 0.012));
+			const near = Math.min(2, Math.max(0.002, d * 0.012));
 			if (Math.abs(near - sc.camera.near) > sc.camera.near * 0.1) {
 				sc.camera.near = near;
 				sc.camera.updateProjectionMatrix();
@@ -803,6 +838,13 @@ export function createView3D(container, data, store, tooltip, audio) {
 				}
 			}
 			if (mover && (!replayFn || following()) && mover(now)) mover = null;
+			// Panned away from a lake at street level: ease back out to the closest zoom allowed here.
+			if (!zoom.active && !mover && !replayFn && !dragging) {
+				const t = sc.controls.target;
+				const fl = minDistAt(t.x, t.z);
+				const dd = sc.camera.position.distanceTo(t);
+				if (dd < fl * 0.97) zoomBy(fl / dd);
+			}
 			stepZoom(dt);
 			sc.controls.update();
 			fitScale();
@@ -916,7 +958,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 				if (key !== scaleKey) {
 					scaleKey = key;
 					scaleBar.firstChild.style.width = `${Math.round(nice / kmPerPx)}px`;
-					scaleBar.lastChild.textContent = `${nice >= 1 ? nice : nice.toFixed(1)} km`;
+					scaleBar.lastChild.textContent = nice >= 1 ? `${nice} km` : `${Math.round(nice * 1000)} m`;
 				}
 			}
 			// Compare: each half carries its own month's dots and names, clipped to that half.
@@ -1401,6 +1443,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 				return worst;
 			},
 			// For tests: camera height above the ground beneath it, and the fly-to pose for a lake.
+			// For tests: the closest zoom allowed with the orbit target at a point (default: the target).
+			minDist: (x = sc.controls.target.x, z = sc.controls.target.z) => minDistAt(x, z),
 			clearance: () => sc.camera.position.y - groundAt(sc.camera.position.x, sc.camera.position.z),
 			vScale: () => vScale,
 			// For tests: lowest height of the camera and its near-plane corners over the ground or water.
@@ -1420,7 +1464,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 				const p = sc.camera.position;
 				const t = sc.controls.target;
 				const d = p.distanceTo(t);
-				const above = p.y - ringGround(p.x, p.z, Math.max(3, d * 0.35));
+				// The same ring as needAt: it shrinks with the distance below MIN_DIST (street level).
+				const above = p.y - ringGround(p.x, p.z, Math.max(3 * Math.min(1, d / MIN_DIST), d * 0.35));
 				let clear = true;
 				for (let k = 1; k < 40; k++) {
 					const f = k / 40;

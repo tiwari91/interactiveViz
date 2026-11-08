@@ -1,5 +1,8 @@
 // Wildlife round each dam, for close views: rafts of waterbirds on the lake, vultures circling
-// over the canyon below the dam, deer at the forest edge and cattle on foothill grass.
+// over the canyon below the dam, deer at the forest edge and cattle on foothill grass. With the
+// Polyfork shore models loaded (shoreModels.js), each lake also gets a boat ramp at its full-pool
+// shore and a pump house with a windmill pump on open ground nearby: at a dry month the ramp
+// stands high above the water, as real ramps did in the drought.
 //
 // Everything is modelled in metres and drawn close to true size: the terrain is about a kilometre
 // per world unit, so an animal is a pixel or two even at the closest zoom. Nothing is inflated to
@@ -8,6 +11,7 @@
 // whole layer is skipped beyond a close view, so the state overview never draws it.
 import { EXAGGERATION } from "./world.js";
 import { regionOf, pelicanLake } from "./regions.js";
+import { toWorldUnits } from "./shoreModels.js";
 
 // Drawn size over true size, per kind.
 export const CAP = { bird: 4, beast: 4 };
@@ -124,7 +128,7 @@ function cowGeom(THREE, k) {
 }
 const COW_PIVOT = [ 0.95, 1.25 ];
 
-export function createWildlife(THREE, { basins, dams, outflow, router, world, riparian, shared, quality }) {
+export function createWildlife(THREE, { basins, dams, outflow, router, world, riparian, shared, quality, shore = null, groundAt = null }) {
 	const group = new THREE.Group();
 	group.name = "wildlife";
 	// The Layers toggle switches this inner group; update() shows or hides the outer one by view.
@@ -133,7 +137,7 @@ export function createWildlife(THREE, { basins, dams, outflow, router, world, ri
 	const unsquash = { value: 1 };
 	// World units per CSS pixel at unit distance, from the camera and the canvas height.
 	const pxScale = { value: 1 };
-	const stats = { sites: 0, waterbirds: 0, raptors: 0, deer: 0, cattle: 0, maxGrade: 0 };
+	const stats = { sites: 0, waterbirds: 0, raptors: 0, deer: 0, cattle: 0, ramps: 0, pumps: 0, maxGrade: 0 };
 	const off = {
 		group, wild, stats, setUnsquash() {}, update() {}, setLevels() {},
 		debug: () => ({ stats, visible: false, water: [] }),
@@ -143,6 +147,9 @@ export function createWildlife(THREE, { basins, dams, outflow, router, world, ri
 	// World units per metre (horizontal).
 	const K = world.vscale / EXAGGERATION;
 	const S = (x, z) => router.surface(x, z);
+	// Where a model stands: the drawn terrain under it when known (its triangles can sit tens of
+	// metres off the smooth surface, enough to bury a shore prop at street level).
+	const standY = (x, z) => groundAt?.(x, z) ?? S(x, z);
 	const grade = (x, z, d = 0.25) => Math.hypot(S(x + d, z) - S(x - d, z), S(x, z + d) - S(x, z - d)) / (2 * d) / EXAGGERATION;
 	// Gentle at the point and over a small footprint round it.
 	const gentle = (x, z, r = 0.3, limit = GENTLE) => {
@@ -294,6 +301,13 @@ export function createWildlife(THREE, { basins, dams, outflow, router, world, ri
 	const raptors = instanced("raptors", raptorGeom(THREE, K), 160, ANIM.flap);
 	const deer = instanced("deer", deerGeom(THREE, K), 400, ANIM.graze(DEER_PIVOT, K * CAP.beast));
 	const cattle = instanced("cattle", cowGeom(THREE, K), 900, ANIM.graze(COW_PIVOT, K * CAP.beast));
+	// Shore props, drawn at the same cap as the animals.
+	const PROP = K * CAP.beast;
+	const props = shore ? {
+		ramp: instanced("ramp", toWorldUnits(shore.ramp, PROP), 120),
+		pump: instanced("pumphouse", toWorldUnits(shore.pump, PROP), 120),
+		windmill: instanced("windmill", toWorldUnits(shore.windmill, PROP), 120),
+	} : null;
 
 	const COWS = [ 0x1f1b18, 0x1f1b18, 0x5a3424, 0x7a4630, 0x2b2420 ];
 
@@ -403,9 +417,48 @@ export function createWildlife(THREE, { basins, dams, outflow, router, world, ri
 					if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 0.3)) continue;
 					claim(x, z, 3 * K, g);
 					const set = isDeer ? deer : cattle;
-					set.add(x, S(x, z), z, heading + (r() - 0.5) * 1.6, isDeer ? WHITE : pick(COWS));
+					set.add(x, standY(x, z), z, heading + (r() - 0.5) * 1.6, isDeer ? WHITE : pick(COWS));
 					stats[isDeer ? "deer" : "cattle"]++;
 				}
+			}
+		}
+
+		if (props) {
+			// A boat ramp on gentle ground at the full-pool shore, its low end (+z in the model)
+			// toward the middle of the lake.
+			for (let tries = 0; tries < 400; tries++) {
+				const u = b.dam.u + 1 + r() * (b.Lu * 1.5 - b.dam.u - 1);
+				const v = (r() * 2 - 1) * b.Lv * 1.5;
+				const [ x, z ] = b.toWorld(u, v);
+				const sfc = basins.surfaceAt(x, z);
+				if (!sfc || sfc.zone !== "shore" || sfc.basinId !== id) continue;
+				if (onDam(x, z, 0.3) || onRiver(x, z, 0.1) || taken.some((t) => Math.hypot(t[0] - x, t[1] - z) < t[2] + 0.15)) continue;
+				const g = gentle(x, z, 0.15, 0.3);
+				if (g < 0) continue;
+				claim(x, z, 0.15, g);
+				props.ramp.add(x, standY(x, z), z, Math.atan2(b.cx - x, b.cz - z));
+				stats.ramps++;
+				break;
+			}
+			// A pump house and a windmill pump side by side on open, gentle ground near the lake.
+			for (let tries = 0; tries < 80; tries++) {
+				const a = r() * 6.28;
+				const dd = b.Lu * (1 + r() * 0.6) + 1 + r() * 3;
+				const x = b.cx + Math.cos(a) * dd;
+				const z = b.cz + Math.sin(a) * dd;
+				const g = clearAt(x, z, 0.2, 0.14);
+				if (g < 0) continue;
+				const side = r() * 6.28;
+				const wx = x + Math.cos(side) * 25 * PROP;
+				const wz = z + Math.sin(side) * 25 * PROP;
+				const gw = clearAt(wx, wz, 0.1, 0.14);
+				if (gw < 0) continue;
+				claim(x, z, 0.2, g);
+				claim(wx, wz, 0.1, gw);
+				props.pump.add(x, standY(x, z), z, r() * 6.28);
+				props.windmill.add(wx, standY(wx, wz), wz, r() * 6.28);
+				stats.pumps++;
+				break;
 			}
 		}
 	}

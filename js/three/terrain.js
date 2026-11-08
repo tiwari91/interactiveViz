@@ -235,6 +235,13 @@ vec4 gD1;`)
 		float outcrop = smoothstep(0.62, 0.78, texture2D(uDetail, vWPos.xz * 0.045 + 0.51).b + d2.g * 0.15) * smoothstep(0.06, 0.2, slope);
 		ground = mix(ground, rockC * (1.0 - gD1.b * 0.3), outcrop * 0.85);
 		gRock = max(gRock, outcrop);
+		// Street-level views (a few hundred metres up, near a lake): a finer grain at about 30 m a
+		// tile, so the ground under the shore props is not a blurred wash.
+		float fine = 1.0 - smoothstep(0.8, 4.0, dist);
+		if (fine > 0.0) {
+			vec4 d0 = texture2D(uDetail, vWPos.xz * 3.3 + 0.21);
+			ground *= mix(1.0, mix(0.84, 1.12, d0.r) * mix(0.92, 1.05, d0.g), fine);
+		}
 		diffuseColor.rgb = mix(c, ground, gNear);
 	}
 	// Drought front (view3d drought fields): a sand wash round reservoirs far below their average,
@@ -386,7 +393,8 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	mesh.receiveShadow = true;
 	mesh.castShadow = quality === "high";
 
-	const patches = new THREE.Mesh(buildPatches(THREE, P, world, basins, quality), material(THREE, uniforms));
+	const patchGrids = [];
+	const patches = new THREE.Mesh(buildPatches(THREE, P, world, basins, quality, patchGrids), material(THREE, uniforms));
 	patches.material.polygonOffset = true;
 	patches.material.polygonOffsetFactor = -2;
 	patches.material.polygonOffsetUnits = -2;
@@ -399,8 +407,33 @@ export function createTerrain(THREE, data, world, basins, quality) {
 
 	const group = new THREE.Group();
 	group.add(surround, mesh, patches, border);
+	// Height of the drawn basin patch under a point (its triangles, not the smooth surface they
+	// sample), or null outside every patch: what street-level props and animals stand on.
+	function patchHeight(x, z) {
+		let best = null;
+		for (const { bs, nu, nv, ys } of patchGrids) {
+			if (Math.abs(x - bs.cx) > bs.reach * 1.5 || Math.abs(z - bs.cz) > bs.reach * 1.5) continue;
+			const [ u, v ] = bs.toLocal(x, z);
+			const fi = (u - bs.extent.u[0]) / (bs.extent.u[1] - bs.extent.u[0]) * nu;
+			const fj = (v - bs.extent.v[0]) / (bs.extent.v[1] - bs.extent.v[0]) * nv;
+			if (!(fi >= 0 && fi <= nu && fj >= 0 && fj <= nv)) continue;
+			const i = Math.min(nu - 1, Math.floor(fi));
+			const j = Math.min(nv - 1, Math.floor(fj));
+			const a = fi - i;
+			const c = fj - j;
+			const h00 = ys[i * (nv + 1) + j];
+			const h01 = ys[i * (nv + 1) + j + 1];
+			const h10 = ys[(i + 1) * (nv + 1) + j];
+			const h11 = ys[(i + 1) * (nv + 1) + j + 1];
+			// Each cell is split along its (i, j + 1)-(i + 1, j) diagonal (see buildPatches).
+			const h = a + c <= 1 ? h00 + a * (h10 - h00) + c * (h01 - h00) : h11 + (1 - a) * (h01 - h11) + (1 - c) * (h10 - h11);
+			best = best === null ? h : Math.max(best, h);
+		}
+		return best;
+	}
 	return {
 		group,
+		patchHeight,
 		detail,
 		uniforms,
 		// The main mesh's geometry and per-vertex metres/lon/lat, for overlays draped on it (snow).
@@ -428,7 +461,7 @@ export function createTerrain(THREE, data, world, basins, quality) {
 	};
 }
 
-function buildPatches(THREE, P, world, basins, quality) {
+function buildPatches(THREE, P, world, basins, quality, grids = []) {
 	const res = quality === "high" ? 84 : 46;
 	const positions = [];
 	const colors = [];
@@ -507,6 +540,7 @@ function buildPatches(THREE, P, world, basins, quality) {
 			}
 		}
 		base += (nu + 1) * (nv + 1);
+		grids.push({ bs, nu, nv, ys });
 	}
 	const g = new THREE.BufferGeometry();
 	g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));

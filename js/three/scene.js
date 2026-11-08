@@ -16,6 +16,10 @@ export function comparePose(aspect) {
 	return { target: [ -60, 0, -20 ], dist: 950 * Math.min(1.5, Math.max(1, 2 / aspect)), polar: 0.7, az: -1.02 };
 }
 
+// Closest orbit distance (world units, about a kilometre each) near a reservoir, and elsewhere.
+export const STREET_DIST = 0.3;
+export const MIN_DIST = 7;
+
 export function createScene(THREE, container, quality) {
 	THREE.ColorManagement.legacyMode = false;
 	const high = quality === "high";
@@ -38,9 +42,11 @@ export function createScene(THREE, container, quality) {
 	const controls = new THREE.OrbitControls(camera, renderer.domElement);
 	controls.enableDamping = true;
 	controls.dampingFactor = 0.08;
-	// Close enough to read a dam's spillway and the lake edge; the near plane follows the
+	// Street level: a few hundred metres from the target, close enough to see boat ramps and
+	// pump houses at the shore. view3d allows this only near a reservoir (MIN_DIST elsewhere,
+	// where the terrain is too coarse to look at that close); the near plane follows the
 	// distance (see view3d) so close views keep their depth precision.
-	controls.minDistance = 7;
+	controls.minDistance = STREET_DIST;
 	controls.maxDistance = 2600;
 	controls.maxPolarAngle = Math.PI * 0.42;
 	controls.screenSpacePanning = false;
@@ -64,9 +70,12 @@ export function createScene(THREE, container, quality) {
 		sun.target.position.copy(t);
 		sun.position.copy(t).addScaledVector(sun.userData.dir, 900);
 		if (!high) return;
-		const size = Math.min(700, Math.max(40, dist * 0.75));
+		// Close in, a tighter frustum keeps shadow texels small; the normal bias (world units)
+		// shrinks with it so it stays the same number of texels.
+		const size = Math.min(700, Math.max(8, dist * 0.75));
 		if (Math.abs(size - shadowSize) / size > 0.08) {
 			shadowSize = size;
+			sun.shadow.normalBias = 0.6 * Math.min(1, size / 40);
 			Object.assign(sun.shadow.camera, { left: -size, right: size, top: size, bottom: -size, near: 100, far: 1900 });
 			sun.shadow.camera.updateProjectionMatrix();
 		}

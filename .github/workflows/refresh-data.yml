@@ -10,14 +10,15 @@ on:
 
 permissions:
   contents: write
+  pages: write   # to ask Pages to rebuild after the data commit
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Fetch CDEC storage and flow
@@ -25,14 +26,23 @@ jobs:
       - name: Rebuild snowpack (needs the storage months above)
         run: python3 scripts/fetch_snow.py
       - name: Commit if the data changed
+        id: commit
         run: |
           if git diff --quiet -- data/; then
             echo "No new data."
             exit 0
           fi
-          last=$(tail -n 1 data/reservoir_storage_monthly.csv | cut -d, -f2)
+          # The file is sorted by reservoir, not date, so take the latest month over all rows.
+          last=$(tail -n +2 data/reservoir_storage_monthly.csv | cut -d, -f2 | sort | tail -n 1)
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/
           git commit -m "Data: CDEC refresh through ${last}"
           git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      # A push made with the workflow's own token may not start a Pages build, so ask for one.
+      - name: Rebuild the site
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds"

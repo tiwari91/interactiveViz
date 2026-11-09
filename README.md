@@ -17,7 +17,7 @@ The original 2016 page is kept, unchanged apart from data paths, in [`legacy/`](
 - **D3 v7** (pinned UMD build from cdnjs) replaces d3 v3, queue.js and jQuery. The code is split into
   small ES modules under `js/`: data loading, scales, 2D map, 3D view, timeline, legend, summary, tooltip and theme.
 - **Real time series.** The 2016 data had one storage snapshot (Sep 2014) with many blanks. The page now shows
-  monthly storage from October 2011 to the latest complete month (September 2026 at the last refresh) from CDEC,
+  monthly storage from October 2011 to the latest complete month from CDEC (refreshed on the 12th of each month by `.github/workflows/refresh-data.yml`),
   fetched by `scripts/fetch_cdec.py`, plus monthly mean river flow for the gauges that report it. See
   [Data](#data) for what the numbers mean.
 - **2D map:** fitted, responsive conic projection; glyphs with ring = capacity and disc = storage, coloured

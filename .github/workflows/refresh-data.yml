@@ -1,0 +1,38 @@
+# Refresh the reservoir storage, river flow and snowpack data from CDEC once a month, after the operators
+# have filed the previous month, and commit it only when something changed. The page computes
+# every count and date range from the data files, so a new month shows up without code changes.
+name: Refresh CDEC data
+
+on:
+  schedule:
+    - cron: "0 6 12 * *"   # 06:00 UTC on the 12th of each month
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch CDEC storage and flow
+        run: python3 scripts/fetch_cdec.py
+      - name: Rebuild snowpack (needs the storage months above)
+        run: python3 scripts/fetch_snow.py
+      - name: Commit if the data changed
+        run: |
+          if git diff --quiet -- data/; then
+            echo "No new data."
+            exit 0
+          fi
+          last=$(tail -n 1 data/reservoir_storage_monthly.csv | cut -d, -f2)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "Data: CDEC refresh through ${last}"
+          git push

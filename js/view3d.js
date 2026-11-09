@@ -386,7 +386,7 @@ export function createView3D(container, data, store, tooltip, audio) {
 			} else if (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_") {
 				// Keyboard zoom, with the same tilt toward an oblique view as the wheel and pinch.
 				e.preventDefault();
-				zoomBy(e.key === "+" || e.key === "=" ? 0.7 : 1 / 0.7);
+				zoomOrNote(e.key === "+" || e.key === "=" ? 0.7 : 1 / 0.7);
 			} else if (e.key === "Escape" && !store.get().selected) {
 				mover = flyTo(THREE, sc.camera, sc.controls, home(), motionMs(1200));
 			}
@@ -631,6 +631,9 @@ export function createView3D(container, data, store, tooltip, audio) {
 				}
 			}
 			if (Math.abs(Math.log(goal / base)) < 1e-4) return false;
+			// Held back by the limit and already within 0.3% of it: count as at the limit (no
+			// creeping by slivers), so the wheel can scroll the page on and the note can show.
+			if (factor < 1 && goal > base * factor * 1.0001 && Math.log(base / goal) < 0.003) return false;
 			if (anchor) {
 				zoom.anchor.set(...anchor);
 				zoom.px = px;
@@ -782,15 +785,41 @@ export function createView3D(container, data, store, tooltip, audio) {
 			}
 			sc.camera.lookAt(t);
 		}
+		// A short note when zoom in stops at its limit, so a zoom that will not go further does
+		// not look broken: away from lakes the terrain is too coarse to show closer than MIN_DIST.
+		const limitNote = document.createElement("div");
+		limitNote.className = "zoom-limit-note";
+		limitNote.setAttribute("role", "status");
+		limitNote.hidden = true;
+		container.appendChild(limitNote);
+		let limitTimer = 0;
+		function showLimit() {
+			const t = sc.controls.target;
+			limitNote.textContent = minDistAt(t.x, t.z) > MIN_DIST * 0.9
+				? "Closest view here. Zoom in on a reservoir to get down to street level."
+				: "Street level: as close as the map goes.";
+			limitNote.hidden = false;
+			clearTimeout(limitTimer);
+			limitTimer = setTimeout(() => (limitNote.hidden = true), 2600);
+		}
+		// Zoom in or out by factor (below 1 is in); shows the limit note when zoom in cannot go on.
+		function zoomOrNote(factor, cx, cy) {
+			const moved = zoomBy(factor, cx, cy);
+			if (!moved && factor < 1) showLimit();
+			return moved;
+		}
 		canvas.addEventListener("wheel", (e) => {
 			cancelFollow();
 			if (ui.replaying) return;
 			// Normalise lines and pages to pixels; a macOS trackpad pinch arrives as small
-			// ctrl+wheel deltas, so it is scaled up to match a wheel notch.
-			let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+			// ctrl+wheel deltas, so it is scaled up to match a wheel notch. Shift gives fine steps
+			// (a quarter of a notch); some browsers turn a shift-scroll into a sideways deltaX.
+			const raw = e.shiftKey && !e.deltaY ? e.deltaX : e.deltaY;
+			let dy = raw * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
 			if (e.ctrlKey) dy *= 3.5;
 			dy = Math.max(-250, Math.min(250, dy));
-			const moved = zoomBy(Math.exp(dy * 0.00095), e.clientX, e.clientY);
+			if (e.shiftKey) dy *= 0.25;
+			const moved = zoomOrNote(Math.exp(dy * 0.00095), e.clientX, e.clientY);
 			// At a zoom limit the wheel scrolls the page on, so nobody is trapped over the map
 			// (a pinch never scrolls or zooms the page).
 			if (moved || e.ctrlKey) e.preventDefault();
@@ -812,7 +841,8 @@ export function createView3D(container, data, store, tooltip, audio) {
 			gesture = 0;
 		}, { passive: false });
 		canvas.addEventListener("dblclick", (e) => {
-			if (!ui.replaying) zoomBy(0.5, e.clientX, e.clientY);
+			// Double-click zooms in; shift + double-click zooms out.
+			if (!ui.replaying) zoomOrNote(e.shiftKey ? 2 : 0.5, e.clientX, e.clientY);
 		});
 		// Touch pinch, centred between the fingers. A two-finger pan only becomes a zoom once the
 		// fingers have spread or closed by more than about 6%.
@@ -1288,6 +1318,19 @@ export function createView3D(container, data, store, tooltip, audio) {
 			zoomFactor: () => home().dist / sc.camera.position.distanceTo(sc.controls.target),
 			// A zoom preset: 1x flies home; closer levels ease in about the middle of the view with
 			// the wheel's zoom (so tilt, ground clearance and the relief scale behave the same).
+			// One zoom step about the centre of the view (the dock's + and - buttons).
+			zoomStep(dir) {
+				cancelFollow();
+				if (!ui.replaying) zoomOrNote(dir > 0 ? 0.7 : 1 / 0.7);
+			},
+			// The zoom factor of street level here, when the view is already close in (Basin or
+			// nearer) on a reservoir; else null. From the state view it would be a 600x jump.
+			streetZoom() {
+				const t = sc.controls.target;
+				const fl = minDistAt(t.x, t.z);
+				const now = home().dist / sc.camera.position.distanceTo(t);
+				return fl < MIN_DIST * 0.5 && now >= 8 ? home().dist / fl : null;
+			},
 			zoomTo(k) {
 				const d = sc.camera.position.distanceTo(sc.controls.target);
 				if (k <= 1.001) {
@@ -1765,9 +1808,17 @@ export function createView3D(container, data, store, tooltip, audio) {
 			if (ui.replaying) stopReplay();
 			if (ctx) ctx.home();
 		},
-		// Zoom presets for the dock's zoom menu, as multiples of the state view.
-		zoomLevels: [ { name: "State", k: 1 }, { name: "Region", k: 4 }, { name: "Basin", k: 12 }, { name: "Reservoir", k: 40 } ],
+		// Zoom presets for the dock's zoom menu, as multiples of the state view; on a reservoir
+		// the list ends with street level there.
+		get zoomLevels() {
+			const base = [ { name: "State", k: 1 }, { name: "Region", k: 4 }, { name: "Basin", k: 12 }, { name: "Reservoir", k: 40 } ];
+			const street = ctx ? ctx.streetZoom() : null;
+			return street ? [ ...base, { name: "Street", k: Math.round(street) } ] : base;
+		},
 		zoomLevel: () => (ctx ? ctx.zoomFactor() : 1),
+		zoomStep(dir) {
+			if (ctx) ctx.zoomStep(dir);
+		},
 		riverProfile: (id) => (ctx ? ctx.riverProfile(id) : null),
 		setZoom(k) {
 			if (ui.replaying) stopReplay();

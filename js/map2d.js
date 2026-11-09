@@ -135,7 +135,12 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		tooltip.hide();
 	});
 
-	const zoom = d3.zoom().scaleExtent([ 1, 8 ]).on("zoom", (event) => {
+	// d3's own wheel step, with shift for fine steps (a quarter); some browsers turn a
+	// shift-scroll into a sideways deltaX. Shift + double-click already zooms out in d3.
+	const zoom = d3.zoom().scaleExtent([ 1, 8 ]).wheelDelta((e) => {
+		const raw = e.shiftKey && !e.deltaY ? e.deltaX : e.deltaY;
+		return -raw * (e.deltaMode === 1 ? 0.05 : e.deltaMode ? 1 : 0.002) * (e.ctrlKey ? 10 : 1) * (e.shiftKey ? 0.25 : 1);
+	}).on("zoom", (event) => {
 		transform = event.transform;
 		world.attr("transform", transform);
 		tooltip.hide();
@@ -316,6 +321,9 @@ export function createMap2D(container, data, store, tooltip, audio) {
 		// Zoom presets for the dock's zoom menu (the map's own zoom runs 1x to 8x).
 		zoomLevels: [ { name: "State", k: 1 }, { name: "Region", k: 2 }, { name: "Basin", k: 4 }, { name: "Close", k: 8 } ],
 		zoomLevel: () => transform.k,
+		zoomStep(dir) {
+			svg.transition().duration(250).call(zoom.scaleBy, dir > 0 ? 1.5 : 1 / 1.5);
+		},
 		setZoom(k) {
 			if (k <= 1.001) svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
 			else svg.transition().duration(500).call(zoom.scaleTo, k);

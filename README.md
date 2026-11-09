@@ -182,4 +182,8 @@ saves screenshots to `tests/screenshots/`.
 ```sh
 CHROME_BIN=/path/to/chrome-headless-shell node tests/check.mjs
 # PLAYWRIGHT_FROM=/path/to/package.json selects which install of playwright to load
+# ONLY=zoom (or layers, drought) runs one group of checks, in a couple of minutes
 ```
+
+On a Mac the checks draw with the GPU through Metal, so the full run takes about 8 minutes; elsewhere they use
+SwiftShader (software GL, no GPU needed), which is about three times slower. `CHROME_ARGS` overrides the GL flags.

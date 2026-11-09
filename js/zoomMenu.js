@@ -4,9 +4,11 @@ export const fmtZoom = (k) => `${k < 9.95 ? k.toFixed(1) : Math.round(k)}×`;
 
 export function createZoomMenu(el, views, store) {
 	el.innerHTML = `
+		<button type="button" class="stage-btn zoom-step" data-dir="-1" aria-label="Zoom out" title="Zoom out (shift + double-click on the map)">−</button>
 		<button type="button" class="stage-btn zoom-btn" aria-haspopup="true" aria-expanded="false">
 			<span class="zoom-val num">1.0×</span><svg class="zoom-caret" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg>
 		</button>
+		<button type="button" class="stage-btn zoom-step" data-dir="1" aria-label="Zoom in" title="Zoom in (hold shift while scrolling for fine steps)">+</button>
 		<ul class="zoom-list" role="menu" hidden></ul>`;
 	const btn = el.querySelector(".zoom-btn");
 	const val = el.querySelector(".zoom-val");
@@ -32,7 +34,14 @@ export function createZoomMenu(el, views, store) {
 		btn.setAttribute("aria-expanded", "false");
 		if (focusBtn) btn.focus();
 	}
+	// The list is rebuilt on each open: a view may offer a preset only where it applies
+	// (the 3D view adds street level when it is on a reservoir).
+	function fill() {
+		list.innerHTML = view.zoomLevels.map((l) => `<li role="none"><button type="button" role="menuitem" data-k="${l.k}"><span>${l.name}</span><span class="num">${fmtZoom(l.k)}</span></button></li>`).join("");
+		show(current);
+	}
 	function open() {
+		fill();
 		list.hidden = false;
 		btn.setAttribute("aria-expanded", "true");
 		(items().find((b) => b.getAttribute("aria-current") === "true") || items()[0])?.focus();
@@ -40,12 +49,17 @@ export function createZoomMenu(el, views, store) {
 	function bind(mode) {
 		view?.onZoom(null);
 		view = views[mode];
-		list.innerHTML = view.zoomLevels.map((l) => `<li role="none"><button type="button" role="menuitem" data-k="${l.k}"><span>${l.name}</span><span class="num">${fmtZoom(l.k)}</span></button></li>`).join("");
 		view.onZoom(show);
+		current = view.zoomLevel();
+		fill();
 		show(view.zoomLevel());
 	}
 
 	btn.addEventListener("click", () => (list.hidden ? open() : close()));
+	el.querySelectorAll(".zoom-step").forEach((b) => b.addEventListener("click", () => {
+		close();
+		view.zoomStep(+b.dataset.dir);
+	}));
 	list.addEventListener("click", (e) => {
 		const b = e.target.closest("[role=menuitem]");
 		if (!b) return;

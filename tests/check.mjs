@@ -1,7 +1,8 @@
 // End-to-end checks for the drought visualization, run in headless Chromium.
 //   CHROME_BIN=/path/to/chrome-headless-shell node tests/check.mjs
 //   PLAYWRIGHT_FROM (or PW_REQUIRE)=/path/to/package.json picks the playwright install.
-//   CHROME_ARGS="--use-gl=angle --use-angle=metal" replaces the default SwiftShader GL flags.
+//   CHROME_ARGS replaces the default GL flags (Metal on a Mac, SwiftShader elsewhere).
+//   ONLY=zoom | layers | drought runs one group of checks.
 // Serves the repo on a free port, runs the checks, saves screenshots to tests/screenshots/.
 // Every expected count comes from the data files, never a hard-coded number.
 import { createRequire } from "module";
@@ -135,7 +136,7 @@ async function zoomChecks(page) {
 		const f = () => {
 			const k = c.vScale();
 			const p = c.pose();
-			window.__zr.push({ d: p.dist, polar: p.polar, s: a ? c.toClient([ a[0], a[1] / k0 * k, a[2] ]) : null, k, clear: c.nearClear() });
+			window.__zr.push({ d: p.dist, polar: p.polar, s: a ? c.toClient([ a[0], a[1] / k0 * k, a[2] ]) : null, k, clear: c.nearClear(), m: c.moving() });
 			window.__zrr = requestAnimationFrame(f);
 		};
 		window.__zrr = requestAnimationFrame(f);
@@ -207,6 +208,20 @@ async function zoomChecks(page) {
 	await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 	await cdp.detach();
 	check("Every zoom input works both ways from a close canyon view (wheel, ctrl+wheel pinch, Safari gesture, touch pinch)", Object.values(inputs).every((v) => v.ok), Object.entries(inputs).map(([ k, v ]) => `${k} ${v.txt}${v.ok ? "" : " FAIL"}`).join("; "));
+
+	// (0) After a fly-to ends the camera stands still: the relief scale follows the distance, and
+	// rescaling heights must not change the distance again (a loop that crept for seconds).
+	{
+		await fly("ORO");
+		const poses = [];
+		for (let k = 0; k < 6; k++) {
+			poses.push(await debug3d(page, "c.pose()"));
+			await page.waitForTimeout(300);
+		}
+		const creep = Math.max(...poses.map((p) => Math.abs(p.dist / poses[0].dist - 1)));
+		const tilt = Math.max(...poses.map((p) => Math.abs(p.polar - poses[0].polar)));
+		check("Camera stands still once a fly-to ends (no creeping zoom or tilt)", creep < 1e-4 && tilt < 1e-4, `distance change ${(100 * creep).toFixed(3)}%, tilt change ${tilt.toFixed(5)} rad over 1.8 s`);
+	}
 
 	// (a) The ground point under an off-centre pointer stays under it, every frame and at rest.
 	const drifts = [];
@@ -285,11 +300,71 @@ async function zoomChecks(page) {
 			lo = Math.min(lo, f.d);
 			bounce = Math.max(bounce, f.d / lo - 1);
 		}
-		const tail = log.slice(-20).map((f) => f.d);
-		near.push({ id, bounce, clear: Math.min(...log.map((f) => f.clear)), rest, still: Math.max(...tail) - Math.min(...tail), d: [ log[0].d, log[log.length - 1].d ] });
+		// Stillness is judged on the frames after the zoom has come to rest (a slow software-GL
+		// frame rate would otherwise put part of the zoom itself in a fixed-size tail).
+		const lastMoving = log.reduce((j, f, i) => (f.m ? i : j), -1);
+		const tail = log.slice(lastMoving + 1).map((f) => f.d);
+		near.push({ id, bounce, clear: Math.min(...log.map((f) => f.clear)), rest, still: Math.max(...tail) - Math.min(...tail), tailN: tail.length, d: [ log[0].d, log[log.length - 1].d ] });
 	}
-	check("Zooming in to the ground never bounces, never goes under ground or water, and comes to rest", near.every((r) => r.bounce <= 0.005 && r.clear > 0 && r.rest < 3 && r.still < 1e-3),
-		near.map((r) => `${r.id} ${r.d[0].toFixed(0)}->${r.d[1].toFixed(1)} bounce ${(100 * r.bounce).toFixed(1)}%, min clearance ${r.clear.toFixed(2)}, rest in ${r.rest.toFixed(1)} s`).join("; "));
+	check("Zooming in to the ground never bounces, never goes under ground or water, and comes to rest", near.every((r) => r.bounce <= 0.005 && r.clear > 0 && r.rest < 3 && r.tailN >= 5 && r.still < 1e-3),
+		near.map((r) => `${r.id} ${r.d[0].toFixed(0)}->${r.d[1].toFixed(1)} bounce ${(100 * r.bounce).toFixed(1)}%, min clearance ${r.clear.toFixed(2)}, rest in ${r.rest.toFixed(1)} s, still ${r.still.toExponential(1)} over ${r.tailN} frames`).join("; "));
+	// (d) Shift + wheel gives fine steps (about a quarter of a plain notch).
+	{
+		await fly("PNF");
+		const [ x, y ] = at(0.5, 0.5);
+		const d0 = await dist();
+		await wheel(x, y, 1, -100);
+		await waitStill(page, 200);
+		const plain = Math.log(d0 / (await dist()));
+		await fly("PNF");
+		const d1 = await dist();
+		await page.keyboard.down("Shift");
+		await wheel(x, y, 1, -100);
+		await page.keyboard.up("Shift");
+		await waitStill(page, 200);
+		const fine = Math.log(d1 / (await dist()));
+		check("Shift + wheel zooms in fine steps (about a quarter of a notch)", plain > 0 && fine > 0 && Math.abs(fine / plain - 0.25) < 0.08, `plain ${(100 * (1 - Math.exp(-plain))).toFixed(1)}%, shift ${(100 * (1 - Math.exp(-fine))).toFixed(1)}%`);
+	}
+	// (e) Shift + double-click zooms out; the dock's + and - buttons step the zoom.
+	{
+		await fly("PNF");
+		const [ x, y ] = at(0.5, 0.5);
+		const d0 = await dist();
+		await page.keyboard.down("Shift");
+		await page.mouse.dblclick(x, y);
+		await page.keyboard.up("Shift");
+		await waitStill(page, 200);
+		const out = await dist();
+		await page.locator(".zoom-step[data-dir=\"1\"]").click();
+		await waitStill(page, 200);
+		const plus = await dist();
+		await page.locator(".zoom-step[data-dir=\"-1\"]").click();
+		await waitStill(page, 200);
+		const minus = await dist();
+		check("Shift + double-click zooms out, and the + and - buttons zoom in and out", out > d0 * 1.6 && plus < out * 0.8 && minus > plus * 1.25, `${d0.toFixed(1)} -> shift dblclick ${out.toFixed(1)} -> + ${plus.toFixed(1)} -> - ${minus.toFixed(1)}`);
+	}
+	// (f) On a reservoir the zoom menu offers street level; away from lakes, zooming in past the
+	// limit shows a short note instead of silently doing nothing.
+	{
+		await fly("ORO");
+		await page.locator(".zoom-btn").click();
+		const names = await page.locator(".zoom-list [role=menuitem]").allInnerTexts();
+		const hasStreet = names.some((n) => /^Street/.test(n));
+		if (hasStreet) await page.locator(".zoom-list [role=menuitem]").last().click();
+		await waitStill(page, 300);
+		const street = await dist();
+		await debug3d(page, "c.home()");
+		await waitStill(page, 300);
+		await debug3d(page, "c.zoomTo(1000)");
+		await waitStill(page, 300);
+		const [ x, y ] = at(0.5, 0.5);
+		const lim = { d: await dist(), floor: await debug3d(page, "c.minDist()") };
+		await wheel(x, y, 2, -200);
+		lim.after = await dist();
+		const note = await page.locator(".zoom-limit-note").isVisible();
+		const text = note ? await page.locator(".zoom-limit-note").innerText() : "";
+		check("Zoom menu offers Street on a reservoir, and a note shows when zoom in reaches its limit", hasStreet && street < 1 && note && /Closest view/.test(text), `menu ${names.map((n) => n.split("\n")[0]).join(", ")}; street distance ${street.toFixed(2)}; at limit ${lim.d.toFixed(2)} (floor ${lim.floor.toFixed(2)}) -> ${lim.after.toFixed(2)}; note "${text}"`);
+	}
 	await debug3d(page, "c.home()");
 	await waitStill(page, 500);
 }
@@ -512,7 +587,9 @@ async function main() {
 	const base = `http://127.0.0.1:${server.address().port}`;
 	const browser = await chromium.launch({
 		executablePath: process.env.CHROME_BIN || undefined,
-		args: [ ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(/\s+/) : [ "--use-angle=swiftshader", "--enable-unsafe-swiftshader" ]), "--ignore-gpu-blocklist", "--autoplay-policy=user-gesture-required" ],
+		// GL: CHROME_ARGS if given; on a Mac the GPU through Metal (about three times faster than
+		// software GL for this scene); elsewhere SwiftShader, which runs without a GPU (CI).
+		args: [ ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(/\s+/) : process.platform === "darwin" ? [ "--use-gl=angle", "--use-angle=metal" ] : [ "--use-angle=swiftshader", "--enable-unsafe-swiftshader" ]), "--ignore-gpu-blocklist", "--autoplay-policy=user-gesture-required" ],
 	});
 	const allErrors = [];
 

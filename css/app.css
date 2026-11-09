@@ -247,7 +247,11 @@ body[data-mode="3d"] .stage-hint { left: auto; }
 	.timeline-panel .track { height: 60px; }
 }
 /* Zoom menu in the map dock: the current zoom, with presets opening upward. */
-.zoom-menu { position: relative; }
+.zoom-menu { position: relative; display: inline-flex; gap: 4px; }
+.zoom-step { min-width: 32px; padding-inline: 0; font-size: 1rem; line-height: 1; }
+/* Shown for a moment when zoom in stops at its limit (3D view). */
+.zoom-limit-note { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 4; max-width: min(88%, 420px); padding: 7px 12px; border-radius: 8px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 6px 20px rgb(0 0 0 / 16%); font-size: 0.8rem; text-align: center; pointer-events: none; }
+.zoom-limit-note[hidden] { display: none; }
 .zoom-btn { display: inline-flex; align-items: center; gap: 4px; min-width: 64px; justify-content: center; }
 .zoom-caret { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 .zoom-list { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 5; min-width: 150px; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgb(0 0 0 / 16%); }

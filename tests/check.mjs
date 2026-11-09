@@ -135,7 +135,7 @@ async function zoomChecks(page) {
 		const f = () => {
 			const k = c.vScale();
 			const p = c.pose();
-			window.__zr.push({ d: p.dist, polar: p.polar, s: a ? c.toClient([ a[0], a[1] / k0 * k, a[2] ]) : null, k, clear: c.nearClear() });
+			window.__zr.push({ d: p.dist, polar: p.polar, s: a ? c.toClient([ a[0], a[1] / k0 * k, a[2] ]) : null, k, clear: c.nearClear(), m: c.moving() });
 			window.__zrr = requestAnimationFrame(f);
 		};
 		window.__zrr = requestAnimationFrame(f);
@@ -207,6 +207,20 @@ async function zoomChecks(page) {
 	await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 	await cdp.detach();
 	check("Every zoom input works both ways from a close canyon view (wheel, ctrl+wheel pinch, Safari gesture, touch pinch)", Object.values(inputs).every((v) => v.ok), Object.entries(inputs).map(([ k, v ]) => `${k} ${v.txt}${v.ok ? "" : " FAIL"}`).join("; "));
+
+	// (0) After a fly-to ends the camera stands still: the relief scale follows the distance, and
+	// rescaling heights must not change the distance again (a loop that crept for seconds).
+	{
+		await fly("ORO");
+		const poses = [];
+		for (let k = 0; k < 6; k++) {
+			poses.push(await debug3d(page, "c.pose()"));
+			await page.waitForTimeout(300);
+		}
+		const creep = Math.max(...poses.map((p) => Math.abs(p.dist / poses[0].dist - 1)));
+		const tilt = Math.max(...poses.map((p) => Math.abs(p.polar - poses[0].polar)));
+		check("Camera stands still once a fly-to ends (no creeping zoom or tilt)", creep < 1e-4 && tilt < 1e-4, `distance change ${(100 * creep).toFixed(3)}%, tilt change ${tilt.toFixed(5)} rad over 1.8 s`);
+	}
 
 	// (a) The ground point under an off-centre pointer stays under it, every frame and at rest.
 	const drifts = [];
@@ -285,11 +299,14 @@ async function zoomChecks(page) {
 			lo = Math.min(lo, f.d);
 			bounce = Math.max(bounce, f.d / lo - 1);
 		}
-		const tail = log.slice(-20).map((f) => f.d);
-		near.push({ id, bounce, clear: Math.min(...log.map((f) => f.clear)), rest, still: Math.max(...tail) - Math.min(...tail), d: [ log[0].d, log[log.length - 1].d ] });
+		// Stillness is judged on the frames after the zoom has come to rest (a slow software-GL
+		// frame rate would otherwise put part of the zoom itself in a fixed-size tail).
+		const lastMoving = log.reduce((j, f, i) => (f.m ? i : j), -1);
+		const tail = log.slice(lastMoving + 1).map((f) => f.d);
+		near.push({ id, bounce, clear: Math.min(...log.map((f) => f.clear)), rest, still: Math.max(...tail) - Math.min(...tail), tailN: tail.length, d: [ log[0].d, log[log.length - 1].d ] });
 	}
-	check("Zooming in to the ground never bounces, never goes under ground or water, and comes to rest", near.every((r) => r.bounce <= 0.005 && r.clear > 0 && r.rest < 3 && r.still < 1e-3),
-		near.map((r) => `${r.id} ${r.d[0].toFixed(0)}->${r.d[1].toFixed(1)} bounce ${(100 * r.bounce).toFixed(1)}%, min clearance ${r.clear.toFixed(2)}, rest in ${r.rest.toFixed(1)} s`).join("; "));
+	check("Zooming in to the ground never bounces, never goes under ground or water, and comes to rest", near.every((r) => r.bounce <= 0.005 && r.clear > 0 && r.rest < 3 && r.tailN >= 5 && r.still < 1e-3),
+		near.map((r) => `${r.id} ${r.d[0].toFixed(0)}->${r.d[1].toFixed(1)} bounce ${(100 * r.bounce).toFixed(1)}%, min clearance ${r.clear.toFixed(2)}, rest in ${r.rest.toFixed(1)} s, still ${r.still.toExponential(1)} over ${r.tailN} frames`).join("; "));
 	await debug3d(page, "c.home()");
 	await waitStill(page, 500);
 }

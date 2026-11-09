@@ -197,12 +197,20 @@ export function createView3D(container, data, store, tooltip, audio) {
 			const t = Math.min(1, Math.max(0, (Math.log(d) - Math.log(12)) / (Math.log(320) - Math.log(12))));
 			return (NEAR_EXAG + (EXAGGERATION - NEAR_EXAG) * t * t * (3 - 2 * t)) / EXAGGERATION;
 		};
+		const fitOff = new THREE.Vector3();
 		function fitScale() {
-			const k = scaleFor(sc.camera.position.distanceTo(sc.controls.target));
+			const d = sc.camera.position.distanceTo(sc.controls.target);
+			const k = scaleFor(d);
 			if (Math.abs(k - vScale) < 1e-4) return;
 			const r = k / vScale;
 			sc.controls.target.y *= r;
 			sc.camera.position.y *= r;
+			// Rescaling heights changes the camera's distance to the target, and the scale follows
+			// the distance: left alone, that loop keeps creeping for seconds after a zoom or fly-to
+			// ends, sliding the view away from the point under the pointer. Keep the distance the
+			// scale was chosen for, so one rescale settles it.
+			fitOff.copy(sc.camera.position).sub(sc.controls.target).setLength(d);
+			sc.camera.position.copy(sc.controls.target).add(fitOff);
 			vScale = k;
 			land.scale.y = k;
 			land.updateMatrixWorld(true);
@@ -601,7 +609,27 @@ export function createView3D(container, data, store, tooltip, audio) {
 			const ax = anchor ? anchor[0] : zoom.anchor.x;
 			const az = anchor ? anchor[2] : zoom.anchor.z;
 			const floor = Math.max(sc.controls.minDistance, minDistAt(ax, az));
-			const goal = Math.min(sc.controls.maxDistance, Math.max(Math.min(floor, base), base * factor));
+			let goal = Math.min(sc.controls.maxDistance, Math.max(Math.min(floor, base), base * factor));
+			// The frame loop keeps the camera no closer than the floor at the orbit target. Scaling
+			// about the anchor moves the target to anchor + (target - anchor) * goal / d, so stop
+			// where the floor there allows: otherwise, when the anchor is near a lake but the target
+			// is still on its outskirts, the camera would be eased back out about the screen centre
+			// once the zoom ends, and the point under the pointer would slide away.
+			if (goal < base) {
+				const t = sc.controls.target;
+				const allowed = (g) => g >= minDistAt(ax + (t.x - ax) * (g / d), az + (t.z - az) * (g / d)) * 0.98;
+				if (!allowed(goal)) {
+					let lo = goal;
+					let hi = base;
+					if (!allowed(hi)) return false;
+					for (let it = 0; it < 24; it++) {
+						const mid = Math.sqrt(lo * hi);
+						if (allowed(mid)) hi = mid;
+						else lo = mid;
+					}
+					goal = hi;
+				}
+			}
 			if (Math.abs(Math.log(goal / base)) < 1e-4) return false;
 			if (anchor) {
 				zoom.anchor.set(...anchor);
